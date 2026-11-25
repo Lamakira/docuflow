@@ -36,23 +36,12 @@ import {
 import { diffFieldOptions, builtInList, serializeFieldOption } from "@shared/pipelineLists";
 import {
   addAllowedTimezone,
-  analyticsActivityPath,
-  analyticsAlertsPath,
-  analyticsCoveragePath,
-  analyticsDevicesPath,
-  analyticsEvidenceQualityPath,
-  analyticsExportPath,
-  analyticsOverviewPath,
-  analyticsProductivityPath,
-  analyticsScreenshotsPath,
-  analyticsRange,
   billingCancelPath,
   billingCheckoutPath,
   billingPaymentMethodPath,
   billingSeatsPath,
   billingSubscriptionPath,
   composeAdministration,
-  composeAnalytics,
   composeTrackingPolicyEditor,
   composeWorkspaceTimeZone,
   normalizeScreenshotPolicy,
@@ -72,10 +61,10 @@ import {
   trackingPolicyIssue,
   trackingPolicyHints,
   type AdministrationInput,
-  type AnalyticsInput,
   type BillingInput,
   type TrackingPolicyInput,
 } from "../../client/src/v2/administration";
+import { analyticsRefusal } from "../../client/src/v2/analytics";
 
 /**
  * Administration from existing Workspace operator routes (#193).
@@ -97,6 +86,16 @@ const pageSource = readFileSync(
 
 const analyticsSource = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), "../../client/src/v2/V2Analytics.tsx"),
+  "utf8",
+);
+
+const chartsSource = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), "../../client/src/v2/V2AnalyticsCharts.tsx"),
+  "utf8",
+);
+
+const adminModuleSource = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), "../../client/src/v2/administration.ts"),
   "utf8",
 );
 
@@ -526,14 +525,10 @@ describe("Administration from operator routes (#193)", () => {
 
     // And where an Owner is refused for some other reason, the copy does not
     // offer them a grant only they could make.
-    const refused = composeAnalytics(
-      emptyAnalytics({ workspaceRole: "Owner", ownerName: "User Test", refused: true }),
-    );
-    expect(refused.kind).toBe("refusal");
-    if (refused.kind !== "refusal") return;
-    expect(refused.refusal).toBe("Analytics could not be opened for your Membership in this Workspace.");
-    expect(refused.refusal).not.toContain("User Test");
-    expect(refused.refusal).not.toContain("Capability");
+    const refused = analyticsRefusal({ workspaceRole: "Owner", ownerName: "User Test", refused: true });
+    expect(refused).toBe("Analytics could not be opened for your Membership in this Workspace.");
+    expect(refused).not.toContain("User Test");
+    expect(refused).not.toContain("Capability");
   });
 
   it("empty operator lists use empty geometry and never show sample names", () => {
@@ -872,23 +867,6 @@ function reducedMotionCss(): string {
  * characterized in admin-analytics.test.ts and notifications-org-settings.test.ts.
  */
 
-const NOW = new Date("2026-09-14T12:00:00.000Z");
-const RANGE = analyticsRange("7d", NOW);
-
-function emptyAnalytics(overrides: Partial<AnalyticsInput> = {}): AnalyticsInput {
-  return {
-    now: NOW,
-    workspaceRole: "Owner",
-    ownerName: "Sam Lee",
-    range: RANGE,
-    overview: null,
-    activity: null,
-    coverage: null,
-    devices: [],
-    ...overrides,
-  };
-}
-
 function policyDraft(overrides: Partial<ScreenshotPolicy> = {}): ScreenshotPolicy {
   return { ...DEFAULT_SCREENSHOT_POLICY, ...overrides };
 }
@@ -908,52 +886,36 @@ function editorInput(overrides: Partial<TrackingPolicyInput> = {}): TrackingPoli
 }
 
 describe("Administration analytics (#212)", () => {
-  it("asks the existing analytics routes for the chosen range", () => {
-    expect(RANGE.end).toEqual(NOW);
-    expect(RANGE.start).toEqual(new Date("2026-09-07T12:00:00.000Z"));
-    expect(analyticsRange("30d", NOW).start).toEqual(new Date("2026-08-15T12:00:00.000Z"));
-    expect(analyticsRange("90d", NOW).start).toEqual(new Date("2026-06-16T12:00:00.000Z"));
-
-    const query = "start=2026-09-07T12%3A00%3A00.000Z&end=2026-09-14T12%3A00%3A00.000Z";
-    expect(analyticsOverviewPath(RANGE)).toBe(`/api/admin/analytics/overview?${query}`);
-    expect(analyticsActivityPath(RANGE)).toBe(`/api/admin/analytics/activity?${query}`);
-    expect(analyticsCoveragePath(RANGE)).toBe(`/api/admin/analytics/coverage?${query}`);
-    expect(analyticsDevicesPath()).toBe("/api/admin/analytics/devices");
-    expect(analyticsExportPath(RANGE)).toBe(`/api/admin/analytics/export?${query}`);
-    expect(analyticsAlertsPath(RANGE)).toBe(`/api/admin/analytics/alerts?${query}`);
-    expect(analyticsEvidenceQualityPath(RANGE)).toBe(`/api/admin/analytics/evidence-quality?${query}`);
-    expect(analyticsProductivityPath(RANGE)).toBe(`/api/admin/analytics/productivity?${query}`);
-    expect(analyticsScreenshotsPath(RANGE)).toBe(`/api/admin/analytics/screenshots?${query}`);
+  it("keeps the workspace settings path, and the analytics module owns the rest", () => {
     expect(workspaceSettingsPath()).toBe("/api/admin/org-settings");
+    expect(adminModuleSource).not.toMatch(/composeAnalytics|analyticsRange|analyticsOverviewPath/);
   });
 
   it("refuses a Member from the analytics control by naming the Workspace Role", () => {
-    const page = composeAnalytics(emptyAnalytics({ workspaceRole: "MEMBER" }));
-
-    expect(page.kind).toBe("refusal");
-    if (page.kind !== "refusal") return;
+    const refusal = analyticsRefusal({ workspaceRole: "MEMBER", ownerName: "Sam Lee", refused: false });
     // Analytics is its own destination (#281), so the refusal names it.
-    expect(page.refusal).toBe("Analytics is open to the Owner and Administrators. Your Workspace Role is Member. Sam Lee (Owner) can change it.");
-    expect(page.refusal.toLowerCase()).not.toContain("permission denied");
-    expect(page.refusal.toLowerCase()).not.toContain("403");
+    expect(refusal).toBe(
+      "Analytics is open to the Owner and Administrators. Your Workspace Role is Member. Sam Lee (Owner) can change it.",
+    );
+    expect(refusal?.toLowerCase()).not.toContain("permission denied");
+    expect(refusal?.toLowerCase()).not.toContain("403");
   });
 
   it("names the refusal when the BFF refuses the read, instead of drawing an empty range", () => {
-    const analytics = composeAnalytics(emptyAnalytics({ refused: true }));
-    expect(analytics.kind).toBe("refusal");
-    if (analytics.kind !== "refusal") return;
-    expect(analytics.refusal).toBe("Analytics could not be opened for your Membership in this Workspace.");
+    expect(analyticsRefusal({ workspaceRole: "Owner", ownerName: "Sam Lee", refused: true })).toBe(
+      "Analytics could not be opened for your Membership in this Workspace.",
+    );
+    expect(analyticsRefusal({ workspaceRole: "Owner", ownerName: "Sam Lee", refused: false })).toBeNull();
 
     const policy = composeTrackingPolicyEditor(editorInput({ refused: true }));
     expect(policy.kind).toBe("refusal");
   });
 
-  it("says a failed read failed, rather than reporting an outage as an empty Workspace", () => {
-    const analytics = composeAnalytics(emptyAnalytics({ readFailed: true }));
-    expect(analytics.kind).toBe("unreadable");
-    if (analytics.kind !== "unreadable") return;
-    expect(analytics.note.toLowerCase()).toContain("could not be read");
-    expect(analytics.note.toLowerCase()).not.toContain("no tracked time");
+  it("says a failed read failed, card by card, rather than reporting an outage as an empty Workspace", () => {
+    // F97: each card reads and fails alone, with its own Try again.
+    expect(analyticsSource).toContain("<V2LoadFailed");
+    expect(analyticsSource).not.toContain("df-refusal");
+    expect(analyticsSource).toContain("onRetry={read.retry}");
   });
 
   it("refuses to edit an unread Tracking Policy so a save cannot overwrite it with defaults", () => {
@@ -964,357 +926,20 @@ describe("Administration analytics (#212)", () => {
     expect(JSON.stringify(policy)).not.toContain("canSave");
   });
 
-  it("reads overview, activity, coverage, devices, and export for an Owner", () => {
-    const page = composeAnalytics(
-      emptyAnalytics({
-        overview: {
-          totalTrackedSeconds: 45000,
-          totalIdleSeconds: 5400,
-          entriesCount: 12,
-          runningNow: 1,
-          activeUsersToday: 3,
-          screenshotsInWindow: 40,
-          lowActivityEntries: 2,
-          revokedDevices: 1,
-        },
-        activity: {
-          byUser: [
-            {
-              userId: "u-1",
-              userName: "Ada Byron",
-              totalSeconds: 36000,
-              idleSeconds: 3600,
-              idleEventCount: 4,
-            },
-          ],
-        },
-        coverage: {
-          summary: {
-            totalTrackedSeconds: 45000,
-            totalScreenshots: 40,
-            expectedScreenshots: 50,
-            coveragePercent: 80,
-            totalEntries: 12,
-            entriesWithoutScreenshots: 2,
-            lowCoverageEntries: 3,
-            deletedScreenshots: 1,
-          },
-          byUser: [
-            {
-              userId: "u-1",
-              userName: "Ada Byron",
-              trackedSeconds: 36000,
-              entriesCount: 9,
-              entriesWithoutScreenshots: 1,
-              screenshotCount: 32,
-              expectedScreenshots: 40,
-              coveragePct: 80,
-            },
-          ],
-        },
-        devices: [
-          {
-            id: "dev-1",
-            userId: "u-1",
-            userName: "Ada Byron",
-            name: "Ada MacBook",
-            os: "macOS",
-            clientVersion: "1.4.0",
-            lastSeenAt: "2026-09-14T11:30:00.000Z",
-            revokedAt: null,
-            createdAt: "2026-08-01T00:00:00.000Z",
-          },
-          {
-            id: "dev-2",
-            userId: "u-2",
-            userName: "Grace Hopper",
-            name: "Retired ThinkPad",
-            os: "Windows",
-            clientVersion: null,
-            lastSeenAt: null,
-            revokedAt: "2026-09-10T00:00:00.000Z",
-            createdAt: "2026-07-01T00:00:00.000Z",
-          },
-        ],
-      }),
-    );
-
-    expect(page.kind).toBe("ready");
-    if (page.kind !== "ready") return;
-    expect(page.rangeLabel).toBe("7 Sep – 14 Sep");
-    expect(page.overview).toEqual([
-      { label: "Tracked", value: "12.5 h" },
-      { label: "Idle", value: "1.5 h" },
-      { label: "Time entries", value: "12" },
-      { label: "Running now", value: "1" },
-      { label: "Active today", value: "3" },
-      { label: "Evidence", value: "40" },
-      { label: "Low activity", value: "2" },
-      { label: "Revoked devices", value: "1" },
-    ]);
-    expect(page.activity.rows).toEqual([
-      {
-        userId: "u-1",
-        who: "Ada Byron",
-        tracked: "10.0 h",
-        idle: "1.0 h",
-        idleEvents: "4",
-      },
-    ]);
-    expect(page.activity.footnote).toBe(
-      "Recorded totals with provenance. DocuFlow does not score or rank Members.",
-    );
-    expect(page.coverage.summary).toEqual([
-      { label: "Coverage", value: "80%" },
-      { label: "Evidence", value: "40 of 50" },
-      { label: "Entries without evidence", value: "2" },
-      { label: "Tombstoned", value: "1" },
-    ]);
-    expect(page.coverage.rows).toEqual([
-      {
-        userId: "u-1",
-        who: "Ada Byron",
-        tracked: "10.0 h",
-        entries: "9",
-        evidence: "32 of 40",
-        coverage: "80%",
-      },
-    ]);
-    expect(page.devices.rows).toEqual([
-      {
-        id: "dev-1",
-        name: "Ada MacBook",
-        who: "Ada Byron",
-        platform: "macOS · 1.4.0",
-        lastSeen: "30m ago",
-        status: "ACTIVE",
-      },
-      {
-        id: "dev-2",
-        name: "Retired ThinkPad",
-        who: "Grace Hopper",
-        platform: "Windows",
-        lastSeen: "Never",
-        status: "REVOKED",
-      },
-    ]);
-    expect(page.export).toEqual({
-      href: analyticsExportPath(RANGE),
-      label: "Export CSV",
-      filename: "docuflow-export-2026-09-07.csv",
-    });
-  });
-
-  it("names a stalled Device and the other warnings alerts already records", () => {
-    const page = composeAnalytics(
-      emptyAnalytics({
-        alerts: {
-          highIdleUsers: [
-            { userId: "u-1", userName: "Ada Byron", idleRatio: 62, totalSeconds: 36000 },
-          ],
-          stalledDevices: [
-            {
-              deviceId: "dev-quiet",
-              deviceName: "Quiet Mac",
-              userId: "u-2",
-              userName: "Grace Hopper",
-              lastSeenAt: "2026-09-05T12:00:00.000Z",
-              daysSinceLastSeen: 9,
-            },
-          ],
-          runningWithoutScreenshots: [
-            {
-              userId: "u-1",
-              userName: "Ada Byron",
-              entryId: "entry-1",
-              startedAt: "2026-09-14T09:15:00.000Z",
-            },
-          ],
-        },
-      }),
-    );
-
-    expect(page.kind).toBe("ready");
-    if (page.kind !== "ready") return;
-    expect(page.alerts.empty).toBe(false);
-    expect(page.alerts.stalledDevices).toEqual([
-      {
-        id: "dev-quiet",
-        name: "Quiet Mac",
-        who: "Grace Hopper",
-        lastSeen: "9d ago",
-      },
-    ]);
-    expect(page.alerts.highIdle).toEqual([
-      { id: "u-1", who: "Ada Byron", tracked: "10.0 h", idle: "62%" },
-    ]);
-    expect(page.alerts.runningWithoutEvidence).toEqual([
-      { id: "entry-1", who: "Ada Byron", started: "2h ago" },
-    ]);
-  });
-
-  it("reads productivity, screenshots, and evidence quality as recorded totals", () => {
-    const page = composeAnalytics(
-      emptyAnalytics({
-        productivity: {
-          byUser: [
-            { userId: "u-1", userName: "Ada Byron", totalSeconds: 36000, idleSeconds: 3600, entriesCount: 4 },
-          ],
-          byProject: [
-            { crmProjectId: "prj-1", projectName: "Harbor", totalSeconds: 36000, entriesCount: 4 },
-          ],
-          byTask: [{ taskId: "task-1", taskName: "Survey", totalSeconds: 7200 }],
-          dailyTrend: [{ date: "2026-09-10", totalSeconds: 36000 }],
-        },
-        screenshots: {
-          totalCount: 12,
-          byUser: [{ userId: "u-1", userName: "Ada Byron", count: 12 }],
-          hourlyDistribution: [{ hour: 9, count: 3 }],
-          duplicates: [{ contentHash: "abc123def456", count: 2 }],
-          deletedCount: 1,
-        },
-        evidenceQuality: {
-          gradeDistribution: { strong: 0, moderate: 1, weak: 0, insufficient: 0 },
-          byUser: [
-            {
-              userId: "u-1",
-              userName: "Ada Byron",
-              grade: "moderate",
-              screenshotCount: 8,
-              expectedScreenshots: 10,
-              hasEvents: true,
-            },
-          ],
-        },
-      }),
-    );
-
-    expect(page.kind).toBe("ready");
-    if (page.kind !== "ready") return;
-    expect(page.recordedTime.rows).toEqual([
-      { id: "u-1", who: "Ada Byron", tracked: "10.0 h", idle: "1.0 h", entries: "4" },
-    ]);
-    expect(page.recordedTime.projects).toEqual([
-      { id: "prj-1", name: "Harbor", tracked: "10.0 h", entries: "4" },
-    ]);
-    expect(page.recordedTime.tasks).toEqual([{ id: "task-1", name: "Survey", tracked: "2.0 h" }]);
-    // The day bucket reads as the calendar day it names (#281).
-    expect(page.recordedTime.days).toEqual([{ id: "2026-09-10", day: "Thu 10 Sep", tracked: "10.0 h" }]);
-    expect(page.recordedTime.measures.toLowerCase()).not.toContain("rank");
-    expect(JSON.stringify(page.recordedTime)).not.toContain("score");
-
-    expect(page.screenshots.summary).toEqual([
-      { label: "Evidence", value: "12" },
-      { label: "Tombstoned", value: "1" },
-      { label: "Duplicate groups", value: "1" },
-    ]);
-    expect(page.screenshots.byMember).toEqual([{ id: "u-1", who: "Ada Byron", evidence: "12" }]);
-    expect(page.screenshots.hours).toEqual([{ id: "9", hour: "09:00", evidence: "3" }]);
-
-    expect(page.evidenceQuality.footnote.toLowerCase()).toContain("does not");
-    expect(page.evidenceQuality.rows).toEqual([
-      { id: "u-1", who: "Ada Byron", grade: "MODERATE", evidence: "8 of 10", events: "RECORDED" },
-    ]);
-    expect(JSON.stringify(page.evidenceQuality.rows)).not.toContain("55");
-  });
-
-  it("keeps empty analytics honest and never shows sample names", () => {
-    const page = composeAnalytics(emptyAnalytics());
-    const blob = JSON.stringify(page);
-
-    expect(page.kind).toBe("ready");
-    if (page.kind !== "ready") return;
-    expect(page.overview).toEqual([]);
-    expect(page.activity.empty).toBe(true);
-    expect(page.activity.rows).toEqual([]);
-    expect(page.activity.emptyCopy.toLowerCase()).toContain("no tracked time");
-    expect(page.coverage.empty).toBe(true);
-    expect(page.coverage.summary).toEqual([]);
-    expect(page.coverage.emptyCopy.toLowerCase()).toContain("evidence");
-    expect(page.devices.empty).toBe(true);
-    expect(page.devices.emptyCopy.toLowerCase()).toContain("device");
-    expect(page.alerts.empty).toBe(true);
-    expect(page.alerts.stalledDevices).toEqual([]);
-    expect(page.alerts.emptyCopy.toLowerCase()).toContain("warning");
-    expect(page.recordedTime.empty).toBe(true);
-    expect(page.screenshots.empty).toBe(true);
-    expect(page.evidenceQuality.empty).toBe(true);
-    for (const name of SAMPLE_NAMES) {
-      expect(blob).not.toContain(name);
-    }
-  });
-
-  it("reports a missing coverage percentage as unknown, never as zero", () => {
-    const page = composeAnalytics(
-      emptyAnalytics({
-        coverage: {
-          summary: {
-            totalTrackedSeconds: 0,
-            totalScreenshots: 0,
-            expectedScreenshots: 0,
-            coveragePercent: null,
-            totalEntries: 0,
-            entriesWithoutScreenshots: 0,
-            lowCoverageEntries: 0,
-            deletedScreenshots: 0,
-          },
-          byUser: [
-            {
-              userId: "u-1",
-              userName: "Ada Byron",
-              trackedSeconds: 0,
-              entriesCount: 0,
-              entriesWithoutScreenshots: 0,
-              screenshotCount: 0,
-              expectedScreenshots: 0,
-              coveragePct: null,
-            },
-          ],
-        },
-      }),
-    );
-
-    expect(page.kind).toBe("ready");
-    if (page.kind !== "ready") return;
-    expect(page.coverage.summary[0]).toEqual({ label: "Coverage", value: "-" });
-    expect(page.coverage.rows[0].coverage).toBe("-");
-  });
-
-  it("reports recorded Activity Evidence totals, never a score or a Member ranking", () => {
-    const page = composeAnalytics(
-      emptyAnalytics({
-        activity: {
-          byUser: [
-            {
-              userId: "u-1",
-              userName: "Ada Byron",
-              totalSeconds: 36000,
-              idleSeconds: 18000,
-              idleEventCount: 4,
-            },
-          ],
-        },
-      }),
-    );
-
-    expect(page.kind).toBe("ready");
-    if (page.kind !== "ready") return;
+  it("never scores or ranks Members, and says captures, not evidence grades", () => {
     // GLOSSARY.md Activity Evidence: no productivity scores or member rankings.
-    expect(JSON.stringify(page.activity.rows)).not.toContain("50%");
-    expect(Object.keys(page.activity.rows[0])).toEqual([
-      "userId",
-      "who",
-      "tracked",
-      "idle",
-      "idleEvents",
-    ]);
     expect(pageSource).not.toMatch(/IDLE SHARE|idleShare|score|ranking/i);
     expect(analyticsSource).not.toMatch(/IDLE SHARE|idleShare|score|ranking/i);
+    expect(analyticsSource).not.toMatch(/tombstone|duplicate group|evidence grade/i);
   });
 
   it("does not decorate analytics with animated charts or counting figures", () => {
     expect(pageSource).not.toMatch(/recharts|chart\.js|ResponsiveContainer/i);
     expect(analyticsSource).not.toMatch(/recharts|chart\.js|ResponsiveContainer/i);
+    // The charts live in their own file, and none of their marks animates.
+    const marks = chartsSource.match(/<Bar\b/g) ?? [];
+    expect(marks.length).toBeGreaterThan(0);
+    expect(chartsSource.match(/isAnimationActive=\{false\}/g)).toHaveLength(marks.length);
     expect(rule(".df-analytics-figure")).toMatch(/animation:\s*none/);
     expect(rule(".df-analytics-figure")).toMatch(/transition:\s*none/);
   });
@@ -1555,7 +1180,7 @@ describe("Administration controls (#212)", () => {
     // `.df-v2 .df-checkbox` (0,2,0), so a colour on the button itself loses and
     // the tick took the ink of the checked fill. It must sit on the indicator span.
     expect(
-      rule('.df-v2 button:not(.df-btn):not(.df-segment-item):not([class*="cl-"]),\n.df-v2 input:not([class*="cl-"])'),
+      rule('.df-v2 button:not(.df-btn):not(.df-segment-item):not([class*="cl-"]):not(:where(.df-tab, .df-chart-toggle)),\n.df-v2 input:not([class*="cl-"])'),
     ).toMatch(/color:\s*inherit/);
     expect(rule(".df-v2 .df-checkbox > span")).toMatch(/color:\s*var\(--df-on-ink\)/);
     expect(rule(".df-v2 .df-checkbox svg")).not.toMatch(/(^|[^-])color:/);
@@ -1592,9 +1217,10 @@ describe("Administration controls (#212)", () => {
     expect(pageSource).not.toContain("minHeight: 280");
     // Section titles are known before any fetch, so the wait states them.
     expect(pageSource).toContain('<SkeletonSection title="Workspace"');
+    // Analytics draws the head at once and gives each card its own skeleton lines.
     expect(analyticsSource).toContain('from "./V2Skeleton"');
-    expect(analyticsSource).toContain('<SkeletonSection title="Analytics"');
-    expect(analyticsSource).toContain('<SkeletonSection title="Warnings"');
+    expect(analyticsSource).toContain("<FigureSkeleton");
+    expect(analyticsSource).toContain("<SkeletonRows");
     // The wait reuses the real bands and rows, so nothing moves on arrival.
     // The band, or the console's strip variant of it (#318).
     expect(skeletonSource).toMatch(/"df-figure-band( df-stat-strip)?"/);

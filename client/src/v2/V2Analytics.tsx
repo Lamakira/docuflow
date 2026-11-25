@@ -1,50 +1,57 @@
-import { useEffect, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Link, useLocation, useSearch } from "wouter";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { SkeletonSection, V2PageSkeleton } from "./V2Skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { SkeletonBar, SkeletonLines, SkeletonRows } from "./V2Skeleton";
 import {
-  analyticsActivityPath,
-  analyticsAlertsPath,
-  analyticsCoveragePath,
-  analyticsDevicesPath,
-  analyticsEvidenceQualityPath,
-  analyticsOverviewPath,
-  analyticsProductivityPath,
-  analyticsScreenshotsPath,
-  analyticsRange,
   ANALYTICS_RANGE_PRESETS,
-  canManageAdministration,
-  composeAnalytics,
-  type AnalyticsActivityInput,
+  analyticsDevicesPath,
+  analyticsPath,
+  analyticsRange,
+  analyticsRangeWords,
+  analyticsRefusal,
+  browserTimeZone,
+  composeCaptures,
+  composeDevices,
+  composeFigureBand,
+  composeHourly,
+  composeHoursChart,
+  composeRecordedTime,
+  composeWarnings,
+  customFromRange,
+  DEVICE_ROWS,
+  exportFilename,
+  FIGURE_NOTE,
+  limitRows,
+  readAnalyticsFilters,
+  RECORDED_ROWS,
+  WARNING_ROWS,
+  writeAnalyticsFilters,
   type AnalyticsAlertsInput,
   type AnalyticsCoverageInput,
   type AnalyticsDeviceInput,
-  type AnalyticsEvidenceQualityInput,
   type AnalyticsFigure,
-  type AnalyticsModel,
-  type AnalyticsOverviewInput,
+  type AnalyticsFilters,
   type AnalyticsProductivityInput,
-  type AnalyticsRangePreset,
+  type AnalyticsRange,
+  type AnalyticsRangeId,
   type AnalyticsScreenshotsInput,
-  type RecordedTimeModel,
-  type RecordedTimeSection,
-} from "./administration";
-import { workspaceOwnerName } from "./workspace";
+  type AnalyticsTab,
+} from "./analytics";
+import { canManageAdministration } from "./administration";
+import { notify } from "./notify";
+import { useRefreshFailure } from "./useRefreshFailure";
+import { useToday } from "./useToday";
+import { useWorkspaceOwnerName } from "./useWorkspaceOwner";
 import { useV2Chrome } from "./V2Shell";
 import { V2FilterSelect } from "./V2Select";
 import { V2DateRangeField } from "./V2DateField";
-import { dateToDay, type DayRange } from "./dates";
-import { V2CompactEmpty } from "./V2EmptyState";
+import { V2CompactEmpty, V2EmptyState, V2LoadFailed } from "./V2EmptyState";
 import { V2PageHead } from "./V2PageHead";
-
-type WorkspaceMembershipsResponse = {
-  memberships: Array<{
-    firstName: string | null;
-    lastName: string | null;
-    email: string;
-    workspaceRole: string;
-  }>;
-};
+import { ChartCard, ChartSkeleton } from "./V2BackOfficeCharts";
+import { CapturesByHour, HoursPerDayChart } from "./V2AnalyticsCharts";
 
 /**
  * Reads behind the Administration gate, which Analytics shares (#281). A 403 is
@@ -58,580 +65,592 @@ export async function readBehindAdministration<T>(path: string): Promise<T | nul
   return res.json();
 }
 
+/** One card's read: it loads, fails and refreshes alone (F97). */
+type AnalyticsRead<T> = {
+  data: T | undefined;
+  state: "loading" | "failed" | "ready";
+  /** A new Range is on its way; the figures on screen are the old ones. */
+  refreshing: boolean;
+  /** The Range the figures on screen were read for: the old one while a new one is on its way. */
+  range: AnalyticsRange;
+  /** The gate refused this read. */
+  refused: boolean;
+  retry: () => void;
+};
+
+function useAnalyticsRead<T>(path: string, enabled: boolean, noun: string, id: string, range: AnalyticsRange): AnalyticsRead<T> {
+  const query = useQuery<T | null>({
+    queryKey: [path],
+    enabled,
+    placeholderData: keepPreviousData,
+    staleTime: 0,
+    queryFn: () => readBehindAdministration<T>(path),
+  });
+  const data = query.data ?? undefined;
+  const settled = useRef(range);
+  if (!query.isPlaceholderData) settled.current = range;
+  useRefreshFailure(query.isError && Boolean(data), `${noun} could not be refreshed.`, `v2-analytics-${id}-refresh-failed`);
+  const failed = query.isError && !data;
+  return {
+    data,
+    state: failed ? "failed" : data === undefined ? "loading" : "ready",
+    refreshing: query.isPlaceholderData,
+    range: settled.current,
+    refused: query.data === null,
+    retry: () => {
+      void query.refetch();
+    },
+  };
+}
+
+/** The CSV, saved under the server's filename; a refusal or an outage is never saved as a file. */
+async function saveExport(path: string, range: AnalyticsRange): Promise<void> {
+  const res = await fetch(path, { credentials: "include" });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(typeof body?.message === "string" ? body.message : "");
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = exportFilename(res.headers.get("Content-Disposition"), range);
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
 /**
- * Analytics, its own destination on the rail (#281): the analytics panes and
- * the four #259 dashboards — warnings, evidence quality, recorded time and
- * Activity Evidence — for the Workspace Roles Administration admits.
+ * Analytics, its own destination on the rail (#281): the Range's figures, the
+ * warnings, hours per day, recorded time, captures and Devices, for the
+ * Workspace Roles Administration admits. The head and the Range never go away.
  */
 export function V2AnalyticsPage() {
   const { layout, memberships } = useV2Chrome();
-  const current = memberships?.memberships.find((row) => row.workspaceId === memberships.activeWorkspaceId);
-  const workspaceName = current?.workspaceName ?? "this Workspace";
-  const workspaceRole = current?.workspaceRole ?? "MEMBER";
-  const canManage = canManageAdministration(workspaceRole);
-  const [rangePreset, setRangePreset] = useState<AnalyticsRangePreset>("7d");
-  const [customRange, setCustomRange] = useState<DayRange | null>(null);
-  const [rangeAnchor] = useState(() => new Date());
-  const range = useMemo(
-    () => analyticsRange(rangePreset, rangeAnchor, customRange),
-    [rangePreset, rangeAnchor, customRange],
-  );
+  const search = useSearch();
+  const [, navigate] = useLocation();
+  const today = useToday();
+  const tz = useMemo(browserTimeZone, []);
+  const ownerName = useWorkspaceOwnerName();
+  const [exporting, setExporting] = useState(false);
 
-  // A custom range starts from the dates on screen, so the figures never go blank (#307).
-  function onRangeChange(preset: AnalyticsRangePreset) {
-    if (preset === "custom" && !customRange) {
-      setCustomRange({ from: dateToDay(range.start), to: dateToDay(range.end) });
-    }
-    setRangePreset(preset);
+  const known = memberships !== undefined;
+  const current = memberships?.memberships.find((row) => row.workspaceId === memberships.activeWorkspaceId);
+  const workspaceRole = current?.workspaceRole ?? "MEMBER";
+  const canManage = known && canManageAdministration(workspaceRole);
+
+  const filters = readAnalyticsFilters(search);
+  const range = useMemo(
+    () => analyticsRange(filters.range, today, { from: filters.from, to: filters.to }),
+    [filters.range, filters.from, filters.to, today],
+  );
+  function setFilters(next: AnalyticsFilters) {
+    navigate(`/analytics${writeAnalyticsFilters(search, next)}`);
+  }
+  function onRangeChange(next: AnalyticsRangeId) {
+    setFilters({
+      ...filters,
+      range: next,
+      ...(next === "custom" ? customFromRange(range) : { from: "", to: "" }),
+    });
   }
 
-  const { data: people, isLoading: peopleLoading } = useQuery<WorkspaceMembershipsResponse>({
-    queryKey: ["/api/workspace/memberships"],
-    queryFn: async () => {
-      const res = await fetch("/api/workspace/memberships", { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch Memberships");
-      return res.json();
-    },
-  });
-  const { data: overview, isLoading: overviewLoading, isError: overviewFailed } = useQuery<AnalyticsOverviewInput | null>({
-    queryKey: [analyticsOverviewPath(range)],
-    enabled: canManage,
-    queryFn: () => readBehindAdministration<AnalyticsOverviewInput>(analyticsOverviewPath(range)),
-  });
-  const { data: activity, isLoading: activityLoading, isError: activityFailed } = useQuery<AnalyticsActivityInput | null>({
-    queryKey: [analyticsActivityPath(range)],
-    enabled: canManage,
-    queryFn: () => readBehindAdministration<AnalyticsActivityInput>(analyticsActivityPath(range)),
-  });
-  const { data: coverage, isLoading: coverageLoading, isError: coverageFailed } = useQuery<AnalyticsCoverageInput | null>({
-    queryKey: [analyticsCoveragePath(range)],
-    enabled: canManage,
-    queryFn: () => readBehindAdministration<AnalyticsCoverageInput>(analyticsCoveragePath(range)),
-  });
-  const {
-    data: analyticsDevices,
-    isLoading: analyticsDevicesLoading,
-    isError: analyticsDevicesFailed,
-  } = useQuery<AnalyticsDeviceInput[] | null>({
-    queryKey: [analyticsDevicesPath()],
-    enabled: canManage,
-    queryFn: () => readBehindAdministration<AnalyticsDeviceInput[]>(analyticsDevicesPath()),
-  });
-  const { data: alerts, isLoading: alertsLoading, isError: alertsFailed } = useQuery<AnalyticsAlertsInput | null>({
-    queryKey: [analyticsAlertsPath(range)],
-    enabled: canManage,
-    queryFn: () => readBehindAdministration<AnalyticsAlertsInput>(analyticsAlertsPath(range)),
-  });
-  const {
-    data: recordedTime,
-    isLoading: recordedTimeLoading,
-    isError: recordedTimeFailed,
-  } = useQuery<AnalyticsProductivityInput | null>({
-    queryKey: [analyticsProductivityPath(range)],
-    enabled: canManage,
-    queryFn: () => readBehindAdministration<AnalyticsProductivityInput>(analyticsProductivityPath(range)),
-  });
-  const {
-    data: screenshots,
-    isLoading: screenshotsLoading,
-    isError: screenshotsFailed,
-  } = useQuery<AnalyticsScreenshotsInput | null>({
-    queryKey: [analyticsScreenshotsPath(range)],
-    enabled: canManage,
-    queryFn: () => readBehindAdministration<AnalyticsScreenshotsInput>(analyticsScreenshotsPath(range)),
-  });
-  const {
-    data: evidenceQuality,
-    isLoading: evidenceQualityLoading,
-    isError: evidenceQualityFailed,
-  } = useQuery<AnalyticsEvidenceQualityInput | null>({
-    queryKey: [analyticsEvidenceQualityPath(range)],
-    enabled: canManage,
-    queryFn: () => readBehindAdministration<AnalyticsEvidenceQualityInput>(analyticsEvidenceQualityPath(range)),
-  });
+  const productivity = useAnalyticsRead<AnalyticsProductivityInput>(
+    analyticsPath("productivity", range, tz),
+    canManage,
+    "Recorded time",
+    "productivity",
+    range,
+  );
+  const coverage = useAnalyticsRead<AnalyticsCoverageInput>(
+    analyticsPath("coverage", range, tz),
+    canManage,
+    "Captures",
+    "coverage",
+    range,
+  );
+  const screenshots = useAnalyticsRead<AnalyticsScreenshotsInput>(
+    analyticsPath("screenshots", range, tz),
+    canManage,
+    "Captures by hour",
+    "screenshots",
+    range,
+  );
+  const alerts = useAnalyticsRead<AnalyticsAlertsInput>(analyticsPath("alerts", range, tz), canManage, "Warnings", "alerts", range);
+  const devices = useAnalyticsRead<AnalyticsDeviceInput[]>(analyticsDevicesPath(tz), canManage, "Devices", "devices", range);
 
-  // Warnings ride with the analytics already on this page. The three
-  // reporting reads must not hold a stalled Device off the screen.
-  const analyticsLoading =
-    overviewLoading || activityLoading || coverageLoading || analyticsDevicesLoading || alertsLoading;
-  const analyticsRefused =
-    overview === null || activity === null || coverage === null || analyticsDevices === null || alerts === null;
-  const analyticsFailed =
-    overviewFailed || activityFailed || coverageFailed || analyticsDevicesFailed || alertsFailed;
+  const refusal = known
+    ? analyticsRefusal({
+        workspaceRole,
+        ownerName,
+        refused: [productivity, coverage, screenshots, alerts, devices].some((read) => read.refused),
+      })
+    : null;
 
   // `/administration#alerts` and v1 links land here on the Warnings card.
   useEffect(() => {
-    if (analyticsLoading) return;
+    if (alerts.state === "loading") return;
     if (window.location.hash !== "#alerts") return;
     document.getElementById("alerts")?.scrollIntoView();
-  }, [analyticsLoading]);
+  }, [alerts.state]);
 
-  const ownerName = workspaceOwnerName(people?.memberships ?? []);
-  const analytics = composeAnalytics({
-    now: rangeAnchor,
-    workspaceName,
-    workspaceRole,
-    ownerName,
-    range,
-    overview: overview ?? null,
-    activity: activity ?? null,
-    coverage: coverage ?? null,
-    devices: analyticsDevices ?? [],
-    alerts: alerts ?? null,
-    productivity: recordedTime ?? null,
-    screenshots: screenshots ?? null,
-    evidenceQuality: evidenceQuality ?? null,
-    refused: analyticsRefused,
-    readFailed: analyticsFailed,
-  });
-
-  if (!memberships || peopleLoading) {
-    return <AnalyticsSkeleton />;
+  async function exportCsv() {
+    setExporting(true);
+    try {
+      await saveExport(analyticsPath("export", range, tz), range);
+    } catch (error) {
+      notify.error(error, { fallback: "The export could not be downloaded. Try again." });
+    } finally {
+      setExporting(false);
+    }
   }
+
+  const now = new Date();
+  const actions =
+    canManage && !refusal ? (
+      <>
+        <V2FilterSelect
+          label="Range"
+          ariaLabel="Analytics range"
+          value={filters.range}
+          options={ANALYTICS_RANGE_PRESETS.map((preset) => ({ value: preset.id, label: preset.label }))}
+          onChange={(next) => onRangeChange(next as AnalyticsRangeId)}
+          active={filters.range !== "7d"}
+          testId="v2-analytics-range"
+        />
+        {filters.range === "custom" ? (
+          <V2DateRangeField
+            value={{ from: filters.from, to: filters.to }}
+            onChange={(days) => setFilters({ ...filters, range: "custom", from: days.from, to: days.to })}
+            ariaLabel="Custom range"
+            testId="v2-analytics-custom-range"
+          />
+        ) : null}
+        <Button
+          type="button"
+          variant="outline"
+          className="df-btn"
+          disabled={exporting}
+          aria-busy={exporting || undefined}
+          onClick={exportCsv}
+          data-testid="v2-analytics-export"
+        >
+          {exporting ? <Loader2 width={14} height={14} className="animate-spin motion-reduce:animate-none" aria-hidden="true" /> : null}
+          Export CSV
+        </Button>
+      </>
+    ) : null;
 
   return (
     <div className="df-page" data-testid="v2-analytics">
-      <V2PageHead title="Analytics" subhead={`Recorded time, Activity Evidence, and operational warnings for ${workspaceName}.`} />
-      <AnalyticsSections
-        analytics={analytics}
-        loading={analyticsLoading}
-        stacked={layout.stackedRegister}
-        rangePreset={rangePreset}
-        onRangeChange={onRangeChange}
-        customRange={customRange}
-        onCustomRangeChange={setCustomRange}
-        recordedTimeRead={reportRead(recordedTimeLoading, recordedTimeFailed, recordedTime)}
-        screenshotsRead={reportRead(screenshotsLoading, screenshotsFailed, screenshots)}
-        evidenceQualityRead={reportRead(evidenceQualityLoading, evidenceQualityFailed, evidenceQuality)}
-      />
+      <V2PageHead title="Analytics" chip={refusal ? undefined : analyticsRangeWords(range, today)} actions={actions} />
+      {refusal ? (
+        <V2EmptyState icon="access" title="Analytics is not open to you" copy={refusal} testId="v2-analytics-refusal" />
+      ) : (
+        <>
+          <FigureBandCard productivity={productivity} coverage={coverage} />
+          <WarningsCard read={alerts} now={now} stacked={layout.stackedRegister} />
+          <HoursCard read={productivity} />
+          <RecordedTimeCard
+            read={productivity}
+            tab={filters.tab}
+            onTab={(tab) => setFilters({ ...filters, tab })}
+            stacked={layout.stackedRegister}
+          />
+          <CapturesCard read={coverage} hourly={screenshots} stacked={layout.stackedRegister} />
+          <DevicesCard read={devices} now={now} stacked={layout.stackedRegister} />
+        </>
+      )}
     </div>
   );
 }
 
-function AnalyticsSkeleton() {
-  return (
-    <V2PageSkeleton title="Analytics" testId="v2-analytics" status="Loading Analytics for this Workspace.">
-      <SkeletonSection title="Analytics" className="df-analytics-register" tiles={8} />
-      <SkeletonSection title="Warnings" className="df-analytics-register" columns={3} rows={2} dataColumns />
-      <SkeletonSection title="Activity" className="df-analytics-register" columns={4} rows={3} dataColumns />
-    </V2PageSkeleton>
-  );
-}
-
-/**
- * One card per section, the way every other register in v2 reads: the card head
- * owns the title and its one line of context, a toolbar sits above the data
- * rather than inside it, and figures get their own padded band. A card carries
- * no padding of its own, so each band brings the house 18px gutter.
- */
-type ReportRead = "loading" | "failed" | "ready";
-
-function reportRead(loading: boolean, failed: boolean, data: unknown): ReportRead {
-  if (loading) return "loading";
-  if (failed || data === null) return "failed";
-  return "ready";
-}
-
-function AnalyticsSections({
-  analytics,
-  loading,
-  stacked,
-  rangePreset,
-  onRangeChange,
-  customRange,
-  onCustomRangeChange,
-  recordedTimeRead,
-  screenshotsRead,
-  evidenceQualityRead,
+/** A card of the page: dimmed while a new Range's figures arrive, with its layout untouched. */
+function AnalyticsCard({
+  title,
+  testId,
+  id,
+  refreshing = false,
+  children,
 }: {
-  analytics: AnalyticsModel;
-  loading: boolean;
-  stacked: boolean;
-  rangePreset: AnalyticsRangePreset;
-  onRangeChange: (preset: AnalyticsRangePreset) => void;
-  customRange: DayRange | null;
-  onCustomRangeChange: (range: DayRange) => void;
-  recordedTimeRead: ReportRead;
-  screenshotsRead: ReportRead;
-  evidenceQualityRead: ReportRead;
+  title?: string;
+  testId: string;
+  id?: string;
+  refreshing?: boolean;
+  children: ReactNode;
 }) {
-  if (analytics.kind !== "ready") {
-    return (
-      <section className="df-card" data-testid="v2-analytics-overview-card">
+  return (
+    <section
+      id={id}
+      className="df-card df-analytics-register"
+      data-testid={testId}
+      data-refreshing={refreshing ? "true" : undefined}
+      aria-busy={refreshing || undefined}
+      aria-label={title ? undefined : "Totals"}
+    >
+      {title ? (
         <div className="df-card-head">
           <div className="df-card-head-text">
-            <h2 className="df-card-title">Workspace totals</h2>
+            <h2 className="df-card-title">{title}</h2>
           </div>
         </div>
-        <p
-          className="df-refusal"
-          data-testid={analytics.kind === "refusal" ? "v2-analytics-refusal" : "v2-analytics-unreadable"}
-        >
-          {analytics.kind === "refusal" ? analytics.refusal : analytics.note}
-        </p>
-      </section>
-    );
-  }
-
-  return (
-    <>
-      <section className="df-card" data-testid="v2-analytics-overview-card">
-        <div className="df-card-head">
-          <div className="df-card-head-text">
-            <h2 className="df-card-title">Workspace totals</h2>
-            <p className="df-card-sub">Recorded Workspace totals for {analytics.rangeLabel}.</p>
-          </div>
-        </div>
-        <div className="df-toolbar">
-          <V2FilterSelect
-            label="Range"
-            ariaLabel="Analytics range"
-            value={rangePreset}
-            options={ANALYTICS_RANGE_PRESETS.map((preset) => ({ value: preset.id, label: preset.label }))}
-            onChange={(next) => onRangeChange(next as AnalyticsRangePreset)}
-            active={rangePreset !== "7d"}
-            testId="v2-analytics-range"
-          />
-          {rangePreset === "custom" ? (
-            <V2DateRangeField
-              value={customRange}
-              onChange={onCustomRangeChange}
-              ariaLabel="Custom range"
-              testId="v2-analytics-custom-range"
-            />
-          ) : null}
-          <Button asChild variant="outline" className="df-btn">
-            <a
-              href={analytics.export.href}
-              download={analytics.export.filename}
-              data-testid="v2-analytics-export"
-            >
-              {analytics.export.label}
-            </a>
-          </Button>
-        </div>
-        {loading ? (
-          <p className="df-note">Reading analytics for this range…</p>
-        ) : (
-          <FigureBand figures={analytics.overview} testId="v2-analytics-overview" />
-        )}
-      </section>
-
-      {loading ? null : (
-        <>
-          <section id="alerts" className="df-card df-analytics-register" data-testid="v2-analytics-alerts">
-            <div className="df-card-head">
-              <div className="df-card-head-text">
-                <h2 className="df-card-title">Warnings</h2>
-                <p className="df-card-sub">
-                  Operational warnings for this range, including any Device that has stopped reporting.
-                </p>
-              </div>
-            </div>
-            {analytics.alerts.empty ? (
-              <V2CompactEmpty>{analytics.alerts.emptyCopy}</V2CompactEmpty>
-            ) : (
-              <>
-                {analytics.alerts.stalledDevices.length > 0 ? (
-                  <>
-                    <p className="df-analytics-group-label">Stalled devices</p>
-                    <AnalyticsRegister
-                      stacked={stacked}
-                      head={["Device", "Member", "Last seen"]}
-                      rows={analytics.alerts.stalledDevices.map((row) => ({
-                        id: row.id,
-                        cells: [row.name, row.who, row.lastSeen],
-                      }))}
-                      empty={false}
-                      emptyCopy=""
-                      testId="v2-analytics-alert-device"
-                    />
-                  </>
-                ) : null}
-                {analytics.alerts.highIdle.length > 0 ? (
-                  <>
-                    <p className="df-analytics-group-label">High idle</p>
-                    <AnalyticsRegister
-                      stacked={stacked}
-                      head={["Member", "Tracked", "Idle"]}
-                      rows={analytics.alerts.highIdle.map((row) => ({
-                        id: row.id,
-                        cells: [row.who, row.tracked, row.idle],
-                      }))}
-                      empty={false}
-                      emptyCopy=""
-                      testId="v2-analytics-alert-idle"
-                    />
-                  </>
-                ) : null}
-                {analytics.alerts.runningWithoutEvidence.length > 0 ? (
-                  <>
-                    <p className="df-analytics-group-label">Running without evidence</p>
-                    <AnalyticsRegister
-                      stacked={stacked}
-                      head={["Member", "Started"]}
-                      rows={analytics.alerts.runningWithoutEvidence.map((row) => ({
-                        id: row.id,
-                        cells: [row.who, row.started],
-                      }))}
-                      empty={false}
-                      emptyCopy=""
-                      testId="v2-analytics-alert-running"
-                    />
-                  </>
-                ) : null}
-              </>
-            )}
-          </section>
-
-          {recordedTimeRead === "loading" ? null : (
-            <RecordedTimeCard recordedTime={analytics.recordedTime} read={recordedTimeRead} stacked={stacked} />
-          )}
-
-          <section className="df-card df-analytics-register" data-testid="v2-analytics-activity">
-            <div className="df-card-head">
-              <div className="df-card-head-text">
-                <h2 className="df-card-title">Activity</h2>
-                <p className="df-card-sub">{analytics.activity.footnote}</p>
-              </div>
-            </div>
-            <AnalyticsRegister
-              stacked={stacked}
-              head={["Member", "Tracked", "Idle", "Idle events"]}
-              rows={analytics.activity.rows.map((row) => ({
-                id: row.userId,
-                cells: [row.who, row.tracked, row.idle, row.idleEvents],
-              }))}
-              empty={analytics.activity.empty}
-              emptyCopy={analytics.activity.emptyCopy}
-              testId="v2-analytics-activity"
-            />
-          </section>
-
-          <section className="df-card df-analytics-register" data-testid="v2-analytics-coverage">
-            <div className="df-card-head">
-              <div className="df-card-head-text">
-                <h2 className="df-card-title">Evidence coverage</h2>
-                <p className="df-card-sub">
-                  How much of the tracked time carries Activity Evidence. Observational only.
-                </p>
-              </div>
-            </div>
-            <FigureBand figures={analytics.coverage.summary} testId="v2-analytics-coverage" />
-            <AnalyticsRegister
-              stacked={stacked}
-              head={["Member", "Tracked", "Entries", "Evidence", "Coverage"]}
-              rows={analytics.coverage.rows.map((row) => ({
-                id: row.userId,
-                cells: [row.who, row.tracked, row.entries, row.evidence, row.coverage],
-              }))}
-              empty={analytics.coverage.empty}
-              emptyCopy={analytics.coverage.emptyCopy}
-              testId="v2-analytics-coverage-row"
-            />
-          </section>
-
-          {evidenceQualityRead === "loading" ? null : (
-            <section className="df-card df-analytics-register" data-testid="v2-analytics-evidence-quality">
-              <div className="df-card-head">
-                <div className="df-card-head-text">
-                  <h2 className="df-card-title">Evidence quality</h2>
-                  {evidenceQualityRead === "ready" ? (
-                    <p className="df-card-sub">{analytics.evidenceQuality.footnote}</p>
-                  ) : null}
-                </div>
-              </div>
-              {evidenceQualityRead === "failed" ? (
-                <p className="df-refusal">
-                  Evidence quality could not be read for this range. Nothing here is a count of zero.
-                </p>
-              ) : (
-                <AnalyticsRegister
-                  stacked={stacked}
-                  head={["Member", "Grade", "Evidence", "Events"]}
-                  rows={analytics.evidenceQuality.rows.map((row) => ({
-                    id: row.id,
-                    cells: [row.who, row.grade, row.evidence, row.events],
-                  }))}
-                  empty={analytics.evidenceQuality.empty}
-                  emptyCopy={analytics.evidenceQuality.emptyCopy}
-                  testId="v2-analytics-evidence-quality"
-                />
-              )}
-            </section>
-          )}
-
-          {screenshotsRead === "loading" ? null : (
-            <section className="df-card df-analytics-register" data-testid="v2-analytics-screenshots">
-              <div className="df-card-head">
-                <div className="df-card-head-text">
-                  <h2 className="df-card-title">Activity Evidence</h2>
-                  <p className="df-card-sub">Captures in this range. Observational only.</p>
-                </div>
-              </div>
-              {screenshotsRead === "failed" ? (
-                <p className="df-refusal">
-                  Activity Evidence could not be read for this range. Nothing here is a count of zero.
-                </p>
-              ) : (
-                <>
-                  <FigureBand figures={analytics.screenshots.summary} testId="v2-analytics-screenshots" />
-                  {analytics.screenshots.empty ? (
-                    <V2CompactEmpty>{analytics.screenshots.emptyCopy}</V2CompactEmpty>
-                  ) : (
-                    <>
-                      <p className="df-analytics-group-label">By member</p>
-                      <AnalyticsRegister
-                        stacked={stacked}
-                        head={["Member", "Evidence"]}
-                        rows={analytics.screenshots.byMember.map((row) => ({
-                          id: row.id,
-                          cells: [row.who, row.evidence],
-                        }))}
-                        empty={analytics.screenshots.byMember.length === 0}
-                        emptyCopy="No Activity Evidence by Member in this range."
-                        testId="v2-analytics-screenshot-member"
-                      />
-                      <p className="df-analytics-group-label">By hour</p>
-                      <AnalyticsRegister
-                        stacked={stacked}
-                        head={["Hour", "Evidence"]}
-                        rows={analytics.screenshots.hours.map((row) => ({
-                          id: row.id,
-                          cells: [row.hour, row.evidence],
-                        }))}
-                        empty={analytics.screenshots.hours.length === 0}
-                        emptyCopy="No hourly Activity Evidence in this range."
-                        testId="v2-analytics-screenshot-hour"
-                      />
-                    </>
-                  )}
-                </>
-              )}
-            </section>
-          )}
-
-          <section className="df-card df-analytics-register" data-testid="v2-analytics-devices">
-            <div className="df-card-head">
-              <div className="df-card-head-text">
-                <h2 className="df-card-title">Workspace Devices</h2>
-                <p className="df-card-sub">Every Device paired in this Workspace.</p>
-              </div>
-            </div>
-            <AnalyticsRegister
-              stacked={stacked}
-              head={["Device", "Member", "Platform", "Last seen", "Status"]}
-              rows={analytics.devices.rows.map((row) => ({
-                id: row.id,
-                cells: [row.name, row.who, row.platform, row.lastSeen, row.status],
-              }))}
-              empty={analytics.devices.empty}
-              emptyCopy={analytics.devices.emptyCopy}
-              testId="v2-analytics-device"
-            />
-          </section>
-        </>
-      )}
-    </>
-  );
-}
-
-/**
- * Recorded time says what it measures, over which range, and for whom before
- * any number (#281). The totals read as a sentence; each breakdown names whose
- * or where the hours are before its rows.
- */
-function RecordedTimeCard({
-  recordedTime,
-  read,
-  stacked,
-}: {
-  recordedTime: RecordedTimeModel;
-  read: Exclude<ReportRead, "loading">;
-  stacked: boolean;
-}) {
-  const { sections } = recordedTime;
-  return (
-    <section className="df-card df-analytics-register" data-testid="v2-analytics-recorded-time">
-      <div className="df-card-head">
-        <div className="df-card-head-text">
-          <h2 className="df-card-title">Recorded time</h2>
-          <p className="df-card-sub">{recordedTime.measures}</p>
-        </div>
-      </div>
-      {read === "failed" ? (
-        <p className="df-refusal">
-          Recorded time could not be read for this range. Nothing here is a count of zero.
-        </p>
-      ) : recordedTime.empty ? (
-        <V2CompactEmpty>{recordedTime.emptyCopy}</V2CompactEmpty>
-      ) : (
-        <>
-          <p className="df-recorded-sentence" data-testid="v2-analytics-recorded-time-sentence">
-            {recordedTime.sentence}
-          </p>
-          <FigureBand figures={recordedTime.summary} testId="v2-analytics-recorded-time-summary" />
-          <RecordedTimeBreakdown
-            section={sections.members}
-            stacked={stacked}
-            rows={recordedTime.rows.map((row) => ({ id: row.id, cells: [row.who, row.tracked, row.idle, row.entries] }))}
-            testId="v2-analytics-recorded-time-member"
-          />
-          <RecordedTimeBreakdown
-            section={sections.projects}
-            stacked={stacked}
-            rows={recordedTime.projects.map((row) => ({ id: row.id, cells: [row.name, row.tracked, row.entries] }))}
-            testId="v2-analytics-recorded-time-project"
-          />
-          <RecordedTimeBreakdown
-            section={sections.tasks}
-            stacked={stacked}
-            rows={recordedTime.tasks.map((row) => ({ id: row.id, cells: [row.name, row.tracked] }))}
-            testId="v2-analytics-recorded-time-task"
-          />
-          <RecordedTimeBreakdown
-            section={sections.days}
-            stacked={stacked}
-            rows={recordedTime.days.map((row) => ({ id: row.id, cells: [row.day, row.tracked] }))}
-            testId="v2-analytics-recorded-time-day"
-          />
-        </>
-      )}
+      ) : null}
+      {children}
     </section>
   );
 }
 
-function RecordedTimeBreakdown({
-  section,
-  stacked,
-  rows,
-  testId,
-}: {
-  section: RecordedTimeSection;
-  stacked: boolean;
-  rows: Array<{ id: string; cells: string[] }>;
-  testId: string;
-}) {
+function FigureSkeleton({ tiles }: { tiles: number }) {
   return (
-    <>
-      <p className="df-analytics-group-label">{section.label}</p>
-      <p className="df-analytics-group-caption">{section.caption}</p>
-      <AnalyticsRegister
-        stacked={stacked}
-        head={section.head}
-        rows={rows}
-        empty={rows.length === 0}
-        emptyCopy={section.emptyCopy}
-        testId={testId}
-      />
-    </>
+    <div className="df-figure-band" data-figures={tiles} aria-hidden="true">
+      {Array.from({ length: tiles }, (_, index) => (
+        <div key={index} className="df-analytics-figure">
+          <SkeletonBar width="short" />
+          <SkeletonBar role="value" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function FigureBandCard({
+  productivity,
+  coverage,
+}: {
+  productivity: AnalyticsRead<AnalyticsProductivityInput>;
+  coverage: AnalyticsRead<AnalyticsCoverageInput>;
+}) {
+  const loading = productivity.state === "loading" || coverage.state === "loading";
+  return (
+    <AnalyticsCard testId="v2-analytics-overview-card" refreshing={productivity.refreshing || coverage.refreshing}>
+      {loading ? (
+        <FigureSkeleton tiles={5} />
+      ) : (
+        <FigureBand figures={composeFigureBand(productivity.data, coverage.data)} testId="v2-analytics-overview" />
+      )}
+      <p className="df-note">{FIGURE_NOTE}</p>
+    </AnalyticsCard>
+  );
+}
+
+function WarningsCard({
+  read,
+  now,
+  stacked,
+}: {
+  read: AnalyticsRead<AnalyticsAlertsInput>;
+  now: Date;
+  stacked: boolean;
+}) {
+  const warnings = read.data ? composeWarnings(read.data, now) : null;
+  return (
+    <AnalyticsCard title="Warnings" id="alerts" testId="v2-analytics-alerts" refreshing={read.refreshing}>
+      {read.state === "loading" ? (
+        <SkeletonRows columns={3} rows={3} dataColumns />
+      ) : read.state === "failed" || !warnings ? (
+        <V2LoadFailed title="Warnings could not be loaded" onRetry={read.retry} testId="v2-analytics-alerts-failed" />
+      ) : warnings.empty ? (
+        <V2CompactEmpty>No warnings</V2CompactEmpty>
+      ) : (
+        <>
+          {warnings.stalledDevices.length > 0 ? (
+            <>
+              <p className="df-analytics-group-label">Stalled Devices</p>
+              <LimitedRegister
+                stacked={stacked}
+                limit={WARNING_ROWS}
+                head={["Device", "Member", "Last seen"]}
+                rows={warnings.stalledDevices.map((row) => ({ id: row.id, cells: [row.name, row.who, row.lastSeen] }))}
+                testId="v2-analytics-alert-device"
+              />
+            </>
+          ) : null}
+          {warnings.mostlyIdle.length > 0 ? (
+            <>
+              <p className="df-analytics-group-label">Mostly idle</p>
+              <LimitedRegister
+                stacked={stacked}
+                limit={WARNING_ROWS}
+                numeric
+                head={["Member", "Tracked", "Idle %"]}
+                rows={warnings.mostlyIdle.map((row) => ({ id: row.id, cells: [row.who, row.tracked, row.idle] }))}
+                testId="v2-analytics-alert-idle"
+              />
+            </>
+          ) : null}
+          {warnings.runningWithoutCaptures.length > 0 ? (
+            <>
+              <p className="df-analytics-group-label">Running without captures</p>
+              <LimitedRegister
+                stacked={stacked}
+                limit={WARNING_ROWS}
+                head={["Member", "Started"]}
+                rows={warnings.runningWithoutCaptures.map((row) => ({ id: row.id, cells: [row.who, row.started] }))}
+                testId="v2-analytics-alert-running"
+              />
+            </>
+          ) : null}
+        </>
+      )}
+    </AnalyticsCard>
+  );
+}
+
+function HoursCard({ read }: { read: AnalyticsRead<AnalyticsProductivityInput> }) {
+  const chart = useMemo(
+    () => (read.data ? composeHoursChart(read.data.dailyTrend, read.range) : null),
+    [read.data, read.range],
+  );
+  // Recorded time says it for both.
+  if (chart?.empty && read.state === "ready") return null;
+  if (!chart || read.state !== "ready") {
+    return (
+      <AnalyticsCard title="Hours per day" testId="v2-analytics-hours-card">
+        {read.state === "failed" ? (
+          <V2LoadFailed title="Hours per day could not be loaded" onRetry={read.retry} testId="v2-analytics-hours-failed" />
+        ) : (
+          <div className="df-chart-body">
+            <ChartSkeleton />
+          </div>
+        )}
+      </AnalyticsCard>
+    );
+  }
+  return (
+    <div data-refreshing={read.refreshing ? "true" : undefined} aria-busy={read.refreshing || undefined}>
+      <ChartCard title={chart.grain === "week" ? "Hours per week" : "Hours per day"} table={chart.table} testId="v2-analytics-hours">
+        <HoursPerDayChart chart={chart} />
+      </ChartCard>
+    </div>
+  );
+}
+
+const TAB_LABEL: Record<AnalyticsTab, string> = { members: "Members", projects: "Projects", tasks: "Tasks" };
+
+/** Only the name is a link; a client or a project sits beneath it in muted text. */
+function NameCell({ href, name, below, testId }: { href: string | null; name: string; below?: string | null; testId: string }) {
+  const label = href ? (
+    <Link href={href} className="df-row-link df-analytics-link" data-testid={testId}>
+      {name}
+    </Link>
+  ) : (
+    name
+  );
+  if (!below) return <>{label}</>;
+  return (
+    <span className="df-analytics-name">
+      <span>{label}</span>
+      <span className="df-meta">{below}</span>
+    </span>
+  );
+}
+
+function RecordedTimeCard({
+  read,
+  tab,
+  onTab,
+  stacked,
+}: {
+  read: AnalyticsRead<AnalyticsProductivityInput>;
+  tab: AnalyticsTab;
+  onTab: (tab: AnalyticsTab) => void;
+  stacked: boolean;
+}) {
+  const recorded = read.data ? composeRecordedTime(read.data) : null;
+  const title = "Recorded time";
+  if (!recorded || read.state !== "ready") {
+    return (
+      <AnalyticsCard title={title} testId="v2-analytics-recorded-time">
+        {read.state === "failed" ? (
+          <V2LoadFailed title="Recorded time could not be loaded" onRetry={read.retry} testId="v2-analytics-recorded-time-failed" />
+        ) : (
+          <SkeletonLines count={5} />
+        )}
+      </AnalyticsCard>
+    );
+  }
+  return (
+    <AnalyticsCard title={title} testId="v2-analytics-recorded-time" refreshing={read.refreshing}>
+      {recorded.empty ? (
+        <V2CompactEmpty>No tracked time in this range</V2CompactEmpty>
+      ) : (
+        <Tabs value={tab} onValueChange={(next) => onTab(next as AnalyticsTab)} activationMode="manual">
+          <div className="df-analytics-tabs">
+            <TabsList className="df-tabs" aria-label="Recorded time by">
+              {(Object.keys(TAB_LABEL) as AnalyticsTab[]).map((id) => (
+                <TabsTrigger key={id} value={id} className="df-tab" data-testid={`v2-analytics-tab-${id}`}>
+                  {TAB_LABEL[id]}
+                  <span className="df-tab-count">{recorded.counts[id]}</span>
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </div>
+          <TabsContent value="members" data-testid="v2-analytics-panel-members">
+            <LimitedRegister
+              stacked={stacked}
+              limit={RECORDED_ROWS}
+              numeric
+              head={["Member", "Tracked", "Idle", "Time Entries"]}
+              rows={recorded.members.map((row) => ({
+                id: row.id,
+                cells: [
+                  <NameCell key="n" href={row.href} name={row.name} testId={`v2-analytics-member-link-${row.id}`} />,
+                  row.tracked,
+                  row.idle,
+                  row.entries,
+                ],
+              }))}
+              testId="v2-analytics-recorded-time-member"
+            />
+          </TabsContent>
+          <TabsContent value="projects" data-testid="v2-analytics-panel-projects">
+            <LimitedRegister
+              stacked={stacked}
+              limit={RECORDED_ROWS}
+              numeric
+              head={["Project", "Tracked", "Time Entries"]}
+              rows={recorded.projects.map((row) => ({
+                id: row.id,
+                cells: [
+                  <NameCell key="n" href={row.href} name={row.name} below={row.client} testId={`v2-analytics-project-link-${row.id}`} />,
+                  row.tracked,
+                  row.entries,
+                ],
+              }))}
+              testId="v2-analytics-recorded-time-project"
+            />
+          </TabsContent>
+          <TabsContent value="tasks" data-testid="v2-analytics-panel-tasks">
+            <LimitedRegister
+              stacked={stacked}
+              limit={RECORDED_ROWS}
+              numeric
+              head={["Task", "Tracked"]}
+              rows={recorded.tasks.map((row) => ({
+                id: row.id,
+                cells: [
+                  <NameCell
+                    key="n"
+                    href={row.href}
+                    name={row.name}
+                    below={[row.project, row.client].filter(Boolean).join(" · ") || null}
+                    testId={`v2-analytics-task-link-${row.id}`}
+                  />,
+                  row.tracked,
+                ],
+              }))}
+              testId="v2-analytics-recorded-time-task"
+            />
+          </TabsContent>
+        </Tabs>
+      )}
+    </AnalyticsCard>
+  );
+}
+
+function CapturesCard({
+  read,
+  hourly,
+  stacked,
+}: {
+  read: AnalyticsRead<AnalyticsCoverageInput>;
+  hourly: AnalyticsRead<AnalyticsScreenshotsInput>;
+  stacked: boolean;
+}) {
+  const title = "Captures";
+  const captures = read.data ? composeCaptures(read.data, read.range) : null;
+  if (!captures || read.state !== "ready") {
+    return (
+      <AnalyticsCard title={title} testId="v2-analytics-captures">
+        {read.state === "failed" ? (
+          <V2LoadFailed title="Captures could not be loaded" onRetry={read.retry} testId="v2-analytics-captures-failed" />
+        ) : (
+          <>
+            <FigureSkeleton tiles={4} />
+            <SkeletonRows columns={4} rows={3} dataColumns />
+          </>
+        )}
+      </AnalyticsCard>
+    );
+  }
+  const hours = hourly.data ? composeHourly(hourly.data) : null;
+  return (
+    <AnalyticsCard title={title} testId="v2-analytics-captures" refreshing={read.refreshing || hourly.refreshing}>
+      <FigureBand figures={captures.figures} testId="v2-analytics-captures-figures" />
+      <p className="df-note">{captures.line}</p>
+      {captures.rows.length === 0 ? (
+        <V2CompactEmpty>No Members with tracked time in this range</V2CompactEmpty>
+      ) : (
+        <AnalyticsRegister
+          stacked={stacked}
+          numeric
+          head={["Member", "Tracked", "Captures", "Coverage"]}
+          rows={captures.rows.map((row) => ({
+            id: row.id,
+            cells: [
+              <NameCell key="n" href={row.href} name={row.name} testId={`v2-analytics-capture-link-${row.id}`} />,
+              row.tracked,
+              row.captures,
+              row.coverage,
+            ],
+          }))}
+          empty={false}
+          emptyCopy=""
+          testId="v2-analytics-capture-row"
+        />
+      )}
+      {hourly.state === "failed" ? (
+        <V2LoadFailed title="Captures by hour could not be loaded" onRetry={hourly.retry} testId="v2-analytics-hourly-failed" />
+      ) : hours && hourly.state === "ready" ? (
+        <CapturesByHour hourly={hours} />
+      ) : (
+        <div className="df-chart-body">
+          <ChartSkeleton />
+        </div>
+      )}
+    </AnalyticsCard>
+  );
+}
+
+function DevicesCard({
+  read,
+  now,
+  stacked,
+}: {
+  read: AnalyticsRead<AnalyticsDeviceInput[]>;
+  now: Date;
+  stacked: boolean;
+}) {
+  const rows = read.data ? composeDevices(read.data, now) : null;
+  return (
+    <AnalyticsCard title="Devices" testId="v2-analytics-devices">
+      {read.state === "loading" ? (
+        <SkeletonRows columns={5} rows={3} dataColumns />
+      ) : read.state === "failed" || !rows ? (
+        <V2LoadFailed title="Devices could not be loaded" onRetry={read.retry} testId="v2-analytics-devices-failed" />
+      ) : rows.length === 0 ? (
+        <V2CompactEmpty>No Devices in this Workspace</V2CompactEmpty>
+      ) : (
+        <LimitedRegister
+          stacked={stacked}
+          limit={DEVICE_ROWS}
+          head={["Device", "Member", "Platform", "Last seen", "Status"]}
+          rows={rows.map((row) => ({
+            id: row.id,
+            cells: [row.name, row.who, row.platform, row.lastSeen, row.status],
+          }))}
+          testId="v2-analytics-device"
+        />
+      )}
+    </AnalyticsCard>
   );
 }
 
 export function FigureBand({ figures, testId }: { figures: AnalyticsFigure[]; testId: string }) {
   if (figures.length === 0) return null;
   return (
-    <div className="df-figure-band" data-testid={testId}>
+    <div className="df-figure-band" data-figures={figures.length} data-testid={testId}>
       {figures.map((figure) => (
         <div key={figure.label} className="df-analytics-figure">
           <span className="df-analytics-figure-label">{figure.label}</span>
@@ -642,6 +661,47 @@ export function FigureBand({ figures, testId }: { figures: AnalyticsFigure[]; te
   );
 }
 
+/** The first rows of a register and the one button that shows the rest. */
+function LimitedRegister({
+  rows,
+  limit,
+  ...register
+}: {
+  stacked: boolean;
+  head: string[];
+  rows: Array<{ id: string; cells: ReactNode[] }>;
+  limit: number;
+  numeric?: boolean;
+  testId: string;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const shown = limitRows(rows, limit, expanded);
+  return (
+    <>
+      <AnalyticsRegister {...register} rows={shown.rows} empty={false} emptyCopy="" />
+      {shown.toggle ? (
+        <div className="df-analytics-more">
+          <Button
+            type="button"
+            variant="ghost"
+            className="df-btn"
+            aria-expanded={shown.toggle.expanded}
+            onClick={() => setExpanded(!expanded)}
+            data-testid={`${register.testId}-toggle`}
+          >
+            {shown.toggle.label}
+          </Button>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+/**
+ * A register of rows. With `numeric`, every column after the first holds
+ * numbers: right-aligned in tabular figures, their heads on the same edge, and
+ * a stacked row names each one.
+ */
 export function AnalyticsRegister({
   stacked,
   head,
@@ -649,21 +709,26 @@ export function AnalyticsRegister({
   empty,
   emptyCopy,
   testId,
+  numeric = false,
 }: {
   stacked: boolean;
   head: string[];
-  rows: Array<{ id: string; cells: string[] }>;
+  rows: Array<{ id: string; cells: ReactNode[] }>;
   empty: boolean;
   emptyCopy: string;
   testId: string;
+  numeric?: boolean;
 }) {
   if (empty) return <V2CompactEmpty>{emptyCopy}</V2CompactEmpty>;
+  const align = (index: number) => (numeric && index > 0 ? "end" : undefined);
   return (
     <>
       {stacked ? null : (
         <div className="df-register-head df-desktop-only" data-columns={head.length}>
-          {head.map((label) => (
-            <span key={label}>{label}</span>
+          {head.map((label, index) => (
+            <span key={label} data-align={align(index)}>
+              {label}
+            </span>
           ))}
         </div>
       )}
@@ -678,14 +743,27 @@ export function AnalyticsRegister({
             <span className="df-project-mobile">
               <span style={{ minWidth: 0, flex: 1 }}>
                 <div className="df-row-title">{row.cells[0]}</div>
-                <div className="df-mono df-meta">{row.cells.slice(1).join(" · ")}</div>
+                <div className="df-mono df-meta">
+                  {row.cells.slice(1).map((cell, index) => (
+                    <Fragment key={head[index + 1]}>
+                      {index > 0 ? " · " : null}
+                      {numeric ? (
+                        <span className="df-analytics-pair">
+                          {head[index + 1]} {cell}
+                        </span>
+                      ) : (
+                        cell
+                      )}
+                    </Fragment>
+                  ))}
+                </div>
               </span>
             </span>
           ) : (
             <>
               <span className="df-row-title">{row.cells[0]}</span>
               {row.cells.slice(1).map((cell, index) => (
-                <span key={head[index + 1]} className="df-mono df-meta">
+                <span key={head[index + 1]} className="df-mono df-meta" data-align={align(index + 1)}>
                   {cell}
                 </span>
               ))}

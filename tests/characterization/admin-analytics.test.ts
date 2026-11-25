@@ -11,8 +11,10 @@ import { createCrmProject, createTask, startTimer } from "../helpers/fixtures";
  *  - Every analytics route is admin-only and defaults to the last seven days
  *    when no range is given.
  *  - The reports are observational: none of them modifies tracked time.
- *  - The export is a CSV body with a fixed seven-column header, covering
- *    stopped entries only, and names the file after the range start.
+ *  - Every entry touching the range counts, running and paused ones included,
+ *    in the reports and in the export (F95, F98).
+ *  - The export is a CSV body with a fixed header and a UTF-8 mark, and names
+ *    the file after the range's first and last day.
  *  - Durations in the export are hours to two decimals; the CSV quotes the text
  *    columns and doubles embedded quotes.
  */
@@ -88,7 +90,7 @@ describe("admin analytics (characterization)", () => {
     }
   });
 
-  it("counts a running entry in the overview and leaves it out of the export", async () => {
+  it("counts a running entry in the overview and in the export", async () => {
     const app = await makeApp();
     const admin = await registerAdmin(app, { firstName: "Ada", lastName: "Admin" });
     const { crmProject } = await createCrmProject(admin.agent, { name: "Analytics Project", status: "won_in_progress" });
@@ -99,7 +101,7 @@ describe("admin analytics (characterization)", () => {
     await startTimer(admin.agent, crmProject.id, task.id, "still going");
 
     const overview = await admin.agent.get("/api/admin/analytics/overview");
-    expect(overview.body.entriesCount).toBe(1);
+    expect(overview.body.entriesCount).toBe(2);
     expect(overview.body.runningNow).toBe(1);
     expect(overview.body.activeUsersToday).toBe(1);
 
@@ -107,21 +109,23 @@ describe("admin analytics (characterization)", () => {
     expect(exported.status).toBe(200);
     expect(exported.headers["content-type"]).toContain("text/csv");
     expect(exported.headers["content-disposition"]).toMatch(
-      /^attachment; filename="docuflow-export-\d{4}-\d{2}-\d{2}\.csv"$/
+      /^attachment; filename="docuflow-time-\d{4}-\d{2}-\d{2}-to-\d{4}-\d{2}-\d{2}\.csv"$/
     );
 
-    const rows = exported.text.split("\n");
-    expect(rows[0]).toBe("Date,User,Project,Task,Description,Duration (h),Idle (h)");
-    // Only the stopped entry is exported.
-    expect(rows).toHaveLength(2);
-    const columns = rows[1].split(",");
-    expect(columns[0]).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-    expect(rows[1]).toContain('"Ada Admin"');
-    expect(rows[1]).toContain('"Analytics Project"');
-    expect(rows[1]).toContain('"Analysis"');
+    const rows = exported.text.split("\r\n");
+    expect(rows[0]).toBe("\uFEFFDate,Start,End,Member,Client,Project,Task,Description,Status,Tracked (h),Idle (h)");
+    // Newest first: the running entry, then the stopped one.
+    expect(rows).toHaveLength(3);
+    expect(rows[1]).toContain('"still going","running"');
+    expect(rows[1].split(",")[2]).toBe("");
+    expect(rows[2].split(",")[0]).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(rows[2].split(",")[2]).toMatch(/^\d{2}:\d{2}$/);
+    expect(rows[2]).toContain('"Ada Admin"');
+    expect(rows[2]).toContain('"Analytics Project"');
+    expect(rows[2]).toContain('"Analysis"');
     // Embedded quotes are doubled, CSV-style.
-    expect(rows[1]).toContain('"said ""hello"""');
-    expect(rows[1].endsWith("0.00,0.00")).toBe(true);
+    expect(rows[2]).toContain('"said ""hello"""');
+    expect(rows[2].endsWith("0.00,0.00")).toBe(true);
   });
 
   it("honours an explicit date range and a user filter", async () => {
@@ -135,8 +139,8 @@ describe("admin analytics (characterization)", () => {
 
     const inRange = await admin.agent
       .get("/api/admin/analytics/export")
-      .query({ start: "2020-01-01T00:00:00.000Z" });
-    expect(inRange.headers["content-disposition"]).toContain("docuflow-export-2020-01-01.csv");
+      .query({ start: "2020-01-01T00:00:00.000Z", tz: "UTC" });
+    expect(inRange.headers["content-disposition"]).toContain("docuflow-time-2020-01-01-to-");
     expect(inRange.text.split("\n")).toHaveLength(2);
 
     // A window that ended before the entry started excludes it.

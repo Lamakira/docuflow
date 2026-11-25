@@ -652,7 +652,10 @@ describe("Analytics and Today sections", () => {
     for (const file of ["V2Analytics.tsx", "V2Today.tsx"]) {
       const source = v2(file);
       expect(source).toContain("<V2CompactEmpty");
-      expect(source).not.toContain("<V2EmptyState");
+      // Analytics draws its refusal with it, and nothing else.
+      const designed = source.match(/<V2EmptyState/g) ?? [];
+      expect(designed, file).toHaveLength(file === "V2Analytics.tsx" ? 1 : 0);
     }
+    expect(v2("V2Analytics.tsx")).toContain('<V2EmptyState icon="access"');
   });
 });

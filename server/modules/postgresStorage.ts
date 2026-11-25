@@ -167,13 +167,23 @@ import {
 } from "./activity/evidence";
 import { notDuplicateCapture } from "./activity/duplicates";
 import { getScreenshotPolicy, upsertScreenshotPolicy } from "./activity/policy";
+import type { ScreenshotCoverageReport } from "./activity/persistence";
 import { getAllowedTimezones, upsertAllowedTimezones } from "./time/schedule";
 import { applyTimerCommand, listTimerCommands } from "./time/commands";
-import type { TimeEntryPage, TimeEntryPageOptions, TimePortionOptions, TimePortionRow } from "./time/persistence";
+import { dayCalendar, dayPortions } from "./time/dayCalendar";
+import type { TimeExportRow } from "./time/timeExport";
+import type {
+  AnalyticsOptions,
+  TimeEntryPage,
+  TimeEntryPageOptions,
+  TimePortionOptions,
+  TimePortionRow,
+  TimeSpanRow,
+} from "./time/persistence";
 import { assertSeatAvailable } from "./billing/seats";
 import { setDailyUpdatesGrant } from "./workspace/membershipManagement";
 import type { ImportableUser } from "./identity/userImport";
-import { eq, ne, and, desc, like, or, isNull, isNotNull, sql, gte, lt, lte, asc, count, inArray, ilike, getTableColumns, type AnyColumn, type SQL } from "drizzle-orm";
+import { eq, ne, and, desc, like, or, isNull, isNotNull, sql, gte, lt, lte, asc, count, max, notExists, inArray, ilike, getTableColumns, type AnyColumn, type SQL } from "drizzle-orm";
 import type {
   CrmProjectListOptions,
   ProjectDocumentScope,
@@ -185,15 +195,57 @@ import type { CrmClientListOptions, CrmClientRegisterRow } from "./clients-sales
 
 
 /**
- * Devices and Users carry no `workspace_id` of their own — a Device belongs to
- * a Workspace through the Membership of the User who enrolled it. Operator
- * reads scope through this rather than reading the whole table (ADR-0006).
+ * Devices carry no `workspace_id` of their own: a Device belongs to a Workspace
+ * through its enrollment there, not through its User, who may have Memberships
+ * in several. Operator reads scope through this (ADR-0006).
  */
-function workspaceUserIds() {
+function enrolledDeviceIds() {
   return db
-    .select({ userId: memberships.userId })
-    .from(memberships)
-    .where(inWorkspace(memberships));
+    .select({ deviceId: deviceEnrollments.deviceId })
+    .from(deviceEnrollments)
+    .where(inWorkspace(deviceEnrollments));
+}
+
+function stalledBefore(): Date {
+  return new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+}
+
+/** Not revoked, silent for over 7 days, and enrolled by a Membership still in the Workspace. */
+function isStalledDevice() {
+  return and(
+    inArray(
+      devices.id,
+      db
+        .select({ deviceId: deviceEnrollments.deviceId })
+        .from(deviceEnrollments)
+        .innerJoin(memberships, eq(memberships.id, deviceEnrollments.membershipId))
+        .where(and(inWorkspace(deviceEnrollments), inWorkspace(memberships), isNull(memberships.archivedAt))),
+    ),
+    isNull(devices.revokedAt),
+    lt(devices.lastSeenAt, stalledBefore()),
+  );
+}
+
+function personName(person: { firstName: string | null; lastName: string | null; email: string }): string {
+  return `${person.firstName || ""} ${person.lastName || ""}`.trim() || person.email;
+}
+
+/** Idle time is kept beside the tracked time: together they are the wall time. */
+function idleRatioOf(seconds: number, idleSeconds: number): number {
+  const total = seconds + idleSeconds;
+  return total > 0 ? Math.round((idleSeconds / total) * 100) : 0;
+}
+
+/**
+ * The quarter hour a capture was taken in, counted from 1970. Every time zone is
+ * a whole number of quarters from UTC, so its day and hour are read from this.
+ */
+function captureQuarter() {
+  return sql<number>`floor(extract(epoch from ${timeEntryScreenshots.capturedAt}) / 900)::int`;
+}
+
+function quarterStart(quarter: number): Date {
+  return new Date(quarter * 900_000);
 }
 
 /**
@@ -2760,6 +2812,21 @@ export class DatabaseStorage implements IStorage {
    * unless `includeActive`.
    */
   async getTimePortions(options: TimePortionOptions): Promise<TimePortionRow[]> {
+    return (await this.getTimeSpans(options)).map((row) => ({
+      id: row.id,
+      userId: row.userId,
+      userName: row.userName,
+      crmProjectId: row.crmProjectId,
+      projectName: row.projectName ?? "Unknown Project",
+      taskId: row.taskId,
+      taskName: row.taskName,
+      seconds: row.seconds,
+      idleSeconds: row.idleSeconds,
+    }));
+  }
+
+  /** The same entries with their whole span, for a reader that splits it further. */
+  private async getTimeSpans(options: TimePortionOptions): Promise<TimeSpanRow[]> {
     const now = new Date();
     const conditions = [inWorkspace(timeEntries)];
     if (options.userId) conditions.push(eq(timeEntries.userId, options.userId));
@@ -2784,7 +2851,9 @@ export class DatabaseStorage implements IStorage {
         idleTime: timeEntries.idleTime,
         status: timeEntries.status,
         lastActivityAt: timeEntries.lastActivityAt,
+        description: timeEntries.description,
         projectName: projects.name,
+        clientName: crmClients.name,
         taskName: tasks.name,
         firstName: users.firstName,
         lastName: users.lastName,
@@ -2793,23 +2862,29 @@ export class DatabaseStorage implements IStorage {
       .from(timeEntries)
       .leftJoin(users, eq(users.id, timeEntries.userId))
       .leftJoin(crmProjects, and(eq(crmProjects.id, timeEntries.crmProjectId), inWorkspace(crmProjects)))
-      .leftJoin(projects, eq(projects.id, crmProjects.projectId))
+      .leftJoin(projects, and(eq(projects.id, crmProjects.projectId), inWorkspace(projects)))
+      .leftJoin(crmClients, and(eq(crmClients.id, crmProjects.clientId), inWorkspace(crmClients)))
       .leftJoin(tasks, and(eq(tasks.id, timeEntries.taskId), inWorkspace(tasks)))
       .where(and(...conditions))
       .orderBy(desc(timeEntries.startTime), asc(timeEntries.id));
 
-    return rows.map((row) => ({
-      id: row.id,
-      userId: row.userId,
-      userName: row.email === null
-        ? "Unknown User"
-        : `${row.firstName || ""} ${row.lastName || ""}`.trim() || row.email,
-      crmProjectId: row.crmProjectId,
-      projectName: row.projectName || "Unknown Project",
-      taskId: row.taskId,
-      taskName: row.taskName,
-      ...timePortion(timeEntrySpan(row, now), { start: options.startDate, end: options.endDate }),
-    }));
+    return rows.map((row) => {
+      const span = timeEntrySpan(row, now);
+      return {
+        id: row.id,
+        userId: row.userId,
+        userName: row.email === null ? "Unknown User" : personName({ ...row, email: row.email }),
+        crmProjectId: row.crmProjectId,
+        projectName: row.projectName,
+        clientName: row.clientName,
+        taskId: row.taskId,
+        taskName: row.taskName,
+        description: row.description,
+        status: row.status,
+        span,
+        ...timePortion(span, { start: options.startDate, end: options.endDate }),
+      };
+    });
   }
 
   async getTimeEntry(id: string): Promise<TimeEntryWithDetails | undefined> {
@@ -3386,8 +3461,81 @@ export class DatabaseStorage implements IStorage {
   }
 
   // ─── Admin Analytics ───
+  //
+  // Every figure of time is a sum of `timePortion`s over the range (F67), the
+  // running and paused entries included, as Time Tracking counts it.
 
-  async getAdminOverview(opts: { startDate: Date; endDate: Date }): Promise<{
+  private analyticsSpans(opts: AnalyticsOptions): Promise<TimeSpanRow[]> {
+    return this.getTimeSpans({ ...opts, includeActive: true });
+  }
+
+  /** Live captures taken in the range, counted apart from the time so that neither repeats the other. */
+  private liveCapturesIn(opts: AnalyticsOptions): SQL[] {
+    const conditions = [
+      inWorkspace(timeEntryScreenshots),
+      gte(timeEntryScreenshots.capturedAt, opts.startDate),
+      lte(timeEntryScreenshots.capturedAt, opts.endDate),
+      sql`${timeEntryScreenshots.storageKey} NOT LIKE 'pending-%'`,
+      isNull(timeEntryScreenshots.deletedAt),
+    ];
+    if (opts.userId) conditions.push(eq(timeEntryScreenshots.userId, opts.userId));
+    if (opts.crmProjectId) conditions.push(eq(timeEntryScreenshots.crmProjectId, opts.crmProjectId));
+    return conditions;
+  }
+
+  private async countDeletedCaptures(opts: AnalyticsOptions): Promise<number> {
+    const conditions = [
+      inWorkspace(timeEntryScreenshots),
+      gte(timeEntryScreenshots.capturedAt, opts.startDate),
+      lte(timeEntryScreenshots.capturedAt, opts.endDate),
+      sql`${timeEntryScreenshots.storageKey} NOT LIKE 'pending-%'`,
+      isNotNull(timeEntryScreenshots.deletedAt),
+      notDuplicateCapture(),
+    ];
+    if (opts.userId) conditions.push(eq(timeEntryScreenshots.userId, opts.userId));
+    if (opts.crmProjectId) conditions.push(eq(timeEntryScreenshots.crmProjectId, opts.crmProjectId));
+    const [row] = await db.select({ count: count() }).from(timeEntryScreenshots).where(and(...conditions));
+    return row?.count ?? 0;
+  }
+
+  private async countActivityEvents(opts: AnalyticsOptions, eventType?: string): Promise<Map<string, number>> {
+    const conditions = [
+      inWorkspace(agentActivityEvents),
+      gte(agentActivityEvents.timestamp, opts.startDate),
+      lte(agentActivityEvents.timestamp, opts.endDate),
+    ];
+    if (eventType) conditions.push(eq(agentActivityEvents.eventType, eventType));
+    if (opts.userId) conditions.push(eq(agentActivityEvents.userId, opts.userId));
+    const rows = await db
+      .select({ userId: agentActivityEvents.userId, count: count() })
+      .from(agentActivityEvents)
+      .where(and(...conditions))
+      .groupBy(agentActivityEvents.userId);
+    return new Map(rows.map((row) => [row.userId, row.count]));
+  }
+
+  /** The last contact of each User's Devices enrolled in this Workspace. */
+  private async lastContactByUser(): Promise<Map<string, Date | null>> {
+    const rows = await db
+      .select({ userId: devices.userId, lastSeenAt: max(devices.lastSeenAt) })
+      .from(devices)
+      .where(and(inArray(devices.id, enrolledDeviceIds()), isNull(devices.revokedAt)))
+      .groupBy(devices.userId);
+    return new Map(rows.map((row) => [row.userId, row.lastSeenAt]));
+  }
+
+  private async userNames(ids: string[]): Promise<(id: string) => string> {
+    const rows = ids.length > 0
+      ? await db
+          .select({ id: users.id, firstName: users.firstName, lastName: users.lastName, email: users.email })
+          .from(users)
+          .where(inArray(users.id, Array.from(new Set(ids))))
+      : [];
+    const names = new Map(rows.map((row) => [row.id, personName(row)]));
+    return (id) => names.get(id) ?? "Unknown User";
+  }
+
+  async getAdminOverview(opts: AnalyticsOptions): Promise<{
     totalTrackedSeconds: number;
     totalIdleSeconds: number;
     entriesCount: number;
@@ -3397,173 +3545,87 @@ export class DatabaseStorage implements IStorage {
     lowActivityEntries: number;
     revokedDevices: number;
   }> {
-    const { startDate, endDate } = opts;
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
+    const now = new Date();
+    const calendar = dayCalendar(opts.timeZone);
+    const today = calendar.startOfDay(calendar.dayOf(now));
 
-    const [entriesStats] = await db.select({
-      totalDuration: sql<number>`COALESCE(SUM(${timeEntries.duration}), 0)::int`,
-      totalIdleTime: sql<number>`COALESCE(SUM(${timeEntries.idleTime}), 0)::int`,
-      entriesCount: sql<number>`COUNT(*)::int`,
-      lowActivity: sql<number>`COUNT(CASE WHEN ${timeEntries.duration} > 0 AND ${timeEntries.idleTime} > ${timeEntries.duration} * 0.5 THEN 1 END)::int`,
-    }).from(timeEntries).where(and(
-      inWorkspace(timeEntries),
-      eq(timeEntries.status, "stopped"),
-      sql`${timeEntries.startTime} >= ${startDate}`,
-      sql`${timeEntries.startTime} <= ${endDate}`,
-    ));
-
-    const [runningStats] = await db.select({
-      runningNow: sql<number>`COUNT(*)::int`,
-    }).from(timeEntries).where(and(inWorkspace(timeEntries), eq(timeEntries.status, "running")));
-
-    const [activeToday] = await db.select({
-      count: sql<number>`COUNT(DISTINCT ${timeEntries.userId})::int`,
-    }).from(timeEntries).where(and(inWorkspace(timeEntries), sql`${timeEntries.startTime} >= ${todayStart}`));
-
-    const [screenshotsCount] = await db.select({
-      count: sql<number>`COUNT(*)::int`,
-    }).from(timeEntryScreenshots).where(and(
-      inWorkspace(timeEntryScreenshots),
-      sql`${timeEntryScreenshots.capturedAt} >= ${startDate}`,
-      sql`${timeEntryScreenshots.capturedAt} <= ${endDate}`,
-      sql`${timeEntryScreenshots.storageKey} NOT LIKE 'pending-%'`,
-      isNull(timeEntryScreenshots.deletedAt),
-    ));
-
-    const [revokedCount] = await db.select({
-      count: sql<number>`COUNT(*)::int`,
-    }).from(devices).where(and(
-      inArray(devices.userId, workspaceUserIds()),
-      sql`${devices.revokedAt} IS NOT NULL`,
-    ));
+    const [entries, todayEntries, [running], [captures], [revoked]] = await Promise.all([
+      this.analyticsSpans(opts),
+      this.analyticsSpans({ ...opts, startDate: today, endDate: now }),
+      db.select({ count: count() }).from(timeEntries).where(and(inWorkspace(timeEntries), eq(timeEntries.status, "running"))),
+      db.select({ count: count() }).from(timeEntryScreenshots).where(and(...this.liveCapturesIn(opts))),
+      db.select({ count: count() }).from(devices).where(and(inArray(devices.id, enrolledDeviceIds()), isNotNull(devices.revokedAt))),
+    ]);
 
     return {
-      totalTrackedSeconds: entriesStats?.totalDuration ?? 0,
-      totalIdleSeconds: entriesStats?.totalIdleTime ?? 0,
-      entriesCount: entriesStats?.entriesCount ?? 0,
-      runningNow: runningStats?.runningNow ?? 0,
-      activeUsersToday: activeToday?.count ?? 0,
-      screenshotsInWindow: screenshotsCount?.count ?? 0,
-      lowActivityEntries: entriesStats?.lowActivity ?? 0,
-      revokedDevices: revokedCount?.count ?? 0,
+      totalTrackedSeconds: entries.reduce((sum, e) => sum + e.seconds, 0),
+      totalIdleSeconds: entries.reduce((sum, e) => sum + e.idleSeconds, 0),
+      entriesCount: entries.length,
+      runningNow: running?.count ?? 0,
+      activeUsersToday: new Set(todayEntries.map((e) => e.userId)).size,
+      screenshotsInWindow: captures?.count ?? 0,
+      lowActivityEntries: entries.filter((e) => e.idleSeconds > e.seconds).length,
+      revokedDevices: revoked?.count ?? 0,
     };
   }
 
-  async getAdminProductivity(opts: {
-    startDate: Date;
-    endDate: Date;
-    userId?: string;
-    crmProjectId?: string;
-  }): Promise<{
+  async getAdminProductivity(opts: AnalyticsOptions): Promise<{
     byUser: Array<{ userId: string; userName: string; totalSeconds: number; idleSeconds: number; entriesCount: number }>;
-    byProject: Array<{ crmProjectId: string; projectName: string; totalSeconds: number; entriesCount: number }>;
-    byTask: Array<{ taskId: string | null; taskName: string; totalSeconds: number }>;
+    byProject: Array<{ crmProjectId: string; projectName: string; clientName: string | null; totalSeconds: number; entriesCount: number }>;
+    byTask: Array<{ taskId: string; taskName: string; crmProjectId: string; projectName: string; clientName: string | null; totalSeconds: number }>;
     dailyTrend: Array<{ date: string; totalSeconds: number }>;
   }> {
-    const { startDate, endDate, userId, crmProjectId } = opts;
+    const calendar = dayCalendar(opts.timeZone);
+    const period = { start: opts.startDate, end: opts.endDate };
+    const people = new Map<string, { userId: string; userName: string; totalSeconds: number; idleSeconds: number; entriesCount: number }>();
+    const projectRows = new Map<string, { crmProjectId: string; projectName: string; clientName: string | null; totalSeconds: number; entriesCount: number }>();
+    const taskRows = new Map<string, { taskId: string; taskName: string; crmProjectId: string; projectName: string; clientName: string | null; totalSeconds: number }>();
+    const days = new Map<string, number>();
 
-    const baseConditions: any[] = [
-      eq(timeEntries.status, "stopped"),
-      sql`${timeEntries.startTime} >= ${startDate}`,
-      sql`${timeEntries.startTime} <= ${endDate}`,
-    ];
-    if (userId) baseConditions.push(eq(timeEntries.userId, userId));
-    if (crmProjectId) baseConditions.push(eq(timeEntries.crmProjectId, crmProjectId));
+    for (const entry of await this.analyticsSpans(opts)) {
+      const { userId, userName, crmProjectId, taskId, clientName } = entry;
+      const projectName = entry.projectName ?? "Unknown Project";
 
-    const byUserRaw = await db.select({
-      userId: timeEntries.userId,
-      totalSeconds: sql<number>`COALESCE(SUM(${timeEntries.duration}), 0)::int`,
-      idleSeconds: sql<number>`COALESCE(SUM(${timeEntries.idleTime}), 0)::int`,
-      entriesCount: sql<number>`COUNT(*)::int`,
-    }).from(timeEntries).where(and(...baseConditions))
-      .groupBy(timeEntries.userId)
-      .orderBy(sql`SUM(${timeEntries.duration}) DESC`);
+      const person = people.get(userId) ?? { userId, userName, totalSeconds: 0, idleSeconds: 0, entriesCount: 0 };
+      person.totalSeconds += entry.seconds;
+      person.idleSeconds += entry.idleSeconds;
+      person.entriesCount += 1;
+      people.set(userId, person);
 
-    const userIds = byUserRaw.map(r => r.userId);
-    const usersList = userIds.length > 0
-      ? await db.select({ id: users.id, firstName: users.firstName, lastName: users.lastName, email: users.email })
-          .from(users).where(inArray(users.id, userIds))
-      : [];
-    const usersMap = new Map(usersList.map(u => [u.id, u]));
-    const nameOf = (uid: string) => {
-      const u = usersMap.get(uid);
-      return u ? (`${u.firstName || ""} ${u.lastName || ""}`.trim() || u.email) : "Unknown";
-    };
+      const project = projectRows.get(crmProjectId) ?? { crmProjectId, projectName, clientName, totalSeconds: 0, entriesCount: 0 };
+      project.totalSeconds += entry.seconds;
+      project.entriesCount += 1;
+      projectRows.set(crmProjectId, project);
 
-    const byUser = byUserRaw.map(r => ({
-      userId: r.userId,
-      userName: nameOf(r.userId),
-      totalSeconds: r.totalSeconds,
-      idleSeconds: r.idleSeconds,
-      entriesCount: r.entriesCount,
-    }));
+      if (taskId) {
+        const task = taskRows.get(taskId)
+          ?? { taskId, taskName: entry.taskName ?? "Unknown Task", crmProjectId, projectName, clientName, totalSeconds: 0 };
+        task.totalSeconds += entry.seconds;
+        taskRows.set(taskId, task);
+      }
 
-    const byProjectRaw = await db.select({
-      crmProjectId: timeEntries.crmProjectId,
-      totalSeconds: sql<number>`COALESCE(SUM(${timeEntries.duration}), 0)::int`,
-      entriesCount: sql<number>`COUNT(*)::int`,
-    }).from(timeEntries).where(and(...baseConditions))
-      .groupBy(timeEntries.crmProjectId)
-      .orderBy(sql`SUM(${timeEntries.duration}) DESC`);
-
-    const projectIds = byProjectRaw.map(r => r.crmProjectId);
-    const projectNameMap = new Map<string, string>();
-    if (projectIds.length > 0) {
-      const crmList = await db.select({ id: crmProjects.id, projectId: crmProjects.projectId })
-        .from(crmProjects).where(inArray(crmProjects.id, projectIds));
-      const wikiIds = crmList.map(p => p.projectId).filter(Boolean) as string[];
-      const wikiList = wikiIds.length > 0
-        ? await db.select({ id: projects.id, name: projects.name }).from(projects).where(inArray(projects.id, wikiIds))
-        : [];
-      const wikiMap = new Map(wikiList.map(p => [p.id, p.name]));
-      for (const cp of crmList) {
-        projectNameMap.set(cp.id, (cp.projectId && wikiMap.get(cp.projectId)) || "Unknown Project");
+      for (const day of dayPortions(entry.span, period, calendar)) {
+        if (day.seconds > 0) days.set(day.date, (days.get(day.date) ?? 0) + day.seconds);
       }
     }
 
-    const byProject = byProjectRaw.map(r => ({
-      crmProjectId: r.crmProjectId,
-      projectName: projectNameMap.get(r.crmProjectId) || "Unknown Project",
-      totalSeconds: r.totalSeconds,
-      entriesCount: r.entriesCount,
-    }));
-
-    const byTaskRaw = await db.select({
-      taskId: timeEntries.taskId,
-      totalSeconds: sql<number>`COALESCE(SUM(${timeEntries.duration}), 0)::int`,
-    }).from(timeEntries).where(and(...baseConditions, sql`${timeEntries.taskId} IS NOT NULL`))
-      .groupBy(timeEntries.taskId)
-      .orderBy(sql`SUM(${timeEntries.duration}) DESC`)
-      .limit(20);
-
-    const taskIds = byTaskRaw.map(r => r.taskId).filter(Boolean) as string[];
-    const tasksList = taskIds.length > 0
-      ? await db.select({ id: tasks.id, name: tasks.name }).from(tasks).where(inArray(tasks.id, taskIds))
-      : [];
-    const tasksMap = new Map(tasksList.map(t => [t.id, t.name]));
-
-    const byTask = byTaskRaw.map(r => ({
-      taskId: r.taskId,
-      taskName: (r.taskId && tasksMap.get(r.taskId)) || "Unknown Task",
-      totalSeconds: r.totalSeconds,
-    }));
-
-    const dailyTrend = await db.select({
-      date: sql<string>`DATE(${timeEntries.startTime})::text`,
-      totalSeconds: sql<number>`COALESCE(SUM(${timeEntries.duration}), 0)::int`,
-    }).from(timeEntries).where(and(...baseConditions))
-      .groupBy(sql`DATE(${timeEntries.startTime})`)
-      .orderBy(sql`DATE(${timeEntries.startTime}) ASC`);
-
-    return { byUser, byProject, byTask, dailyTrend };
+    return {
+      byUser: Array.from(people.values()).sort((a, b) => b.totalSeconds - a.totalSeconds || a.userName.localeCompare(b.userName)),
+      byProject: Array.from(projectRows.values()).sort((a, b) => b.totalSeconds - a.totalSeconds || a.projectName.localeCompare(b.projectName)),
+      byTask: Array.from(taskRows.values()).sort((a, b) => b.totalSeconds - a.totalSeconds || a.taskName.localeCompare(b.taskName)),
+      dailyTrend: Array.from(days, ([date, totalSeconds]) => ({ date, totalSeconds })).sort((a, b) => a.date.localeCompare(b.date)),
+    };
   }
 
-  async getAdminActivityStats(opts: {
-    startDate: Date;
-    endDate: Date;
-    userId?: string;
-  }): Promise<{
+  async getTimeExport(opts: AnalyticsOptions): Promise<TimeExportRow[]> {
+    return (await this.analyticsSpans(opts)).map((entry) => ({
+      ...entry,
+      startTime: entry.span.start,
+      endTime: entry.status === "stopped" ? entry.span.end : null,
+    }));
+  }
+
+  async getAdminActivityStats(opts: AnalyticsOptions): Promise<{
     byUser: Array<{
       userId: string;
       userName: string;
@@ -3573,260 +3635,148 @@ export class DatabaseStorage implements IStorage {
       idleEventCount: number;
     }>;
   }> {
-    const { startDate, endDate, userId } = opts;
-
-    const entryConds: any[] = [
-      inWorkspace(timeEntries),
-      eq(timeEntries.status, "stopped"),
-      sql`${timeEntries.startTime} >= ${startDate}`,
-      sql`${timeEntries.startTime} <= ${endDate}`,
-    ];
-    if (userId) entryConds.push(eq(timeEntries.userId, userId));
-
-    const entriesPerUser = await db.select({
-      userId: timeEntries.userId,
-      totalSeconds: sql<number>`COALESCE(SUM(${timeEntries.duration}), 0)::int`,
-      idleSeconds: sql<number>`COALESCE(SUM(${timeEntries.idleTime}), 0)::int`,
-    }).from(timeEntries).where(and(...entryConds)).groupBy(timeEntries.userId);
-
-    const eventConds: any[] = [
-      inWorkspace(agentActivityEvents),
-      eq(agentActivityEvents.eventType, "idle_start"),
-      sql`${agentActivityEvents.timestamp} >= ${startDate}`,
-      sql`${agentActivityEvents.timestamp} <= ${endDate}`,
-    ];
-    if (userId) eventConds.push(eq(agentActivityEvents.userId, userId));
-
-    const idleEvents = await db.select({
-      userId: agentActivityEvents.userId,
-      idleEventCount: sql<number>`COUNT(*)::int`,
-    }).from(agentActivityEvents).where(and(...eventConds)).groupBy(agentActivityEvents.userId);
-
-    const idleMap = new Map(idleEvents.map(e => [e.userId, e.idleEventCount]));
-
-    const uids = entriesPerUser.map(r => r.userId);
-    const usersList = uids.length > 0
-      ? await db.select({ id: users.id, firstName: users.firstName, lastName: users.lastName, email: users.email })
-          .from(users).where(inArray(users.id, uids))
-      : [];
-    const usersMap = new Map(usersList.map(u => [u.id, u]));
-
-    const byUser = entriesPerUser.map(r => {
-      const u = usersMap.get(r.userId);
-      const userName = u ? (`${u.firstName || ""} ${u.lastName || ""}`.trim() || u.email) : "Unknown";
-      const total = r.totalSeconds + r.idleSeconds;
-      const idleRatio = total > 0 ? Math.round((r.idleSeconds / total) * 100) : 0;
-      return { userId: r.userId, userName, totalSeconds: r.totalSeconds, idleSeconds: r.idleSeconds, idleRatio, idleEventCount: idleMap.get(r.userId) ?? 0 };
-    }).sort((a, b) => b.idleRatio - a.idleRatio);
-
-    return { byUser };
+    const [{ byUser }, idleEvents] = await Promise.all([
+      this.getAdminProductivity(opts),
+      this.countActivityEvents(opts, "idle_start"),
+    ]);
+    return {
+      byUser: byUser
+        .map(({ userId, userName, totalSeconds, idleSeconds }) => ({
+          userId,
+          userName,
+          totalSeconds,
+          idleSeconds,
+          idleRatio: idleRatioOf(totalSeconds, idleSeconds),
+          idleEventCount: idleEvents.get(userId) ?? 0,
+        }))
+        .sort((a, b) => b.idleRatio - a.idleRatio),
+    };
   }
 
-  async getAdminScreenshotStats(opts: {
-    startDate: Date;
-    endDate: Date;
-    userId?: string;
-  }): Promise<{
+  async getAdminScreenshotStats(opts: AnalyticsOptions): Promise<{
     totalCount: number;
     byUser: Array<{ userId: string; userName: string; count: number }>;
     hourlyDistribution: Array<{ hour: number; count: number }>;
     duplicates: Array<{ contentHash: string; count: number }>;
     deletedCount: number;
   }> {
-    const { startDate, endDate, userId } = opts;
+    const live = this.liveCapturesIn(opts);
+    const [perUser, perQuarter, duplicates, deletedCount] = await Promise.all([
+      db
+        .select({ userId: timeEntryScreenshots.userId, count: count() })
+        .from(timeEntryScreenshots)
+        .where(and(...live))
+        .groupBy(timeEntryScreenshots.userId)
+        .orderBy(desc(count())),
+      db
+        .select({ quarter: captureQuarter(), count: count() })
+        .from(timeEntryScreenshots)
+        .where(and(...live))
+        .groupBy(captureQuarter()),
+      db
+        .select({ contentHash: timeEntryScreenshots.contentHash, count: count() })
+        .from(timeEntryScreenshots)
+        .where(and(...live, isNotNull(timeEntryScreenshots.contentHash)))
+        .groupBy(timeEntryScreenshots.contentHash)
+        .having(sql`COUNT(*) > 1`)
+        .orderBy(desc(count()))
+        .limit(20),
+      this.countDeletedCaptures(opts),
+    ]);
 
-    const conds: any[] = [
-      inWorkspace(timeEntryScreenshots),
-      sql`${timeEntryScreenshots.capturedAt} >= ${startDate}`,
-      sql`${timeEntryScreenshots.capturedAt} <= ${endDate}`,
-      sql`${timeEntryScreenshots.storageKey} NOT LIKE 'pending-%'`,
-      isNull(timeEntryScreenshots.deletedAt),
-    ];
-    if (userId) conds.push(eq(timeEntryScreenshots.userId, userId));
-
-    const [countResult] = await db.select({
-      count: sql<number>`COUNT(*)::int`,
-    }).from(timeEntryScreenshots).where(and(...conds));
-
-    const byUserRaw = await db.select({
-      userId: timeEntryScreenshots.userId,
-      count: sql<number>`COUNT(*)::int`,
-    }).from(timeEntryScreenshots).where(and(...conds))
-      .groupBy(timeEntryScreenshots.userId)
-      .orderBy(sql`COUNT(*) DESC`);
-
-    const uids = byUserRaw.map(r => r.userId);
-    const usersList = uids.length > 0
-      ? await db.select({ id: users.id, firstName: users.firstName, lastName: users.lastName, email: users.email })
-          .from(users).where(inArray(users.id, uids))
-      : [];
-    const usersMap = new Map(usersList.map(u => [u.id, u]));
-
-    const byUser = byUserRaw.map(r => {
-      const u = usersMap.get(r.userId);
-      return { userId: r.userId, userName: u ? (`${u.firstName || ""} ${u.lastName || ""}`.trim() || u.email) : "Unknown", count: r.count };
-    });
-
-    const hourlyRaw = await db.select({
-      hour: sql<number>`EXTRACT(HOUR FROM ${timeEntryScreenshots.capturedAt})::int`,
-      count: sql<number>`COUNT(*)::int`,
-    }).from(timeEntryScreenshots).where(and(...conds))
-      .groupBy(sql`EXTRACT(HOUR FROM ${timeEntryScreenshots.capturedAt})`)
-      .orderBy(sql`EXTRACT(HOUR FROM ${timeEntryScreenshots.capturedAt}) ASC`);
-
-    const duplicatesRaw = await db.select({
-      contentHash: timeEntryScreenshots.contentHash,
-      count: sql<number>`COUNT(*)::int`,
-    }).from(timeEntryScreenshots).where(and(...conds, sql`${timeEntryScreenshots.contentHash} IS NOT NULL`))
-      .groupBy(timeEntryScreenshots.contentHash)
-      .having(sql`COUNT(*) > 1`)
-      .orderBy(sql`COUNT(*) DESC`)
-      .limit(20);
-
-    // Count tombstoned screenshots in the same time window (evidence removed by an admin)
-    const deletedConds: any[] = [
-      sql`${timeEntryScreenshots.capturedAt} >= ${startDate}`,
-      sql`${timeEntryScreenshots.capturedAt} <= ${endDate}`,
-      sql`${timeEntryScreenshots.storageKey} NOT LIKE 'pending-%'`,
-      sql`${timeEntryScreenshots.deletedAt} IS NOT NULL`,
-      notDuplicateCapture(),
-    ];
-    if (userId) deletedConds.push(eq(timeEntryScreenshots.userId, userId));
-    const [deletedResult] = await db.select({
-      count: sql<number>`COUNT(*)::int`,
-    }).from(timeEntryScreenshots).where(and(...deletedConds));
+    const nameOf = await this.userNames(perUser.map((row) => row.userId));
+    const calendar = dayCalendar(opts.timeZone);
+    const hours = new Map<number, number>();
+    for (const row of perQuarter) {
+      const hour = calendar.hourOf(quarterStart(row.quarter));
+      hours.set(hour, (hours.get(hour) ?? 0) + row.count);
+    }
 
     return {
-      totalCount: countResult?.count ?? 0,
-      byUser,
-      hourlyDistribution: hourlyRaw,
-      duplicates: duplicatesRaw.map(r => ({ contentHash: r.contentHash!, count: r.count })),
-      deletedCount: deletedResult?.count ?? 0,
+      totalCount: perUser.reduce((sum, row) => sum + row.count, 0),
+      byUser: perUser.map((row) => ({ userId: row.userId, userName: nameOf(row.userId), count: row.count })),
+      hourlyDistribution: Array.from(hours, ([hour, total]) => ({ hour, count: total })).sort((a, b) => a.hour - b.hour),
+      duplicates: duplicates.map((row) => ({ contentHash: row.contentHash!, count: row.count })),
+      deletedCount,
     };
   }
 
-  async getAdminAlerts(opts: { startDate: Date; endDate: Date }): Promise<{
+  async getAdminAlerts(opts: AnalyticsOptions): Promise<{
     highIdleUsers: Array<{ userId: string; userName: string; idleRatio: number; totalSeconds: number }>;
     stalledDevices: Array<{ deviceId: string; deviceName: string; userId: string; userName: string; lastSeenAt: Date | null; daysSinceLastSeen: number }>;
     runningWithoutScreenshots: Array<{ userId: string; userName: string; entryId: string; startedAt: Date }>;
   }> {
-    const { startDate, endDate } = opts;
-
-    const entriesPerUser = await db.select({
-      userId: timeEntries.userId,
-      totalSeconds: sql<number>`COALESCE(SUM(${timeEntries.duration}), 0)::int`,
-      idleSeconds: sql<number>`COALESCE(SUM(${timeEntries.idleTime}), 0)::int`,
-    }).from(timeEntries).where(and(
-      eq(timeEntries.status, "stopped"),
-      sql`${timeEntries.startTime} >= ${startDate}`,
-      sql`${timeEntries.startTime} <= ${endDate}`,
-    )).groupBy(timeEntries.userId);
-
-    const highIdleRaw = entriesPerUser.filter(r => {
-      const total = r.totalSeconds + r.idleSeconds;
-      return total >= 3600 && r.idleSeconds / total > 0.5;
-    });
-
-    // Running entries — check last screenshot
     const thirtyMinAgo = new Date(Date.now() - 30 * 60 * 1000);
-    const runningEntries = await db.select({
-      id: timeEntries.id,
-      userId: timeEntries.userId,
-      startTime: timeEntries.startTime,
-    }).from(timeEntries).where(eq(timeEntries.status, "running")).limit(50);
 
-    const runningNoShot: Array<{ userId: string; entryId: string; startedAt: Date }> = [];
-    for (const entry of runningEntries) {
-      const [lastShot] = await db.select({ capturedAt: timeEntryScreenshots.capturedAt })
-        .from(timeEntryScreenshots)
+    const [{ byUser }, running, stalled] = await Promise.all([
+      this.getAdminProductivity(opts),
+      db
+        .select({ entryId: timeEntries.id, userId: timeEntries.userId, startedAt: timeEntries.startTime })
+        .from(timeEntries)
         .where(and(
-          eq(timeEntryScreenshots.timeEntryId, entry.id),
-          sql`${timeEntryScreenshots.storageKey} NOT LIKE 'pending-%'`,
-          isNull(timeEntryScreenshots.deletedAt),
+          inWorkspace(timeEntries),
+          eq(timeEntries.status, "running"),
+          lt(timeEntries.startTime, thirtyMinAgo),
+          notExists(
+            db
+              .select({ id: timeEntryScreenshots.id })
+              .from(timeEntryScreenshots)
+              .where(and(
+                inWorkspace(timeEntryScreenshots),
+                eq(timeEntryScreenshots.timeEntryId, timeEntries.id),
+                gte(timeEntryScreenshots.capturedAt, thirtyMinAgo),
+                sql`${timeEntryScreenshots.storageKey} NOT LIKE 'pending-%'`,
+                isNull(timeEntryScreenshots.deletedAt),
+              )),
+          ),
         ))
-        .orderBy(desc(timeEntryScreenshots.capturedAt))
-        .limit(1);
-      if (!lastShot || lastShot.capturedAt < thirtyMinAgo) {
-        runningNoShot.push({ userId: entry.userId, entryId: entry.id, startedAt: entry.startTime });
-      }
-    }
-
-    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-    const stalledDevicesRaw = await db.select({
-      id: devices.id,
-      userId: devices.userId,
-      name: devices.name,
-      lastSeenAt: devices.lastSeenAt,
-    }).from(devices).where(and(
-      isNull(devices.revokedAt),
-      sql`${devices.lastSeenAt} IS NOT NULL`,
-      sql`${devices.lastSeenAt} < ${sevenDaysAgo}`,
-    )).orderBy(asc(devices.lastSeenAt)).limit(20);
-
-    const allUids = [...new Set([
-      ...highIdleRaw.map(r => r.userId),
-      ...runningNoShot.map(r => r.userId),
-      ...stalledDevicesRaw.map(d => d.userId),
-    ])];
-    const usersList = allUids.length > 0
-      ? await db.select({ id: users.id, firstName: users.firstName, lastName: users.lastName, email: users.email })
-          .from(users).where(inArray(users.id, allUids))
-      : [];
-    const usersMap = new Map(usersList.map(u => [u.id, u]));
-    const nameOf = (uid: string) => {
-      const u = usersMap.get(uid);
-      return u ? (`${u.firstName || ""} ${u.lastName || ""}`.trim() || u.email) : "Unknown";
-    };
+        .orderBy(asc(timeEntries.startTime), asc(timeEntries.id)),
+      db
+        .select({ deviceId: devices.id, deviceName: devices.name, userId: devices.userId, lastSeenAt: devices.lastSeenAt })
+        .from(devices)
+        .where(isStalledDevice())
+        .orderBy(asc(devices.lastSeenAt)),
+    ]);
+    const nameOf = await this.userNames([...running, ...stalled].map((row) => row.userId));
 
     return {
-      highIdleUsers: highIdleRaw.map(r => {
-        const total = r.totalSeconds + r.idleSeconds;
-        return { userId: r.userId, userName: nameOf(r.userId), idleRatio: Math.round((r.idleSeconds / total) * 100), totalSeconds: r.totalSeconds };
-      }).sort((a, b) => b.idleRatio - a.idleRatio),
-      stalledDevices: stalledDevicesRaw.map(d => ({
-        deviceId: d.id,
-        deviceName: d.name,
-        userId: d.userId,
-        userName: nameOf(d.userId),
-        lastSeenAt: d.lastSeenAt,
-        daysSinceLastSeen: d.lastSeenAt ? Math.floor((Date.now() - d.lastSeenAt.getTime()) / 86400000) : 999,
+      highIdleUsers: byUser
+        .filter((row) => row.totalSeconds + row.idleSeconds >= 3600 && row.idleSeconds > row.totalSeconds)
+        .map(({ userId, userName, totalSeconds, idleSeconds }) => ({
+          userId,
+          userName,
+          idleRatio: idleRatioOf(totalSeconds, idleSeconds),
+          totalSeconds,
+        }))
+        .sort((a, b) => b.idleRatio - a.idleRatio),
+      stalledDevices: stalled.map((device) => ({
+        ...device,
+        userName: nameOf(device.userId),
+        daysSinceLastSeen: device.lastSeenAt ? Math.floor((Date.now() - device.lastSeenAt.getTime()) / 86400000) : 999,
       })),
-      runningWithoutScreenshots: runningNoShot.map(r => ({
-        userId: r.userId,
-        userName: nameOf(r.userId),
-        entryId: r.entryId,
-        startedAt: r.startedAt,
-      })),
+      runningWithoutScreenshots: running.map((entry) => ({ ...entry, userName: nameOf(entry.userId) })),
     };
   }
 
   // ─── Data Quality Report ───
   //
-  // Computes evidence-layer quality flags per user, relative to their tracked
-  // time. Business metrics (duration, idle time) are NEVER modified here.
-  // Quality flags are purely observational: they describe evidence completeness,
-  // not whether tracked time is valid.
+  // v1 only. Flags are purely observational: they describe evidence
+  // completeness, not whether tracked time is valid.
   //
   // Quality flag definitions:
-  //   low_coverage      — fewer than 1 screenshot per 10 min of tracked time
+  //   low_coverage      — under half of the captures the policy expects
   //   duplicate_heavy   — ≥ 20% of screenshots share a contentHash with another
   //   events_missing    — user has tracked time but zero activity events recorded
   //   stale_device      — user's most recent device hasn't been seen in 7+ days
-  async getDataQualityReport(opts: {
-    startDate: Date;
-    endDate: Date;
-    userId?: string;
-  }): Promise<{
+  async getDataQualityReport(opts: AnalyticsOptions): Promise<{
     byUser: Array<{
       userId: string;
       userName: string;
-      /** Business truth: tracked seconds from time_entries only */
       trackedSeconds: number;
-      /** Evidence count: screenshots in window (independent of tracked time) */
       screenshotCount: number;
-      /** Expected screenshots at 1 per 10 min; null when trackedSeconds = 0 */
+      /** Null when nothing was tracked */
       expectedScreenshots: number | null;
-      /** screenshotCount / expectedScreenshots × 100; null when expected = null */
+      /** Null when nothing is expected */
       screenshotCoveragePercent: number | null;
       /** Duplicate screenshot count (same contentHash) */
       duplicateScreenshots: number;
@@ -3836,7 +3786,7 @@ export class DatabaseStorage implements IStorage {
       flags: string[];
     }>;
     org: {
-      /** Stopped entries in window that have zero associated screenshots */
+      /** Entries in window with no live screenshot taken in it */
       entriesWithoutAnyScreenshot: number;
       /** Total duplicate screenshot rows (contentHash repeated) */
       orgDuplicateScreenshots: number;
@@ -3846,436 +3796,181 @@ export class DatabaseStorage implements IStorage {
       deletedScreenshots: number;
     };
   }> {
-    const { startDate, endDate, userId } = opts;
-    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-
-    // ── 1. Business truth: tracked seconds per user (time_entries ONLY) ──────
-    const entryConds: any[] = [
-      inWorkspace(timeEntries),
-      eq(timeEntries.status, "stopped"),
-      sql`${timeEntries.startTime} >= ${startDate}`,
-      sql`${timeEntries.startTime} <= ${endDate}`,
-    ];
-    if (userId) entryConds.push(eq(timeEntries.userId, userId));
-
-    const trackedPerUser = await db.select({
-      userId: timeEntries.userId,
-      trackedSeconds: sql<number>`COALESCE(SUM(${timeEntries.duration}), 0)::int`,
-    }).from(timeEntries).where(and(...entryConds)).groupBy(timeEntries.userId);
-
-    if (trackedPerUser.length === 0) {
+    const repeated = () => sql<number>`(COUNT(*) - COUNT(DISTINCT ${timeEntryScreenshots.contentHash}))::int`;
+    const coverage = await this.getScreenshotCoverageReport(opts);
+    const people = coverage.byUser.filter((row) => row.entriesCount > 0);
+    if (people.length === 0) {
       return { byUser: [], org: { entriesWithoutAnyScreenshot: 0, orgDuplicateScreenshots: 0, stalledDevices: 0, deletedScreenshots: 0 } };
     }
 
-    const allUserIds = trackedPerUser.map(r => r.userId);
-
-    // ── 2. Evidence: screenshots per user in window ───────────────────────────
-    const shotConds: any[] = [
-      inWorkspace(timeEntryScreenshots),
-      sql`${timeEntryScreenshots.capturedAt} >= ${startDate}`,
-      sql`${timeEntryScreenshots.capturedAt} <= ${endDate}`,
-      sql`${timeEntryScreenshots.storageKey} NOT LIKE 'pending-%'`,
-      isNull(timeEntryScreenshots.deletedAt),
-      inArray(timeEntryScreenshots.userId, allUserIds),
-    ];
-    const shotsPerUser = await db.select({
-      userId: timeEntryScreenshots.userId,
-      screenshotCount: sql<number>`COUNT(*)::int`,
-    }).from(timeEntryScreenshots).where(and(...shotConds)).groupBy(timeEntryScreenshots.userId);
-    const shotCountMap = new Map(shotsPerUser.map(r => [r.userId, r.screenshotCount]));
-
-    // ── 3. Evidence: duplicate screenshots per user ───────────────────────────
-    const dupRows = await db.select({
-      userId: timeEntryScreenshots.userId,
-      dupCount: sql<number>`(COUNT(*) - COUNT(DISTINCT ${timeEntryScreenshots.contentHash}))::int`,
-    }).from(timeEntryScreenshots)
-      .where(and(...shotConds, sql`${timeEntryScreenshots.contentHash} IS NOT NULL`))
-      .groupBy(timeEntryScreenshots.userId);
-    const dupMap = new Map(dupRows.map(r => [r.userId, r.dupCount]));
-
-    // ── 4. Evidence: activity events per user ────────────────────────────────
-    const evtConds: any[] = [
-      sql`${agentActivityEvents.timestamp} >= ${startDate}`,
-      sql`${agentActivityEvents.timestamp} <= ${endDate}`,
-      inArray(agentActivityEvents.userId, allUserIds),
-    ];
-    const eventsPerUser = await db.select({
-      userId: agentActivityEvents.userId,
-      eventCount: sql<number>`COUNT(*)::int`,
-    }).from(agentActivityEvents).where(and(...evtConds)).groupBy(agentActivityEvents.userId);
-    const evtMap = new Map(eventsPerUser.map(r => [r.userId, r.eventCount]));
-
-    // ── 5. Evidence: most-recent device lastSeenAt per user ──────────────────
-    const deviceRows = await db.select({
-      userId: devices.userId,
-      lastSeenAt: sql<Date | null>`MAX(${devices.lastSeenAt})`,
-    }).from(devices)
-      .where(and(isNull(devices.revokedAt), inArray(devices.userId, allUserIds)))
-      .groupBy(devices.userId);
-    const deviceMap = new Map(deviceRows.map(r => [r.userId, r.lastSeenAt]));
-
-    // ── 6. Org-level: stopped entries with zero live (non-tombstoned) screenshots
-    const [entriesNoShotRow] = await db.select({
-      count: sql<number>`COUNT(*)::int`,
-    }).from(timeEntries)
-      .where(and(
-        ...entryConds,
-        sql`NOT EXISTS (
-          SELECT 1 FROM ${timeEntryScreenshots}
-          WHERE ${timeEntryScreenshots.timeEntryId} = ${timeEntries.id}
-            AND ${timeEntryScreenshots.storageKey} NOT LIKE 'pending-%'
-            AND ${timeEntryScreenshots.deletedAt} IS NULL
-        )`,
-      ));
-
-    // ── 7. Org-level: total duplicate screenshots (live only) ────────────────
-    const [orgDupRow] = await db.select({
-      dupCount: sql<number>`(COUNT(*) - COUNT(DISTINCT ${timeEntryScreenshots.contentHash}))::int`,
-    }).from(timeEntryScreenshots)
-      .where(and(
-        sql`${timeEntryScreenshots.capturedAt} >= ${startDate}`,
-        sql`${timeEntryScreenshots.capturedAt} <= ${endDate}`,
-        sql`${timeEntryScreenshots.storageKey} NOT LIKE 'pending-%'`,
-        isNull(timeEntryScreenshots.deletedAt),
-        sql`${timeEntryScreenshots.contentHash} IS NOT NULL`,
-      ));
-
-    // ── 7b. Org-level: tombstoned screenshots (evidence removed by admins) ───
-    const [deletedShotRow] = await db.select({
-      count: sql<number>`COUNT(*)::int`,
-    }).from(timeEntryScreenshots)
-      .where(and(
-        sql`${timeEntryScreenshots.capturedAt} >= ${startDate}`,
-        sql`${timeEntryScreenshots.capturedAt} <= ${endDate}`,
-        sql`${timeEntryScreenshots.deletedAt} IS NOT NULL`,
-        notDuplicateCapture(),
-      ));
-
-    // ── 8. Org-level: stalled devices ────────────────────────────────────────
-    const [stalledRow] = await db.select({
-      count: sql<number>`COUNT(*)::int`,
-    }).from(devices).where(and(
-      isNull(devices.revokedAt),
-      sql`${devices.lastSeenAt} IS NOT NULL`,
-      sql`${devices.lastSeenAt} < ${sevenDaysAgo}`,
-    ));
-
-    // ── 9. Resolve user names ────────────────────────────────────────────────
-    const usersList = await db.select({ id: users.id, firstName: users.firstName, lastName: users.lastName, email: users.email })
-      .from(users).where(inArray(users.id, allUserIds));
-    const usersMap = new Map(usersList.map(u => [u.id, u]));
-    const nameOf = (uid: string) => {
-      const u = usersMap.get(uid);
-      return u ? (`${u.firstName || ""} ${u.lastName || ""}`.trim() || u.email) : "Unknown";
-    };
-
-    // ── 10. Assemble per-user report ─────────────────────────────────────────
-    const byUser = trackedPerUser.map(r => {
-      const trackedSeconds = r.trackedSeconds;
-      const screenshotCount = shotCountMap.get(r.userId) ?? 0;
-      const duplicateScreenshots = dupMap.get(r.userId) ?? 0;
-      const activityEventCount = evtMap.get(r.userId) ?? 0;
-      const lastSeen = deviceMap.get(r.userId) ?? null;
-
-      // Expected: 1 screenshot per 10 min of tracked time
-      const expectedScreenshots = trackedSeconds > 0 ? Math.ceil(trackedSeconds / 600) : null;
-      const screenshotCoveragePercent =
-        expectedScreenshots !== null && expectedScreenshots > 0
-          ? Math.round((screenshotCount / expectedScreenshots) * 100)
-          : null;
-
-      const flags: string[] = [];
-      // low_coverage: < 50% of expected screenshots
-      if (screenshotCoveragePercent !== null && screenshotCoveragePercent < 50) {
-        flags.push("low_coverage");
-      }
-      // duplicate_heavy: ≥ 20% of screenshots are duplicates
-      if (screenshotCount > 0 && duplicateScreenshots / screenshotCount >= 0.2) {
-        flags.push("duplicate_heavy");
-      }
-      // events_missing: tracked time but zero activity events
-      if (trackedSeconds > 0 && activityEventCount === 0) {
-        flags.push("events_missing");
-      }
-      // stale_device: most-recent device not seen in 7+ days
-      if (lastSeen !== null && new Date(lastSeen) < sevenDaysAgo) {
-        flags.push("stale_device");
-      }
-
-      return {
-        userId: r.userId,
-        userName: nameOf(r.userId),
-        trackedSeconds,
-        screenshotCount,
-        expectedScreenshots,
-        screenshotCoveragePercent,
-        duplicateScreenshots,
-        activityEventCount,
-        flags,
-      };
-    });
+    const [duplicateRows, [orgDuplicates], events, lastContact, [stalled]] = await Promise.all([
+      db
+        .select({ userId: timeEntryScreenshots.userId, count: repeated() })
+        .from(timeEntryScreenshots)
+        .where(and(...this.liveCapturesIn(opts), isNotNull(timeEntryScreenshots.contentHash)))
+        .groupBy(timeEntryScreenshots.userId),
+      db
+        .select({ count: repeated() })
+        .from(timeEntryScreenshots)
+        .where(and(...this.liveCapturesIn({ ...opts, userId: undefined }), isNotNull(timeEntryScreenshots.contentHash))),
+      this.countActivityEvents(opts),
+      this.lastContactByUser(),
+      db.select({ count: count() }).from(devices).where(isStalledDevice()),
+    ]);
+    const duplicates = new Map(duplicateRows.map((row) => [row.userId, row.count]));
+    const sevenDaysAgo = stalledBefore();
 
     return {
-      byUser,
+      byUser: people.map((row) => {
+        const duplicateScreenshots = duplicates.get(row.userId) ?? 0;
+        const activityEventCount = events.get(row.userId) ?? 0;
+        const lastSeen = lastContact.get(row.userId) ?? null;
+
+        const flags: string[] = [];
+        if (row.coveragePct !== null && row.coveragePct < 50) flags.push("low_coverage");
+        if (row.screenshotCount > 0 && duplicateScreenshots / row.screenshotCount >= 0.2) flags.push("duplicate_heavy");
+        if (row.trackedSeconds > 0 && activityEventCount === 0) flags.push("events_missing");
+        if (lastSeen !== null && lastSeen < sevenDaysAgo) flags.push("stale_device");
+
+        return {
+          userId: row.userId,
+          userName: row.userName,
+          trackedSeconds: row.trackedSeconds,
+          screenshotCount: row.screenshotCount,
+          expectedScreenshots: row.trackedSeconds > 0 ? row.expectedScreenshots : null,
+          screenshotCoveragePercent: row.coveragePct,
+          duplicateScreenshots,
+          activityEventCount,
+          flags,
+        };
+      }),
       org: {
-        entriesWithoutAnyScreenshot: entriesNoShotRow?.count ?? 0,
-        orgDuplicateScreenshots: orgDupRow?.dupCount ?? 0,
-        stalledDevices: stalledRow?.count ?? 0,
-        deletedScreenshots: deletedShotRow?.count ?? 0,
+        entriesWithoutAnyScreenshot: coverage.summary.entriesWithoutScreenshots,
+        orgDuplicateScreenshots: orgDuplicates?.count ?? 0,
+        stalledDevices: stalled?.count ?? 0,
+        deletedScreenshots: coverage.summary.deletedScreenshots,
       },
     };
   }
 
   // ─── Screenshot Coverage Report ───
   //
-  // Measures evidence completeness relative to tracked time.
-  // Business truth (duration, idleTime) is NEVER modified here.
-  //
-  // Coverage model:
-  //   expected = ceil(trackedSeconds / 600)   — 1 screenshot per 10 min
-  //   coveragePct = min(100, round(actual / expected × 100))
-  //   low_coverage = coveragePct < 50
-  //   no_coverage  = actual == 0 (entry has zero screenshots)
-  //
-  // Each query uses a LEFT JOIN so entries with zero screenshots are still
-  // counted — their screenshotCount is simply 0, not excluded.
-  async getScreenshotCoverageReport(opts: {
-    startDate: Date;
-    endDate: Date;
-    userId?: string;
-    crmProjectId?: string;
-  }): Promise<{
-    summary: {
-      totalTrackedSeconds: number;
-      totalScreenshots: number;
-      expectedScreenshots: number;
-      coveragePercent: number | null;
-      totalEntries: number;
-      entriesWithoutScreenshots: number;
-      lowCoverageEntries: number;
-      /** Screenshots tombstoned (soft-deleted by an admin) in this window */
-      deletedScreenshots: number;
-    };
-    byUser: Array<{
-      userId: string;
-      userName: string;
-      trackedSeconds: number;
-      entriesCount: number;
-      entriesWithoutScreenshots: number;
-      screenshotCount: number;
-      expectedScreenshots: number;
-      coveragePct: number | null;
-    }>;
-    byProject: Array<{
-      crmProjectId: string;
-      projectName: string;
-      trackedSeconds: number;
-      entriesCount: number;
-      entriesWithoutScreenshots: number;
-      screenshotCount: number;
-      expectedScreenshots: number;
-      coveragePct: number | null;
-    }>;
-    byDay: Array<{
-      date: string;
-      trackedSeconds: number;
-      screenshotCount: number;
-      expectedScreenshots: number;
-      coveragePct: number | null;
-    }>;
-  }> {
-    const { startDate, endDate, userId, crmProjectId } = opts;
-
-    // Shared filter conditions on time_entries (business truth source)
-    const entryConds: any[] = [
-      inWorkspace(timeEntries),
-      eq(timeEntries.status, "stopped"),
-      sql`${timeEntries.startTime} >= ${startDate}`,
-      sql`${timeEntries.startTime} <= ${endDate}`,
-    ];
-    if (userId) entryConds.push(eq(timeEntries.userId, userId));
-    if (crmProjectId) entryConds.push(eq(timeEntries.crmProjectId, crmProjectId));
-
-    // LEFT JOIN condition: only count live (non-pending, non-tombstoned) screenshots
-    const shotJoinCond = and(
-      eq(timeEntryScreenshots.timeEntryId, timeEntries.id),
-      sql`${timeEntryScreenshots.storageKey} NOT LIKE 'pending-%'`,
-      isNull(timeEntryScreenshots.deletedAt),
-    );
-
-    // ── Run 4 aggregation queries in parallel ──────────────────────────────
-    const [perUserRaw, perProjectRaw, perDayRaw, lowCovRow] = await Promise.all([
-
-      // Q1: Per-user — tracked seconds, entry count, screenshot count, entries-with-shots
-      // LEFT JOIN ensures entries with zero screenshots appear with screenshotCount = 0
-      db.select({
-        userId: timeEntries.userId,
-        trackedSeconds:  sql<number>`COALESCE(SUM(${timeEntries.duration}), 0)::int`,
-        entriesCount:    sql<number>`COUNT(DISTINCT ${timeEntries.id})::int`,
-        screenshotCount: sql<number>`COUNT(${timeEntryScreenshots.id})::int`,
-        entriesWithShots: sql<number>`COUNT(DISTINCT CASE WHEN ${timeEntryScreenshots.id} IS NOT NULL THEN ${timeEntries.id} END)::int`,
-      }).from(timeEntries)
-        .leftJoin(timeEntryScreenshots, shotJoinCond)
-        .where(and(...entryConds))
-        .groupBy(timeEntries.userId),
-
-      // Q2: Per-project — same shape as Q1
-      db.select({
-        crmProjectId:    timeEntries.crmProjectId,
-        trackedSeconds:  sql<number>`COALESCE(SUM(${timeEntries.duration}), 0)::int`,
-        entriesCount:    sql<number>`COUNT(DISTINCT ${timeEntries.id})::int`,
-        screenshotCount: sql<number>`COUNT(${timeEntryScreenshots.id})::int`,
-        entriesWithShots: sql<number>`COUNT(DISTINCT CASE WHEN ${timeEntryScreenshots.id} IS NOT NULL THEN ${timeEntries.id} END)::int`,
-      }).from(timeEntries)
-        .leftJoin(timeEntryScreenshots, shotJoinCond)
-        .where(and(...entryConds))
-        .groupBy(timeEntries.crmProjectId),
-
-      // Q3: Per-day — grouped by DATE(start_time) so the day axis matches tracked time
-      db.select({
-        date:            sql<string>`DATE(${timeEntries.startTime})::text`,
-        trackedSeconds:  sql<number>`COALESCE(SUM(${timeEntries.duration}), 0)::int`,
-        screenshotCount: sql<number>`COUNT(${timeEntryScreenshots.id})::int`,
-      }).from(timeEntries)
-        .leftJoin(timeEntryScreenshots, shotJoinCond)
-        .where(and(...entryConds))
-        .groupBy(sql`DATE(${timeEntries.startTime})`)
-        .orderBy(sql`DATE(${timeEntries.startTime}) ASC`),
-
-      // Q4: Count entries where live screenshot coverage < 50% of expected
-      //     (correlated subquery — acceptable for a single count row)
-      db.select({
-        count: sql<number>`COUNT(*)::int`,
-      }).from(timeEntries)
-        .where(and(
-          ...entryConds,
-          sql`${timeEntries.duration} > 0`,
-          sql`(
-            SELECT COUNT(*) FROM ${timeEntryScreenshots}
-            WHERE ${timeEntryScreenshots.timeEntryId} = ${timeEntries.id}
-              AND ${timeEntryScreenshots.storageKey} NOT LIKE 'pending-%'
-              AND ${timeEntryScreenshots.deletedAt} IS NULL
-          ) < CEIL(${timeEntries.duration}::numeric / 600) * 0.5`,
-        )),
+  // The live captures taken in the range against what the capture policy
+  // promises for the tracked time: one per `captureIntervalMaxMin`, on the
+  // Projects it captures. The time is never modified here.
+  async getScreenshotCoverageReport(opts: AnalyticsOptions): Promise<ScreenshotCoverageReport> {
+    const [entries, captures, policy, deletedScreenshots] = await Promise.all([
+      this.analyticsSpans(opts),
+      db
+        .select({
+          timeEntryId: timeEntryScreenshots.timeEntryId,
+          userId: timeEntryScreenshots.userId,
+          crmProjectId: timeEntryScreenshots.crmProjectId,
+          quarter: captureQuarter(),
+          count: count(),
+          firstName: users.firstName,
+          lastName: users.lastName,
+          email: users.email,
+          projectName: projects.name,
+        })
+        .from(timeEntryScreenshots)
+        .innerJoin(users, eq(users.id, timeEntryScreenshots.userId))
+        .leftJoin(crmProjects, and(eq(crmProjects.id, timeEntryScreenshots.crmProjectId), inWorkspace(crmProjects)))
+        .leftJoin(projects, and(eq(projects.id, crmProjects.projectId), inWorkspace(projects)))
+        .where(and(...this.liveCapturesIn(opts)))
+        .groupBy(
+          timeEntryScreenshots.timeEntryId,
+          timeEntryScreenshots.userId,
+          timeEntryScreenshots.crmProjectId,
+          captureQuarter(),
+          users.id,
+          projects.id,
+        ),
+      getScreenshotPolicy(),
+      this.countDeletedCaptures(opts),
     ]);
 
-    // ── Count tombstoned screenshots in the window (runs in parallel above ideally,
-    //    but kept separate to avoid complicating the LEFT-JOIN shape) ──────────
-    const deletedCondsCoverage: any[] = [
-      sql`${timeEntryScreenshots.capturedAt} >= ${startDate}`,
-      sql`${timeEntryScreenshots.capturedAt} <= ${endDate}`,
-      sql`${timeEntryScreenshots.deletedAt} IS NOT NULL`,
-      notDuplicateCapture(),
-    ];
-    if (userId) deletedCondsCoverage.push(eq(timeEntryScreenshots.userId, userId));
-    const [deletedShotCovRow] = await db.select({
-      count: sql<number>`COUNT(*)::int`,
-    }).from(timeEntryScreenshots).where(and(...deletedCondsCoverage));
-
-    // ── Resolve user names ─────────────────────────────────────────────────
-    const allUserIds = [...new Set(perUserRaw.map(r => r.userId))];
-    const usersList = allUserIds.length > 0
-      ? await db.select({ id: users.id, firstName: users.firstName, lastName: users.lastName, email: users.email })
-          .from(users).where(inArray(users.id, allUserIds))
-      : [];
-    const usersMap = new Map(usersList.map(u => [u.id, u]));
-    const nameOf = (uid: string) => {
-      const u = usersMap.get(uid);
-      return u ? (`${u.firstName || ""} ${u.lastName || ""}`.trim() || u.email) : "Unknown";
+    // `screenshotProjectIds` is left out: every Plan that opens Analytics captures on all Projects.
+    const everySeconds = policy.captureIntervalMaxMin * 60;
+    const figures = () => ({ trackedSeconds: 0, entriesCount: 0, entriesWithoutScreenshots: 0, screenshotCount: 0 });
+    type Figures = ReturnType<typeof figures>;
+    const covered = (row: Figures) => {
+      const expectedScreenshots = policy.screenshotsEnabled ? Math.floor(row.trackedSeconds / everySeconds) : 0;
+      return {
+        ...row,
+        expectedScreenshots,
+        coveragePct: expectedScreenshots > 0 ? Math.min(100, Math.round((row.screenshotCount / expectedScreenshots) * 100)) : null,
+      };
     };
 
-    // ── Resolve project names ──────────────────────────────────────────────
-    const allProjectIds = [...new Set(perProjectRaw.map(r => r.crmProjectId))];
-    const projectNameMap = new Map<string, string>();
-    if (allProjectIds.length > 0) {
-      const crmList = await db.select({ id: crmProjects.id, projectId: crmProjects.projectId })
-        .from(crmProjects).where(inArray(crmProjects.id, allProjectIds));
-      const wikiIds = crmList.map(p => p.projectId).filter(Boolean) as string[];
-      if (wikiIds.length > 0) {
-        const wikiList = await db.select({ id: projects.id, name: projects.name })
-          .from(projects).where(inArray(projects.id, wikiIds));
-        const wikiMap = new Map(wikiList.map(p => [p.id, p.name]));
-        for (const cp of crmList) {
-          projectNameMap.set(cp.id, (cp.projectId && wikiMap.get(cp.projectId)) || "Unknown Project");
-        }
-      }
+    const calendar = dayCalendar(opts.timeZone);
+    const period = { start: opts.startDate, end: opts.endDate };
+    const people = new Map<string, { userName: string; figures: Figures }>();
+    const projectRows = new Map<string, { projectName: string; figures: Figures }>();
+    const days = new Map<string, Figures>();
+    const personOf = (id: string, userName: string) => {
+      const row = people.get(id) ?? { userName, figures: figures() };
+      people.set(id, row);
+      return row.figures;
+    };
+    const projectOf = (id: string, projectName: string | null) => {
+      const row = projectRows.get(id) ?? { projectName: projectName ?? "Unknown Project", figures: figures() };
+      projectRows.set(id, row);
+      return row.figures;
+    };
+    const dayOf = (date: string) => {
+      const row = days.get(date) ?? figures();
+      days.set(date, row);
+      return row;
+    };
+
+    const capturesByEntry = new Map<string, number>();
+    for (const row of captures) {
+      capturesByEntry.set(row.timeEntryId, (capturesByEntry.get(row.timeEntryId) ?? 0) + row.count);
+      personOf(row.userId, personName(row)).screenshotCount += row.count;
+      projectOf(row.crmProjectId, row.projectName).screenshotCount += row.count;
+      dayOf(calendar.dayOf(quarterStart(row.quarter))).screenshotCount += row.count;
     }
 
-    // ── Helper: compute coverage % ─────────────────────────────────────────
-    const coveragePct = (shots: number, tracked: number): number | null => {
-      const expected = Math.ceil(tracked / 600);
-      if (expected === 0) return null;
-      return Math.min(100, Math.round((shots / expected) * 100));
-    };
+    let lowCoverageEntries = 0;
+    for (const entry of entries) {
+      const entryCaptures = capturesByEntry.get(entry.id) ?? 0;
+      for (const row of [personOf(entry.userId, entry.userName), projectOf(entry.crmProjectId, entry.projectName)]) {
+        row.trackedSeconds += entry.seconds;
+        row.entriesCount += 1;
+        if (entryCaptures === 0) row.entriesWithoutScreenshots += 1;
+      }
+      for (const day of dayPortions(entry.span, period, calendar)) {
+        if (day.seconds > 0) dayOf(day.date).trackedSeconds += day.seconds;
+      }
+      if (policy.screenshotsEnabled && entryCaptures < Math.floor(entry.seconds / everySeconds) * 0.5) lowCoverageEntries += 1;
+    }
 
-    // ── Assemble byUser ────────────────────────────────────────────────────
-    const byUser = perUserRaw
-      .map(r => ({
-        userId: r.userId,
-        userName: nameOf(r.userId),
-        trackedSeconds: r.trackedSeconds,
-        entriesCount: r.entriesCount,
-        entriesWithoutScreenshots: r.entriesCount - r.entriesWithShots,
-        screenshotCount: r.screenshotCount,
-        expectedScreenshots: r.trackedSeconds > 0 ? Math.ceil(r.trackedSeconds / 600) : 0,
-        coveragePct: r.trackedSeconds > 0 ? coveragePct(r.screenshotCount, r.trackedSeconds) : null,
-      }))
-      .sort((a, b) => {
-        // Sort: no-coverage first, then ascending coverage %, then by name
-        const aP = a.coveragePct ?? -1;
-        const bP = b.coveragePct ?? -1;
-        return aP - bP;
-      });
+    const byUser = Array.from(people, ([userId, row]) => ({ userId, userName: row.userName, ...covered(row.figures) }))
+      .sort((a, b) => a.userName.localeCompare(b.userName));
+    const byProject = Array.from(projectRows, ([crmProjectId, row]) => ({ crmProjectId, projectName: row.projectName, ...covered(row.figures) }))
+      .sort((a, b) => a.projectName.localeCompare(b.projectName));
+    const byDay = Array.from(days, ([date, row]) => {
+      const { entriesCount: _count, entriesWithoutScreenshots: _without, ...rest } = covered(row);
+      return { date, ...rest };
+    }).sort((a, b) => a.date.localeCompare(b.date));
 
-    // ── Assemble byProject ─────────────────────────────────────────────────
-    const byProject = perProjectRaw
-      .map(r => ({
-        crmProjectId: r.crmProjectId,
-        projectName: projectNameMap.get(r.crmProjectId) || "Unknown Project",
-        trackedSeconds: r.trackedSeconds,
-        entriesCount: r.entriesCount,
-        entriesWithoutScreenshots: r.entriesCount - r.entriesWithShots,
-        screenshotCount: r.screenshotCount,
-        expectedScreenshots: r.trackedSeconds > 0 ? Math.ceil(r.trackedSeconds / 600) : 0,
-        coveragePct: r.trackedSeconds > 0 ? coveragePct(r.screenshotCount, r.trackedSeconds) : null,
-      }))
-      .sort((a, b) => {
-        const aP = a.coveragePct ?? -1;
-        const bP = b.coveragePct ?? -1;
-        return aP - bP;
-      });
-
-    // ── Assemble byDay ─────────────────────────────────────────────────────
-    const byDay = perDayRaw.map(r => {
-      const expected = r.trackedSeconds > 0 ? Math.ceil(r.trackedSeconds / 600) : 0;
-      return {
-        date: r.date,
-        trackedSeconds: r.trackedSeconds,
-        screenshotCount: r.screenshotCount,
-        expectedScreenshots: expected,
-        coveragePct: r.trackedSeconds > 0 ? coveragePct(r.screenshotCount, r.trackedSeconds) : null,
-      };
-    });
-
-    // ── Assemble summary (derived from byUser — no extra query needed) ─────
-    const totalTrackedSeconds = perUserRaw.reduce((s, r) => s + r.trackedSeconds, 0);
-    const totalEntries = perUserRaw.reduce((s, r) => s + r.entriesCount, 0);
-    const totalScreenshots = perUserRaw.reduce((s, r) => s + r.screenshotCount, 0);
-    const totalEntriesWithShots = perUserRaw.reduce((s, r) => s + r.entriesWithShots, 0);
-    const expectedScreenshots = totalTrackedSeconds > 0 ? Math.ceil(totalTrackedSeconds / 600) : 0;
+    const total = (key: "trackedSeconds" | "screenshotCount" | "expectedScreenshots" | "entriesCount" | "entriesWithoutScreenshots") =>
+      byUser.reduce((sum, row) => sum + row[key], 0);
+    const expectedScreenshots = total("expectedScreenshots");
+    const totalScreenshots = total("screenshotCount");
 
     return {
       summary: {
-        totalTrackedSeconds,
+        totalTrackedSeconds: total("trackedSeconds"),
         totalScreenshots,
         expectedScreenshots,
-        coveragePercent: expectedScreenshots > 0
-          ? Math.min(100, Math.round((totalScreenshots / expectedScreenshots) * 100))
-          : null,
-        totalEntries,
-        entriesWithoutScreenshots: totalEntries - totalEntriesWithShots,
-        lowCoverageEntries: lowCovRow[0]?.count ?? 0,
-        deletedScreenshots: deletedShotCovRow?.count ?? 0,
+        coveragePercent: expectedScreenshots > 0 ? Math.min(100, Math.round((totalScreenshots / expectedScreenshots) * 100)) : null,
+        totalEntries: total("entriesCount"),
+        entriesWithoutScreenshots: total("entriesWithoutScreenshots"),
+        lowCoverageEntries,
+        deletedScreenshots,
+        captureEveryMinutes: policy.screenshotsEnabled ? policy.captureIntervalMaxMin : null,
       },
       byUser,
       byProject,
@@ -4285,110 +3980,48 @@ export class DatabaseStorage implements IStorage {
 
   // ─── Evidence Quality Report ───
   //
-  // Produces a composite 0–100 score per user describing how well their
-  // tracked sessions are supported by observable evidence.
-  //
-  // IMPORTANT: This method is READ-ONLY with respect to business metrics.
-  // duration / idleTime on time_entries is NEVER modified, recalculated,
-  // or referenced as output.  The score is an observational label only.
+  // v1 only. A composite 0–100 score per user describing how well their
+  // tracked sessions are supported by observable evidence. The time is never
+  // modified here: the score is an observational label only.
   //
   // Score components:
-  //   coverageScore  (0–40)  screenshot count vs 1-per-10-min expectation
+  //   coverageScore  (0–40)  screenshot count vs what the capture policy expects
   //   qualityScore   (0–30)  deductions: dup ratio + low physical-activity screenshots
   //   eventsScore    (0–20)  activity events linked to entries exist
   //   deviceScore    (0–10)  device heartbeat freshness
   //
-  async getEvidenceQualityReport(opts: {
-    startDate: Date;
-    endDate: Date;
-    userId?: string;
-  }): Promise<EvidenceQualityReport> {
-    const { startDate, endDate, userId } = opts;
-
-    const entryConds: any[] = [
-      inWorkspace(timeEntries),
-      eq(timeEntries.status, "stopped"),
-      sql`${timeEntries.startTime} >= ${startDate}`,
-      sql`${timeEntries.startTime} <= ${endDate}`,
-    ];
-    if (userId) entryConds.push(eq(timeEntries.userId, userId));
-
-    // ── Q1+Q2 combined: per-user entry stats + screenshot signals (single LEFT JOIN) ──
-    // Aggregate by user across all stopped entries in the window:
-    //   – entry count + total tracked seconds (from time_entries)
-    //   – live screenshot count + unique content_hash count (dedupe signal)
-    //   – avg keyboard & mouse activity % (low-activity screenshot signal)
-    const perUserRaw = await db.select({
-      userId:         timeEntries.userId,
-      entryCount:     sql<number>`COUNT(DISTINCT ${timeEntries.id})::int`,
-      trackedSeconds: sql<number>`COALESCE(SUM(${timeEntries.duration}), 0)::int`,
-      shotCount:      sql<number>`COUNT(${timeEntryScreenshots.id})
-                        FILTER (WHERE ${timeEntryScreenshots.deletedAt} IS NULL
-                          AND ${timeEntryScreenshots.storageKey} NOT LIKE 'pending-%')`,
-      uniqueHashes:   sql<number>`COUNT(DISTINCT ${timeEntryScreenshots.contentHash})
-                        FILTER (WHERE ${timeEntryScreenshots.deletedAt} IS NULL
-                          AND ${timeEntryScreenshots.contentHash} IS NOT NULL)`,
-      avgKeyboardPct: sql<number | null>`AVG(${timeEntryScreenshots.keyboardActivityPercent})
-                        FILTER (WHERE ${timeEntryScreenshots.deletedAt} IS NULL
-                          AND ${timeEntryScreenshots.storageKey} NOT LIKE 'pending-%')`,
-      avgMousePct:    sql<number | null>`AVG(${timeEntryScreenshots.mouseActivityPercent})
-                        FILTER (WHERE ${timeEntryScreenshots.deletedAt} IS NULL
-                          AND ${timeEntryScreenshots.storageKey} NOT LIKE 'pending-%')`,
-    }).from(timeEntries)
-      .leftJoin(timeEntryScreenshots, eq(timeEntryScreenshots.timeEntryId, timeEntries.id))
-      .where(and(...entryConds))
-      .groupBy(timeEntries.userId);
-
-    if (perUserRaw.length === 0) {
-      return { gradeDistribution: { strong: 0, moderate: 0, weak: 0, insufficient: 0 }, byUser: [] };
-    }
-
-    const allUserIds = perUserRaw.map(r => r.userId);
-
-    // ── Q3: activity event count per user ──────────────────────────────────────
-    const eventsRaw = await db.select({
-      userId:     agentActivityEvents.userId,
-      eventCount: sql<number>`COUNT(*)::int`,
-    }).from(agentActivityEvents)
-      .where(and(
-        sql`${agentActivityEvents.timestamp} >= ${startDate}`,
-        sql`${agentActivityEvents.timestamp} <= ${endDate}`,
-        inArray(agentActivityEvents.userId, allUserIds),
-      ))
-      .groupBy(agentActivityEvents.userId);
-    const evtMap = new Map(eventsRaw.map(r => [r.userId, r.eventCount]));
-
-    // ── Q4: device freshness per user (most recent non-revoked lastSeenAt) ─────
-    const deviceRaw = await db.select({
-      userId:      devices.userId,
-      lastSeenAt:  sql<Date | null>`MAX(${devices.lastSeenAt})`,
-    }).from(devices)
-      .where(and(isNull(devices.revokedAt), inArray(devices.userId, allUserIds)))
-      .groupBy(devices.userId);
-    const deviceMap = new Map(deviceRaw.map(r => [r.userId, r.lastSeenAt]));
-
-    // ── Q5: resolve user display names ──────────────────────────────────────────
-    const usersList = await db.select({
-      id: users.id, firstName: users.firstName, lastName: users.lastName, email: users.email,
-    }).from(users).where(inArray(users.id, allUserIds));
-    const usersMap = new Map(usersList.map(u => [u.id, u]));
-    const nameOf = (uid: string) => {
-      const u = usersMap.get(uid);
-      return u ? (`${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() || u.email) : "Unknown";
-    };
+  async getEvidenceQualityReport(opts: AnalyticsOptions): Promise<EvidenceQualityReport> {
+    const [coverage, signalRows, events, lastContact] = await Promise.all([
+      this.getScreenshotCoverageReport(opts),
+      // AVG is a numeric, which the driver hands over as text unless cast.
+      db
+        .select({
+          userId: timeEntryScreenshots.userId,
+          uniqueHashes: sql<number>`COUNT(DISTINCT ${timeEntryScreenshots.contentHash})::int`,
+          keyboard: sql<number | null>`AVG(${timeEntryScreenshots.keyboardActivityPercent})::float8`,
+          mouse: sql<number | null>`AVG(${timeEntryScreenshots.mouseActivityPercent})::float8`,
+        })
+        .from(timeEntryScreenshots)
+        .where(and(...this.liveCapturesIn(opts)))
+        .groupBy(timeEntryScreenshots.userId),
+      this.countActivityEvents(opts),
+      this.lastContactByUser(),
+    ]);
+    const signals = new Map(signalRows.map((row) => [row.userId, row]));
 
     // ── Scoring ────────────────────────────────────────────────────────────────
     const oneDayMs  = 86_400_000;
     const sevenDaysMs = 7 * oneDayMs;
 
-    const byUser = perUserRaw.map(r => {
-      const shotCount    = r.shotCount    ?? 0;
-      const uniqueHashes = r.uniqueHashes ?? 0;
-      const eventCount   = evtMap.get(r.userId) ?? 0;
-      const lastSeen     = deviceMap.get(r.userId) ?? null;
+    const byUser = coverage.byUser.filter((row) => row.entriesCount > 0).map(r => {
+      const signal       = signals.get(r.userId);
+      const shotCount    = r.screenshotCount;
+      const uniqueHashes = signal?.uniqueHashes ?? 0;
+      const eventCount   = events.get(r.userId) ?? 0;
+      const lastSeen     = lastContact.get(r.userId) ?? null;
 
-      // 1. Coverage (0–40): expected = 1 screenshot per 10 min of tracked time
-      const expected = r.trackedSeconds > 0 ? Math.ceil(r.trackedSeconds / 600) : 0;
+      // 1. Coverage (0–40)
+      const expected = r.expectedScreenshots;
       const coveragePct = expected > 0 ? Math.min(1, shotCount / expected) : 0;
       const coverageScore = Math.round(40 * coveragePct);
 
@@ -4398,8 +4031,8 @@ export class DatabaseStorage implements IStorage {
       // Full dup penalty (15 pts) at ≥ 50% duplicate ratio
       const dupPenalty = Math.round(15 * Math.min(1, dupRatio * 2));
       // Activity penalty: avg (keyboard + mouse) < 20% → points lost
-      const avgKeyboard = typeof r.avgKeyboardPct === "number" ? r.avgKeyboardPct : null;
-      const avgMouse    = typeof r.avgMousePct    === "number" ? r.avgMousePct    : null;
+      const avgKeyboard = signal?.keyboard ?? null;
+      const avgMouse    = signal?.mouse ?? null;
       const avgActivity = (avgKeyboard !== null || avgMouse !== null)
         ? ((avgKeyboard ?? 0) + (avgMouse ?? 0)) / 2
         : null;
@@ -4413,12 +4046,8 @@ export class DatabaseStorage implements IStorage {
       const eventsScore = eventCount > 0 ? 20 : 0;
 
       // 4. Device freshness (0–10)
-      let deviceScore = 0;
-      if (lastSeen) {
-        const ageMs = Date.now() - new Date(lastSeen).getTime();
-        if (ageMs <= oneDayMs)    deviceScore = 10;
-        else if (ageMs <= sevenDaysMs) deviceScore = 5;
-      }
+      const ageMs = lastSeen ? Date.now() - lastSeen.getTime() : null;
+      const deviceScore = ageMs === null ? 0 : ageMs <= oneDayMs ? 10 : ageMs <= sevenDaysMs ? 5 : 0;
 
       const totalScore = coverageScore + qualityScore + eventsScore + deviceScore;
       const grade: EvidenceGrade =
@@ -4426,14 +4055,10 @@ export class DatabaseStorage implements IStorage {
         totalScore >= 50 ? "moderate" :
         totalScore >= 25 ? "weak" : "insufficient";
 
-      const deviceLastSeenDaysAgo = lastSeen
-        ? Math.floor((Date.now() - new Date(lastSeen).getTime()) / oneDayMs)
-        : null;
-
       return {
         userId:              r.userId,
-        userName:            nameOf(r.userId),
-        entryCount:          r.entryCount,
+        userName:            r.userName,
+        entryCount:          r.entriesCount,
         trackedSeconds:      r.trackedSeconds,
         coverageScore,
         qualityScore,
@@ -4446,7 +4071,7 @@ export class DatabaseStorage implements IStorage {
         dupRatio:            Math.round(dupRatio * 100) / 100,
         avgActivityPct:      avgActivity !== null ? Math.round(avgActivity) : null,
         hasEvents:           eventCount > 0,
-        deviceLastSeenDaysAgo,
+        deviceLastSeenDaysAgo: ageMs === null ? null : Math.floor(ageMs / oneDayMs),
       };
     }).sort((a, b) => a.totalScore - b.totalScore); // worst first
 
@@ -4470,28 +4095,19 @@ export class DatabaseStorage implements IStorage {
     const allDevices = await db
       .select()
       .from(devices)
-      .where(inArray(devices.userId, workspaceUserIds()))
+      .where(inArray(devices.id, enrolledDeviceIds()))
       .orderBy(desc(devices.lastSeenAt));
-    const uids = [...new Set(allDevices.map(d => d.userId))];
-    const usersList = uids.length > 0
-      ? await db.select({ id: users.id, firstName: users.firstName, lastName: users.lastName, email: users.email })
-          .from(users).where(inArray(users.id, uids))
-      : [];
-    const usersMap = new Map(usersList.map(u => [u.id, u]));
-
-    return allDevices.map(d => {
-      const u = usersMap.get(d.userId);
-      return {
-        id: d.id,
-        userId: d.userId,
-        userName: u ? (`${u.firstName || ""} ${u.lastName || ""}`.trim() || u.email) : "Unknown",
-        name: d.name,
-        os: d.os ?? null,
-        clientVersion: d.clientVersion ?? null,
-        lastSeenAt: d.lastSeenAt ?? null,
-        revokedAt: d.revokedAt ?? null,
-        createdAt: d.createdAt ?? null,
-      };
-    });
+    const nameOf = await this.userNames(allDevices.map((d) => d.userId));
+    return allDevices.map((d) => ({
+      id: d.id,
+      userId: d.userId,
+      userName: nameOf(d.userId),
+      name: d.name,
+      os: d.os ?? null,
+      clientVersion: d.clientVersion ?? null,
+      lastSeenAt: d.lastSeenAt ?? null,
+      revokedAt: d.revokedAt ?? null,
+      createdAt: d.createdAt ?? null,
+    }));
   }
 }

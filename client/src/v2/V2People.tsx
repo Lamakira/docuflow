@@ -6,6 +6,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { motionForSurface } from "./motion";
 import { errorMessage, notify } from "./notify";
+import { useRefreshFailure } from "./useRefreshFailure";
 import {
   ARCHIVE_UNDO_MS,
   PEOPLE_ROLE_CHOICES,
@@ -46,13 +47,6 @@ type InviteResult = { email: string; emailSent: boolean };
 
 const ACCEPT_MOTION = motionForSurface("invitation-accept").enterExit;
 const SEARCH_SETTLE_MS = 250;
-
-/** A refresh that fails keeps what is on screen and says so once. */
-function useRefreshFailure(failed: boolean, message: string, id: string) {
-  useEffect(() => {
-    if (failed) notify.error(null, { fallback: message, id });
-  }, [failed, message, id]);
-}
 
 function refreshPeople() {
   for (const key of PEOPLE_STALE_KEYS) queryClient.invalidateQueries({ queryKey: [key] });
