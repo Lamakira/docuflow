@@ -9,6 +9,7 @@ import type { CrmProjectWithDetails, SafeUser, TimeEntryWithDetails } from "@sha
 import { canManageAdministration } from "./administration";
 import { chromeRefusal } from "./chrome";
 import { isStandingRefusal, notify } from "./notify";
+import { useRefreshFailure } from "./useRefreshFailure";
 import { motionForSurface } from "./motion";
 import { composePaging } from "./paging";
 import { memberName } from "./today";
@@ -120,13 +121,6 @@ function useWorkspaceCondition() {
     readOnly: current?.condition === "Read-only",
     ready: memberships !== undefined,
   };
-}
-
-/** A refresh that fails keeps what is on screen and says so once. */
-function useRefreshFailure(failed: boolean, message: string, id: string) {
-  useEffect(() => {
-    if (failed) notify.error(null, { fallback: message, id });
-  }, [failed, message, id]);
 }
 
 /** The Projects the reader may see, on the Time tracker's own query. */

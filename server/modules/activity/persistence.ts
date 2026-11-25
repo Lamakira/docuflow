@@ -17,7 +17,51 @@ import {
   type ScreenshotList,
   type ScreenshotListOptions,
 } from "./evidence";
+import type { AnalyticsOptions } from "../time/persistence";
 import { getScreenshotPolicy, upsertScreenshotPolicy } from "./policy";
+
+export interface ScreenshotCoverageReport {
+  summary: {
+    totalTrackedSeconds: number;
+    totalScreenshots: number;
+    expectedScreenshots: number;
+    coveragePercent: number | null;
+    totalEntries: number;
+    entriesWithoutScreenshots: number;
+    lowCoverageEntries: number;
+    /** Deleted by an Administrator; copies are left out. */
+    deletedScreenshots: number;
+    /** The policy's longest interval; null when captures are off. */
+    captureEveryMinutes: number | null;
+  };
+  byUser: Array<{
+    userId: string;
+    userName: string;
+    trackedSeconds: number;
+    entriesCount: number;
+    entriesWithoutScreenshots: number;
+    screenshotCount: number;
+    expectedScreenshots: number;
+    coveragePct: number | null;
+  }>;
+  byProject: Array<{
+    crmProjectId: string;
+    projectName: string;
+    trackedSeconds: number;
+    entriesCount: number;
+    entriesWithoutScreenshots: number;
+    screenshotCount: number;
+    expectedScreenshots: number;
+    coveragePct: number | null;
+  }>;
+  byDay: Array<{
+    date: string;
+    trackedSeconds: number;
+    screenshotCount: number;
+    expectedScreenshots: number;
+    coveragePct: number | null;
+  }>;
+}
 
 export interface ActivityPersistence {
   createTimeEntryScreenshot(screenshot: InsertTimeEntryScreenshot): Promise<TimeEntryScreenshot>;
@@ -52,17 +96,9 @@ export interface ActivityPersistence {
     }>
   ): Promise<void>;
 
-  getEvidenceQualityReport(opts: {
-    startDate: Date;
-    endDate: Date;
-    userId?: string;
-  }): Promise<EvidenceQualityReport>;
+  getEvidenceQualityReport(opts: AnalyticsOptions): Promise<EvidenceQualityReport>;
 
-  getAdminActivityStats(opts: {
-    startDate: Date;
-    endDate: Date;
-    userId?: string;
-  }): Promise<{
+  getAdminActivityStats(opts: AnalyticsOptions): Promise<{
     byUser: Array<{
       userId: string;
       userName: string;
@@ -72,18 +108,14 @@ export interface ActivityPersistence {
       idleEventCount: number;
     }>;
   }>;
-  getAdminScreenshotStats(opts: {
-    startDate: Date;
-    endDate: Date;
-    userId?: string;
-  }): Promise<{
+  getAdminScreenshotStats(opts: AnalyticsOptions): Promise<{
     totalCount: number;
     byUser: Array<{ userId: string; userName: string; count: number }>;
     hourlyDistribution: Array<{ hour: number; count: number }>;
     duplicates: Array<{ contentHash: string; count: number }>;
     deletedCount: number;
   }>;
-  getAdminAlerts(opts: { startDate: Date; endDate: Date }): Promise<{
+  getAdminAlerts(opts: AnalyticsOptions): Promise<{
     highIdleUsers: Array<{
       userId: string;
       userName: string;
@@ -105,11 +137,7 @@ export interface ActivityPersistence {
       startedAt: Date;
     }>;
   }>;
-  getDataQualityReport(opts: {
-    startDate: Date;
-    endDate: Date;
-    userId?: string;
-  }): Promise<{
+  getDataQualityReport(opts: AnalyticsOptions): Promise<{
     byUser: Array<{
       userId: string;
       userName: string;
@@ -128,50 +156,7 @@ export interface ActivityPersistence {
       deletedScreenshots: number;
     };
   }>;
-  getScreenshotCoverageReport(opts: {
-    startDate: Date;
-    endDate: Date;
-    userId?: string;
-    crmProjectId?: string;
-  }): Promise<{
-    summary: {
-      totalTrackedSeconds: number;
-      totalScreenshots: number;
-      expectedScreenshots: number;
-      coveragePercent: number | null;
-      totalEntries: number;
-      entriesWithoutScreenshots: number;
-      lowCoverageEntries: number;
-      deletedScreenshots: number;
-    };
-    byUser: Array<{
-      userId: string;
-      userName: string;
-      trackedSeconds: number;
-      entriesCount: number;
-      entriesWithoutScreenshots: number;
-      screenshotCount: number;
-      expectedScreenshots: number;
-      coveragePct: number | null;
-    }>;
-    byProject: Array<{
-      crmProjectId: string;
-      projectName: string;
-      trackedSeconds: number;
-      entriesCount: number;
-      entriesWithoutScreenshots: number;
-      screenshotCount: number;
-      expectedScreenshots: number;
-      coveragePct: number | null;
-    }>;
-    byDay: Array<{
-      date: string;
-      trackedSeconds: number;
-      screenshotCount: number;
-      expectedScreenshots: number;
-      coveragePct: number | null;
-    }>;
-  }>;
+  getScreenshotCoverageReport(opts: AnalyticsOptions): Promise<ScreenshotCoverageReport>;
 }
 
 export const activityPersistence = {

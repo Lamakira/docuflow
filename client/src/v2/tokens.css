@@ -201,8 +201,9 @@
 }
 
 /* Clerk's embedded components (`cl-*`) style their own controls (#316).
-   `.df-segment-item` sets its own font and ink; this rule would outrank it. */
-.df-v2 button:not(.df-btn):not(.df-segment-item):not([class*="cl-"]),
+   `.df-segment-item`, `.df-tab` and `.df-chart-toggle` set their own font and
+   ink; this rule would outrank them. */
+.df-v2 button:not(.df-btn):not(.df-segment-item):not([class*="cl-"]):not(:where(.df-tab, .df-chart-toggle)),
 .df-v2 input:not([class*="cl-"]) {
   font: inherit;
   color: inherit;
@@ -2147,33 +2148,12 @@ button.df-activity-row {
 
 .df-analytics-group-label {
   margin: 0;
-  padding: var(--df-space-4) var(--df-space-5) 0;
+  padding: var(--df-space-4) var(--df-space-4) var(--df-space-2);
   font-family: var(--df-font-data);
   font-variant-numeric: tabular-nums;
   font-size: var(--df-text-1);
   font-weight: 500;
   color: var(--df-archive-slate);
-}
-
-/* What a breakdown's rows are, said before the rows (#281). */
-.df-analytics-group-caption {
-  margin: 0;
-  padding: var(--df-space-1) var(--df-space-5) var(--df-space-2);
-  font-size: var(--df-text-2);
-  line-height: 1.45;
-  color: var(--df-archive-slate);
-  max-width: 68ch;
-}
-
-/* Recorded time's totals, read as a sentence above the figures that carry them. */
-.df-recorded-sentence {
-  margin: 0;
-  padding: var(--df-space-4) var(--df-space-4) 0;
-  font-size: var(--df-text-4);
-  font-weight: 500;
-  line-height: 1.45;
-  color: var(--df-case-ink);
-  max-width: 68ch;
 }
 
 .df-analytics-register .df-register-head[data-columns="2"],
@@ -2207,6 +2187,101 @@ button.df-activity-row {
   font-size: var(--df-text-2);
   text-transform: none;
   color: var(--df-case-ink);
+}
+
+/* Analytics (F100). Numbers sit on the right edge of their column and their heads on the
+   same edge, in tabular figures; a long name wraps instead of pushing the numbers out. */
+.df-analytics-register :is(.df-register-head, .df-register-row) > [data-align="end"] {
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Heads and rows share one gutter, so a column starts and ends on one line. */
+.df-analytics-register .df-register-head {
+  padding-inline: var(--df-space-4);
+}
+
+.df-analytics-register .df-note {
+  max-width: none;
+}
+
+.df-analytics-register [role="tabpanel"] {
+  margin: 0;
+}
+
+.df-analytics-register .df-register-row > :first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Five figures in one band; a tile's value sits on the same line whatever its label wraps to. */
+.df-figure-band[data-figures] .df-analytics-figure-value {
+  margin-top: auto;
+}
+
+.df-figure-band[data-figures="5"] {
+  grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+}
+
+/* On a phone the fifth tile takes the whole last row. */
+.df-v2[data-chrome="mobile"] .df-figure-band[data-figures="5"] > :last-child {
+  grid-column: 1 / -1;
+}
+
+/* A number never leaves its label at the end of a line. */
+.df-analytics-pair {
+  white-space: nowrap;
+}
+
+.df-analytics-register .df-figure-band + .df-note {
+  padding-top: 0;
+}
+
+.df-analytics-subhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--df-space-3);
+  padding: var(--df-space-4) var(--df-space-4) 0;
+}
+
+.df-analytics-subhead-title {
+  margin: 0;
+  font-family: var(--df-font-data);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--df-text-1);
+  font-weight: 500;
+  color: var(--df-archive-slate);
+}
+
+.df-analytics-tabs {
+  padding: 0 var(--df-space-4);
+  border-bottom: 1px solid var(--df-divider-light);
+}
+
+.df-analytics-name {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.df-analytics-link:hover {
+  text-decoration: underline;
+}
+
+/* The button's own padding is the card's gutter, so its label starts with the rows. */
+.df-analytics-more {
+  padding: var(--df-space-2) 0;
+}
+
+/* A new Range's figures arrive: the old ones stay, dimmed, and nothing moves. */
+.df-page [data-refreshing="true"] {
+  opacity: 0.6;
+}
+
+/* A stacked row's text starts where its card's text does. */
+.df-v2[data-chrome="mobile"] .df-analytics-register .df-register-row {
+  padding-inline: var(--df-space-4);
 }
 
 /* Tracking Policy (#212) — the form never animates on a keystroke. */

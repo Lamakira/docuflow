@@ -16,11 +16,11 @@ import { V2EmptyLine } from "./V2EmptyState";
 
 /* Series colors are tokens (--df-chart-*), read through the shadcn ChartConfig. */
 
-const GRID_STROKE = "var(--df-divider-light)";
+export const GRID_STROKE = "var(--df-divider-light)";
 const CARD_SURFACE = "var(--df-card-white)";
 const TOOLTIP_CURSOR = { stroke: "var(--df-divider)", strokeWidth: 1 };
-const BAR_CURSOR = { fill: "var(--df-hover)" };
-const CHART_MARGIN = { top: 8, right: 8, left: 0, bottom: 0 };
+export const BAR_CURSOR = { fill: "var(--df-hover)" };
+export const CHART_MARGIN = { top: 8, right: 8, left: 0, bottom: 0 };
 
 const growthConfig = {
   newWorkspaces: { label: "New Workspaces", color: "var(--df-chart-1)" },
@@ -122,7 +122,7 @@ export function ChartSkeleton() {
   return <Skeleton className="df-chart-skeleton" data-testid="v2-chart-skeleton" />;
 }
 
-function dayAxis() {
+export function dayAxis() {
   return <XAxis dataKey="label" tickLine={false} axisLine={false} tickMargin={8} minTickGap={24} />;
 }
 

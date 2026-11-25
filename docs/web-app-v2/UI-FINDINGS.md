@@ -2005,3 +2005,160 @@ than; the line about the page under the title or in a note 20 px lower; the titl
 off the buttons' line.
 
 - **Fixed:** 2026-11-25. One head (`V2PageHead`): the title's line is 34 px, as a button; the count or the date is a filled pill beside it; one or two filters sit in the head (People, the console's Users); the line about the page is right under it; 20 px to what follows. Measured on 18 pages; seen on People, Documents, Activity, Opportunities, Today and the console's Stats, and at 375 px on four, where the actions now wrap under the title (they covered it on Opportunities). A test refuses a head drawn elsewhere.
+
+## F93 - Analytics lists the Devices of other Workspaces
+
+- **Status:** closed - fixed 2026-11-25
+- **Found:** 2026-11-25, the Analytics review (seen)
+- **Where:** `getAdminAlerts`, `getDataQualityReport`, `getAdminAllDevices` in `server/modules/postgresStorage.ts`
+- **Severity:** a Workspace reads what belongs to another
+
+`Stalled devices` reads every Device of the database. In a Workspace of one Member
+it shows the Device, the name and the last contact of someone who belongs only to
+another Workspace. `devices` has no Workspace column and no row security, and the
+query has no filter. The Devices list and the count of revoked ones start from the
+Workspace's people instead of `device_enrollments`, so a Member's Devices enrolled
+elsewhere show as this Workspace's. v1 reads the same routes.
+
+- **Proposal:** read both lists through `device_enrollments` of the active
+  Workspace, with a test of two Workspaces that share no one and two that share a
+  Member. Say how many are stalled and link to the rest: the list stops at 20 of 84
+  without a word.
+
+- **Fixed:** 2026-11-25. Both lists, the revoked count and the per-Member contact go through `device_enrollments` of the Active Workspace; an Archived Membership's Device is no warning. Two-Workspace tests (none shared, one Member shared). On the copy of the real data all 86 Devices are enrolled, so none is lost: 71 stalled, all listed. Seen: the other Workspace's Device is gone.
+
+## F94 - Coverage and quality multiply the time by the captures
+
+- **Status:** closed - fixed 2026-11-25
+- **Found:** 2026-11-25, the Analytics review (measured on the copy of the real data)
+- **Where:** `getScreenshotCoverageReport`, `getEvidenceQualityReport`
+- **Severity:** the figures are wrong
+
+Time Entries are joined to their captures and the duration is then summed, so an
+entry counts once per capture. 3,112 h read as 405,763 h. Coverage says
+`16192 of 2434578`, 1 %, where the captures cover about a third of what the policy
+promises (12,251 without the copies; one per 4.1 minutes where there are any). One Member with 283.7 h
+shows 198,441.8 h. Every grade comes out weak or moderate, so a person who tracks
+well is graded weak. The average activity arrives as text, so its penalty never
+applies. One capture per 10 minutes is expected while the policy takes one every 3 to
+5. The card says it does not score Members, then grades them, the worst first.
+
+- **Proposal:** sum the time once per entry and count the captures apart (copies
+  hidden, as everywhere); take the expected count from the capture policy; show the
+  coverage per Member and drop the grades, in alphabetical order.
+
+- **Fixed:** 2026-11-25. Captures are counted in their own query and never joined to the time. One is expected per longest interval of the Tracking Policy (5 minutes). Since June on the real data: 3,502.5 h, 16,346 captures of 42,024 (copies included), 39 %. v2 shows the coverage, alphabetical, without grades; v1 keeps them, on right figures.
+
+## F95 - Analytics and Time Tracking disagree on the same week
+
+- **Status:** closed - fixed 2026-11-25
+- **Found:** 2026-11-25, the Analytics review (measured on the copy of the real data)
+- **Where:** `getAdminOverview`, `getAdminProductivity`, `getAdminActivityStats`, the export route, `analyticsRange`
+- **Severity:** the figures are wrong
+
+12 to 18 October: 135.8 h and 15 entries here, 219.3 h and 20 entries in Time
+Tracking. October: 768.7 h against 788.2 h. Here an entry counts whole on the day it
+started and only once stopped; F67 gave every other screen its part of the period, the
+running Timer included. A single day reads 189.6 h. Days and hours are UTC's and
+`Active today` starts at the server's midnight. `Last 7 days` is 168 hours back from
+now: eight dates, the first and the last cut, so its totals are not any week's.
+
+- **Proposal:** read all of it through `getTimePortions` (F67), days and hours in the
+  same time zone as Time Tracking, and ranges of whole days that end today.
+
+- **Fixed:** 2026-11-25. Every figure is a sum of F67's portions, running Timers included, days and hours in the reader's time zone (`tz`; the Workspace's without it), and a range is whole days ending today. On the real data Analytics, Time Tracking, the rows per Member, Project and day, and the export all read 804.5 h for October.
+
+## F96 - Idle and low activity say something else here
+
+- **Status:** closed - fixed 2026-11-25
+- **Found:** 2026-11-25, the Analytics review (measured)
+- **Where:** `getAdminActivityStats`, `getAdminAlerts`
+- **Severity:** misleads
+
+Idle is kept beside the tracked time, not in it: duration plus idle is the wall time on
+every entry of the real data. The page says the opposite (`Of which idle`, `1.0 h of it
+was idle`). `Idle events` counts up to 5,561 beside `0.0 h` of idle. `Low activity` means
+an entry more idle than tracked here, and a capture's activity on the Activity screen.
+(The review first had the sum the other way round.)
+
+- **Proposal:** say that idle is beside the tracked time, drop the event count, and one
+  name per meaning: `Mostly idle` for a Member whose time is more idle than tracked.
+
+- **Fixed:** 2026-11-25. The page says idle is beside the tracked time; the event count and `Low activity` are gone, and the warning is `Mostly idle`.
+
+## F97 - One failed read takes the whole page
+
+- **Status:** closed - fixed 2026-11-25
+- **Found:** 2026-11-25, the Analytics review (seen)
+- **Where:** `V2Analytics.tsx`, `composeAnalytics`
+- **Severity:** a dead end
+
+With the Devices list alone refused, the page is one line, `Analytics could not be read
+for this range`, with no Try again and no Range: only leaving the page reads again.
+Changing the Range empties the page to `Reading analytics for this range…` (seen at 2.5 s), and picking
+Custom range does the same for the dates already on screen. The three reports that fail
+alone are a bare line. A malformed date in the address answers 500.
+
+- **Proposal:** each card reads and fails alone, with `V2LoadFailed` and its Try again;
+  the head and the Range stay; the old figures stay, dimmed, until the new ones arrive;
+  a bad date answers 400.
+
+- **Fixed:** 2026-11-25. Each card reads, fails and refreshes alone, with Try again (seen on one card); a new Range keeps the old figures, dimmed (seen at 2.5 s); Custom asks for nothing new. Bad dates, a reversed range or an unknown zone answer 400 on the ten routes.
+
+## F98 - The Export is not what the page shows
+
+- **Status:** closed - fixed 2026-11-25
+- **Found:** 2026-11-25, the Analytics review (measured, the download read from code)
+- **Where:** `/api/admin/analytics/export`, `V2Analytics.tsx`
+- **Severity:** reads badly, and a cell can run as a formula
+
+Same counting as F95. The file has no mark of UTF-8, so Excel garbles the accents; a
+Task named `=…` runs as a formula; no Client and no start or end time; a UTC date; one
+query per Task (102 for one file). It is a plain link: a refusal would be saved as the
+`.csv`.
+
+- **Proposal:** the page's figures, a UTF-8 mark, cells that start with `= + - @`
+  kept as text, Client, start, end and duration, one query, and a toast when it fails.
+
+- **Fixed:** 2026-11-25. One line per Time Entry, its part of the range, Client, start and end, UTF-8 mark, formula cells kept as text, one query, a name with both days. The button reads it itself: a refusal is a toast, never a file (both seen).
+
+## F99 - Lists cut short, and no way to the record
+
+- **Status:** closed - fixed 2026-11-25
+- **Found:** 2026-11-25, the Analytics review (measured)
+- **Where:** `getAdminProductivity`, `getAdminScreenshotStats`, `getAdminAlerts`
+- **Severity:** misleads
+
+Tasks stop at 20 of 100, duplicate captures at 20, running Timers at 50, without a
+word. A Task has no Project and a Project no Client, so two `Design` read as one
+another. Nothing links to the Member, the Project or their captures.
+
+- **Proposal:** name the Project and the Client, link each row, and say
+  `20 of 100` with Show all.
+
+- **Fixed:** 2026-11-25. Tasks, running Timers and stalled Devices are whole; 20, 10 or 5 rows show, then `Show all 101`. A Task names its Project and Client, a Project its Client, and the names are links. v1's duplicate list keeps its 20.
+
+## F100 - Analytics polish
+
+- **Status:** closed - fixed 2026-11-25
+- **Found:** 2026-11-25, the Analytics review (seen unless marked)
+
+- 4,202 px for 90 days and one Member: the same totals come back in three cards, and
+  Per day is a list of numbers.
+- Range and Export rule the page but sit inside the first card; with Custom range the
+  dates float alone in the middle of the row. Neither is in the address.
+- `Tombstoned` and `Duplicate groups` are the code's words. `18 Nov – 25 Nov` breaks the
+  hyphen rule. `ACTIVE` and `REVOKED` are in capitals.
+- Numbers are left-aligned and a few pixels off their heads. On a phone a stalled
+  Device's row sits 3 px left of its card's text.
+- `0` in eight tiles when nothing was tracked, over three cards that each say so.
+- `Active today` and `Running now` follow the Range's card but not the Range.
+- The activity read took 1,974 ms cold (measured).
+- `inWorkspace` is missing from the productivity, alert and deleted reads; row security
+  covers them (from code).
+
+- **Proposal:** Range and Export in the page head; one band of five figures; one chart of
+  hours per day; Members, Projects and Tasks in one card with tabs; captures and Devices
+  in one card each; the Range in the address; plain words.
+
+- **Fixed:** 2026-11-25. Range and Export in the head, Range and tab in the address, five figures, one bar chart of hours (weeks past 45 days) with its table, one Recorded time card with tabs, one Captures card, plain words, right-aligned numbers under their heads. Seen in light and dark, at 375 px, with 101 Tasks and 71 Devices. A shared rule drew every tab and chart toggle at 16 px instead of 14 (Administration, the console): fixed at the source.

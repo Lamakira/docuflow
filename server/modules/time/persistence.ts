@@ -1,4 +1,6 @@
 import type { TimeEntry, InsertTimeEntry, TimeEntryWithDetails, TimerCommand } from "@shared/schema";
+import type { TimeSpan } from "@shared/timePortion";
+import type { TimeExportRow } from "./timeExport";
 import { applyTimerCommand, listTimerCommands, type ApplyTimerCommandInput, type ApplyTimerCommandResult } from "./commands";
 import { getAllowedTimezones, upsertAllowedTimezones } from "./schedule";
 
@@ -24,6 +26,23 @@ export interface TimePortionRow {
   /** Inside the period. */
   seconds: number;
   idleSeconds: number;
+}
+
+/** What an Analytics report reads: the range, the zone its days and hours are in, and its filters. */
+export interface AnalyticsOptions {
+  startDate: Date;
+  endDate: Date;
+  timeZone: string;
+  userId?: string;
+  crmProjectId?: string;
+}
+
+export interface TimeSpanRow extends Omit<TimePortionRow, "projectName"> {
+  projectName: string | null;
+  clientName: string | null;
+  description: string | null;
+  status: string;
+  span: TimeSpan;
 }
 
 export interface TimeEntryPageOptions extends TimePortionOptions {
@@ -88,7 +107,7 @@ export interface TimePersistence {
   applyTimerCommand(input: ApplyTimerCommandInput): Promise<ApplyTimerCommandResult>;
   listTimerCommands(userId: string): Promise<TimerCommand[]>;
 
-  getAdminOverview(opts: { startDate: Date; endDate: Date }): Promise<{
+  getAdminOverview(opts: AnalyticsOptions): Promise<{
     totalTrackedSeconds: number;
     totalIdleSeconds: number;
     entriesCount: number;
@@ -98,12 +117,7 @@ export interface TimePersistence {
     lowActivityEntries: number;
     revokedDevices: number;
   }>;
-  getAdminProductivity(opts: {
-    startDate: Date;
-    endDate: Date;
-    userId?: string;
-    crmProjectId?: string;
-  }): Promise<{
+  getAdminProductivity(opts: AnalyticsOptions): Promise<{
     byUser: Array<{
       userId: string;
       userName: string;
@@ -114,12 +128,22 @@ export interface TimePersistence {
     byProject: Array<{
       crmProjectId: string;
       projectName: string;
+      clientName: string | null;
       totalSeconds: number;
       entriesCount: number;
     }>;
-    byTask: Array<{ taskId: string | null; taskName: string; totalSeconds: number }>;
+    byTask: Array<{
+      taskId: string;
+      taskName: string;
+      crmProjectId: string;
+      projectName: string;
+      clientName: string | null;
+      totalSeconds: number;
+    }>;
     dailyTrend: Array<{ date: string; totalSeconds: number }>;
   }>;
+  /** The Time Entries touching the range, newest first. */
+  getTimeExport(opts: AnalyticsOptions): Promise<TimeExportRow[]>;
 }
 
 export const timePersistence = {

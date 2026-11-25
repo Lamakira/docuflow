@@ -120,7 +120,7 @@ export function V2DateRangeField({
           <CalendarDays aria-hidden="true" />
           <span>
             {value
-              ? `${formatFullDate(value.from, { dateOnly: true })} – ${formatFullDate(value.to, { dateOnly: true })}`
+              ? `${formatFullDate(value.from, { dateOnly: true })} - ${formatFullDate(value.to, { dateOnly: true })}`
               : "Pick a range"}
           </span>
         </Button>

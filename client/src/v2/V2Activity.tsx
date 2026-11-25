@@ -3,6 +3,7 @@ import { Link, useLocation, useParams, useSearch } from "wouter";
 import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { notify } from "./notify";
+import { useRefreshFailure } from "./useRefreshFailure";
 import { useAuth } from "@/hooks/useAuth";
 import type { CrmProjectWithDetails, SafeUser, ScreenshotPolicy } from "@shared/schema";
 import { canManageAdministration } from "./administration";
@@ -105,13 +106,6 @@ async function saveCapture(tile: GalleryTile): Promise<boolean> {
   } catch {
     return false;
   }
-}
-
-/** A refresh that fails keeps what is on screen and says so once. */
-function useRefreshFailure(failed: boolean, message: string, id: string) {
-  useEffect(() => {
-    if (failed) notify.error(null, { fallback: message, id });
-  }, [failed, message, id]);
 }
 
 export function V2ActivityPage() {

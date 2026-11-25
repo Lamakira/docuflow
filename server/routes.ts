@@ -149,7 +149,10 @@ import {
   ingestActivityScreenshot,
 } from "./modules/activity/evidenceJobs";
 import { applyTimerCommand, inTimeEntryWorkspace, loadTimeEntryById, nextTimerSequence } from "./modules/time/commands";
+import { dayCalendar } from "./modules/time/dayCalendar";
 import { serverDayWindow } from "./modules/time/dayWindow";
+import type { AnalyticsOptions } from "./modules/time/persistence";
+import { timeExportCsv } from "./modules/time/timeExport";
 import { logTimeEvent, logError, logInfo } from "./logger";
 import { HELP_SCREENSHOT_SLOT_IDS, isHelpScreenshotSlotId } from "@shared/helpCenterScreenshotSlots";
 
@@ -3900,18 +3903,35 @@ Instructions:
 
   // ─── Admin: Analytics ───
 
-  const parseDateRange = (query: any): { start: Date; end: Date } => {
-    const end = query.end ? new Date(query.end as string) : new Date();
-    const start = query.start
-      ? new Date(query.start as string)
-      : new Date(end.getTime() - 7 * 24 * 60 * 60 * 1000);
-    return { start, end };
+  /** The range, the zone and the filters a report takes, or what is wrong with them. */
+  const analyticsOptions = async (
+    query: any,
+    ...filters: Array<"userId" | "crmProjectId">
+  ): Promise<AnalyticsOptions | string> => {
+    const instant = (value: unknown, absent: Date) =>
+      !value ? absent : new Date(typeof value === "string" ? value : NaN);
+    const endDate = instant(query.end, new Date());
+    const startDate = instant(query.start, new Date(endDate.getTime() - 7 * 24 * 60 * 60 * 1000));
+    for (const date of [startDate, endDate]) {
+      const year = date.getUTCFullYear();
+      // Also out: the years a Date holds and a Postgres timestamp literal does not.
+      if (!(year >= 1 && year <= 9999)) return "Invalid date range";
+    }
+    if (startDate > endDate) return "Invalid date range";
+    if (query.tz && !isIanaTimeZone(query.tz)) return "Unknown time zone";
+    return {
+      startDate,
+      endDate,
+      timeZone: query.tz || (await getWorkspaceTimeZone()),
+      ...Object.fromEntries(filters.map((key) => [key, query[key] || undefined])),
+    };
   };
 
   app.get("/api/admin/analytics/overview", isAuthenticated, requireAdministration, async (req: any, res) => {
     try {
-      const { start, end } = parseDateRange(req.query);
-      const data = await storage.getAdminOverview({ startDate: start, endDate: end });
+      const opts = await analyticsOptions(req.query);
+      if (typeof opts === "string") return res.status(400).json({ message: opts });
+      const data = await storage.getAdminOverview(opts);
       res.json(data);
     } catch (error) {
       console.error("Error fetching admin overview:", error);
@@ -3921,13 +3941,9 @@ Instructions:
 
   app.get("/api/admin/analytics/productivity", isAuthenticated, requireAdministration, async (req: any, res) => {
     try {
-      const { start, end } = parseDateRange(req.query);
-      const data = await storage.getAdminProductivity({
-        startDate: start,
-        endDate: end,
-        userId: (req.query.userId as string) || undefined,
-        crmProjectId: (req.query.crmProjectId as string) || undefined,
-      });
+      const opts = await analyticsOptions(req.query, "userId", "crmProjectId");
+      if (typeof opts === "string") return res.status(400).json({ message: opts });
+      const data = await storage.getAdminProductivity(opts);
       res.json(data);
     } catch (error) {
       console.error("Error fetching admin productivity:", error);
@@ -3937,12 +3953,9 @@ Instructions:
 
   app.get("/api/admin/analytics/activity", isAuthenticated, requireAdministration, async (req: any, res) => {
     try {
-      const { start, end } = parseDateRange(req.query);
-      const data = await storage.getAdminActivityStats({
-        startDate: start,
-        endDate: end,
-        userId: (req.query.userId as string) || undefined,
-      });
+      const opts = await analyticsOptions(req.query, "userId");
+      if (typeof opts === "string") return res.status(400).json({ message: opts });
+      const data = await storage.getAdminActivityStats(opts);
       res.json(data);
     } catch (error) {
       console.error("Error fetching admin activity:", error);
@@ -3952,12 +3965,9 @@ Instructions:
 
   app.get("/api/admin/analytics/screenshots", isAuthenticated, requireAdministration, async (req: any, res) => {
     try {
-      const { start, end } = parseDateRange(req.query);
-      const data = await storage.getAdminScreenshotStats({
-        startDate: start,
-        endDate: end,
-        userId: (req.query.userId as string) || undefined,
-      });
+      const opts = await analyticsOptions(req.query, "userId");
+      if (typeof opts === "string") return res.status(400).json({ message: opts });
+      const data = await storage.getAdminScreenshotStats(opts);
       res.json(data);
     } catch (error) {
       console.error("Error fetching admin screenshots:", error);
@@ -3967,8 +3977,9 @@ Instructions:
 
   app.get("/api/admin/analytics/alerts", isAuthenticated, requireAdministration, async (req: any, res) => {
     try {
-      const { start, end } = parseDateRange(req.query);
-      const data = await storage.getAdminAlerts({ startDate: start, endDate: end });
+      const opts = await analyticsOptions(req.query);
+      if (typeof opts === "string") return res.status(400).json({ message: opts });
+      const data = await storage.getAdminAlerts(opts);
       res.json(data);
     } catch (error) {
       console.error("Error fetching admin alerts:", error);
@@ -3979,12 +3990,9 @@ Instructions:
   // Data quality report — evidence completeness flags, never redefines tracked time
   app.get("/api/admin/analytics/data-quality", isAuthenticated, requireAdministration, async (req: any, res) => {
     try {
-      const { start, end } = parseDateRange(req.query);
-      const data = await storage.getDataQualityReport({
-        startDate: start,
-        endDate: end,
-        userId: (req.query.userId as string) || undefined,
-      });
+      const opts = await analyticsOptions(req.query, "userId");
+      if (typeof opts === "string") return res.status(400).json({ message: opts });
+      const data = await storage.getDataQualityReport(opts);
       res.json(data);
     } catch (error) {
       console.error("Error fetching data quality report:", error);
@@ -3996,13 +4004,9 @@ Instructions:
   // Coverage is purely observational. Tracked time is never modified by this endpoint.
   app.get("/api/admin/analytics/coverage", isAuthenticated, requireAdministration, async (req: any, res) => {
     try {
-      const { start, end } = parseDateRange(req.query);
-      const data = await storage.getScreenshotCoverageReport({
-        startDate: start,
-        endDate: end,
-        userId: (req.query.userId as string) || undefined,
-        crmProjectId: (req.query.crmProjectId as string) || undefined,
-      });
+      const opts = await analyticsOptions(req.query, "userId", "crmProjectId");
+      if (typeof opts === "string") return res.status(400).json({ message: opts });
+      const data = await storage.getScreenshotCoverageReport(opts);
       res.json(data);
     } catch (error) {
       console.error("Error fetching coverage report:", error);
@@ -4014,12 +4018,9 @@ Instructions:
   // NEVER modifies or replaces tracked time; purely observational.
   app.get("/api/admin/analytics/evidence-quality", isAuthenticated, requireAdministration, async (req: any, res) => {
     try {
-      const { start, end } = parseDateRange(req.query);
-      const data = await storage.getEvidenceQualityReport({
-        startDate: start,
-        endDate: end,
-        userId: (req.query.userId as string) || undefined,
-      });
+      const opts = await analyticsOptions(req.query, "userId");
+      if (typeof opts === "string") return res.status(400).json({ message: opts });
+      const data = await storage.getEvidenceQualityReport(opts);
       res.json(data);
     } catch (error) {
       console.error("Error fetching evidence quality report:", error);
@@ -4027,8 +4028,10 @@ Instructions:
     }
   });
 
-  app.get("/api/admin/analytics/devices", isAuthenticated, requireAdministration, async (_req, res) => {
+  app.get("/api/admin/analytics/devices", isAuthenticated, requireAdministration, async (req: any, res) => {
     try {
+      const opts = await analyticsOptions(req.query);
+      if (typeof opts === "string") return res.status(400).json({ message: opts });
       const data = await storage.getAdminAllDevices();
       res.json(data);
     } catch (error) {
@@ -4039,40 +4042,14 @@ Instructions:
 
   app.get("/api/admin/analytics/export", isAuthenticated, requireAdministration, async (req: any, res) => {
     try {
-      const { start, end } = parseDateRange(req.query);
-      const entries = await storage.getTimeEntries({
-        startDate: start,
-        endDate: end,
-        userId: (req.query.userId as string) || undefined,
-        crmProjectId: (req.query.crmProjectId as string) || undefined,
-        status: "stopped",
-      });
-
-      // Batch-fetch task names
-      const taskIdsSet = new Set(entries.map(e => e.taskId).filter(Boolean) as string[]);
-      const tasksMap = new Map<string, string>();
-      for (const tid of taskIdsSet) {
-        const task = await storage.getTask(tid);
-        if (task) tasksMap.set(tid, task.name);
-      }
-
-      const escape = (s: string) => `"${(s || "").replace(/"/g, '""')}"`;
-      const rows = [
-        ["Date", "User", "Project", "Task", "Description", "Duration (h)", "Idle (h)"].join(","),
-        ...entries.map(e => [
-          new Date(e.startTime).toISOString().slice(0, 10),
-          escape(e.user ? (`${e.user.firstName || ""} ${e.user.lastName || ""}`.trim() || e.user.email) : ""),
-          escape(e.crmProject?.project?.name || ""),
-          escape((e.taskId && tasksMap.get(e.taskId)) || ""),
-          escape(e.description || ""),
-          (e.duration ? (e.duration / 3600).toFixed(2) : "0.00"),
-          (e.idleTime ? (e.idleTime / 3600).toFixed(2) : "0.00"),
-        ].join(","))
-      ];
-
-      res.setHeader("Content-Type", "text/csv");
-      res.setHeader("Content-Disposition", `attachment; filename="docuflow-export-${start.toISOString().slice(0, 10)}.csv"`);
-      res.send(rows.join("\n"));
+      const opts = await analyticsOptions(req.query, "userId", "crmProjectId");
+      if (typeof opts === "string") return res.status(400).json({ message: opts });
+      const calendar = dayCalendar(opts.timeZone);
+      const csv = timeExportCsv(await storage.getTimeExport(opts), calendar);
+      const filename = `docuflow-time-${calendar.dayOf(opts.startDate)}-to-${calendar.dayOf(opts.endDate)}.csv`;
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.send(csv);
     } catch (error) {
       console.error("Error exporting:", error);
       res.status(500).json({ message: "Failed to export" });
