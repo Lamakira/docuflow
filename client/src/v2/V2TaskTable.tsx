@@ -12,7 +12,7 @@
  * sort across.
  */
 
-import { V2CompactEmpty, V2EmptyState } from "./V2EmptyState";
+import { V2EmptyState } from "./V2EmptyState";
 import { useMemo } from "react";
 import {
   createColumnHelper,
@@ -49,7 +49,8 @@ export type V2TaskTableProps = {
   canWrite: boolean;
   emptyCopy: string;
   /** The designed empty state's headline; absent while loading, which keeps the plain line. */
-  emptyTitle?: string;
+  emptyTitle: string;
+  loading?: boolean;
   editingId: string | null;
   editingName: string;
   confirmDeleteId: string | null;
@@ -68,6 +69,7 @@ export function V2TaskTable(props: V2TaskTableProps) {
     canWrite,
     emptyCopy,
     emptyTitle,
+  loading = false,
     editingId,
     editingName,
     confirmDeleteId,
@@ -161,10 +163,10 @@ export function V2TaskTable(props: V2TaskTableProps) {
   const table = useTable({ features, columns, data: rows });
 
   if (rows.length === 0) {
-    return emptyTitle ? (
-      <V2EmptyState icon="tasks" title={emptyTitle} copy={emptyCopy} testId="v2-time-tasks-empty" />
+    return loading ? (
+      <p className="df-note">Loading…</p>
     ) : (
-      <V2CompactEmpty>{emptyCopy}</V2CompactEmpty>
+      <V2EmptyState icon="tasks" title={emptyTitle} copy={emptyCopy} testId="v2-time-tasks-empty" />
     );
   }
 

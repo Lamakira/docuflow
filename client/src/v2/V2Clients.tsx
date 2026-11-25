@@ -38,7 +38,7 @@ import { swatchStyle } from "./palette";
 import { matchV2Route } from "./presentation";
 import { useWorkspaceOwnerName } from "./useWorkspaceOwner";
 import { useV2Chrome } from "./V2Shell";
-import { V2EmptyState, V2RecordEmpty } from "./V2EmptyState";
+import { V2CompactEmpty, V2EmptyState, V2LoadFailed, V2RecordEmpty } from "./V2EmptyState";
 import { V2FormDialog } from "./V2FormDialog";
 import { V2FilterSelect, type V2SelectOption } from "./V2Select";
 import { SourceMark } from "./icons";
@@ -325,7 +325,7 @@ export function V2ClientsPage() {
 
   const registerPath = clientRegisterPath(filters);
   const sourceOptions = useClientSourceOptions();
-  const { data: clientPage, isLoading, isError } = useQuery<ClientPage>({
+  const { data: clientPage, isLoading, isError, refetch } = useQuery<ClientPage>({
     queryKey: ["/api/crm/clients", "register-page", registerPath],
     placeholderData: keepPreviousData,
     queryFn: () => loadClientPage(registerPath),
@@ -411,7 +411,12 @@ export function V2ClientsPage() {
             <h1 className="df-title">Clients</h1>
           </div>
         </header>
-        <p className="df-empty">Clients in this Workspace could not be loaded.</p>
+        <V2LoadFailed
+          title="Clients could not be loaded"
+          copy="Something went wrong while loading them. Try again."
+          onRetry={() => refetch()}
+          testId="v2-clients-load-failed"
+        />
       </div>
     );
   }
@@ -586,7 +591,7 @@ function ClientPreviewCard<T extends { id: string }>({
           <span className="df-count-chip">{rows.length}</span>
         </span>
       </div>
-      {rows.length === 0 ? <p className="df-empty">{emptyCopy}</p> : shown.map(renderRow)}
+      {rows.length === 0 ? <V2CompactEmpty>{emptyCopy}</V2CompactEmpty> : shown.map(renderRow)}
       {rows.length > CLIENT_RECORD_PREVIEW ? (
         <div className="df-client-card-more">
           <Button variant="ghost" type="button" className="df-btn" onClick={() => setExpanded((value) => !value)}>
@@ -821,24 +826,17 @@ export function V2ClientRecordPage() {
     return (
       <div className="df-page" data-testid="v2-client-record">
         {record.unavailable ? (
-          <V2EmptyState
-            icon="clients"
-            title="This Client could not be loaded."
+          <V2LoadFailed
+            title="This Client could not be loaded"
             copy="Something went wrong while loading it. Try again, or go back to Clients."
+            onRetry={() => refetch()}
+            action={back}
             testId="v2-client-load-failed"
-            action={
-              <span className="df-cluster">
-                <Button variant="default" type="button" className="df-btn" onClick={() => refetch()}>
-                  Try again
-                </Button>
-                {back}
-              </span>
-            }
           />
         ) : (
           <V2EmptyState
             icon="clients"
-            title="This Client is not in this Workspace, or it was deleted."
+            title="This Client is not in this Workspace, or it was deleted"
             copy="Check the link, or find it in Clients."
             testId="v2-client-missing"
             action={back}
@@ -1052,7 +1050,7 @@ export function V2ClientRecordPage() {
                   </div>
                 </V2FormDialog>
                 {record.contacts.length === 0 ? (
-                  <p className="df-empty">{record.contactsEmptyCopy}</p>
+                  <V2CompactEmpty>{record.contactsEmptyCopy}</V2CompactEmpty>
                 ) : layout.stackedRegister ? (
                   record.contacts.map((contact) => (
                     <div key={contact.id} className="df-register-row">

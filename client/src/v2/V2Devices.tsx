@@ -30,7 +30,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { V2EmptyState } from "./V2EmptyState";
+import { V2CompactEmpty, V2EmptyState, V2LoadFailed } from "./V2EmptyState";
 import { SkeletonRegister, V2PageSkeleton } from "./V2Skeleton";
 
 type DevicesResponse = { data: DeviceInput[] };
@@ -51,7 +51,7 @@ export function V2DevicesPage() {
   });
   const [actionRefusal, setActionRefusal] = useState<string | null>(null);
 
-  const { data, isLoading, isError } = useQuery<DevicesResponse>({
+  const { data, isLoading, isError, refetch } = useQuery<DevicesResponse>({
     queryKey: [agentDevicesPath()],
     refetchInterval: 15_000,
   });
@@ -178,7 +178,7 @@ export function V2DevicesPage() {
                   {page.pairing.code}
                 </p>
                 {page.pairing.expiresAt ? (
-                  <p className="df-empty df-flush">
+                  <p className="df-note df-flush">
                     Expires {new Date(page.pairing.expiresAt).toLocaleTimeString()}. Enter it once in the desktop
                     agent.
                   </p>
@@ -195,14 +195,19 @@ export function V2DevicesPage() {
                 </div>
               </>
             ) : (
-              <p className="df-empty">Could not generate a code.</p>
+              <p className="df-note">Could not generate a code.</p>
             )}
           </div>
         </section>
       ) : null}
 
       {isError ? (
-        <p className="df-empty">Enrolled Devices could not be loaded.</p>
+        <V2LoadFailed
+          title="Your Devices could not be loaded"
+          copy="Something went wrong while loading them. Try again."
+          onRetry={() => refetch()}
+          testId="v2-devices-load-failed"
+        />
       ) : (
         <section className="df-card df-devices-register" data-testid="v2-devices-register">
           <div className="df-card-head">
@@ -290,7 +295,7 @@ export function V2DevicesPage() {
         {installers.rows.map((row) => (
           <InstallerRowView key={row.platform} row={row} />
         ))}
-        {installers.unavailableCopy ? <p className="df-empty">{installers.unavailableCopy}</p> : null}
+        {installers.unavailableCopy ? <V2CompactEmpty>{installers.unavailableCopy}</V2CompactEmpty> : null}
       </section>
     </div>
   );

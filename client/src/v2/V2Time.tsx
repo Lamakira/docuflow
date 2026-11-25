@@ -62,7 +62,7 @@ import {
 } from "./time";
 import { TimeRemovals } from "./timeRemovals";
 import { Button } from "@/components/ui/button";
-import { V2CompactEmpty, V2EmptyState, V2RecordEmpty } from "./V2EmptyState";
+import { V2CompactEmpty, V2EmptyState, V2LoadFailed, V2RecordEmpty } from "./V2EmptyState";
 import { SkeletonRegister, SkeletonSection, V2PageSkeleton } from "./V2Skeleton";
 
 type TimeEntry = TimeEntryWithDetails & { secondsInPeriod?: number };
@@ -149,27 +149,6 @@ function useTimeProjects() {
     state: list ? ("ready" as const) : failed ? ("failed" as const) : ("loading" as const),
     refetch: query.refetch,
   };
-}
-
-function LoadFailed({ title, icon, onRetry, testId }: {
-  title: string;
-  icon: "time" | "projects" | "tasks";
-  onRetry: () => void;
-  testId: string;
-}) {
-  return (
-    <V2EmptyState
-      icon={icon}
-      title={title}
-      copy="Something went wrong while loading them. Try again."
-      testId={testId}
-      action={
-        <Button variant="default" type="button" className="df-btn" onClick={onRetry}>
-          Try again
-        </Button>
-      }
-    />
-  );
 }
 
 export function V2TimePage() {
@@ -401,6 +380,15 @@ function TimeEntriesPane() {
     hasProjects: timeProjects.list ? offered.length > 0 : true,
     canCreateProject: !readOnly,
     facetsActive: filters.project !== "all" || filters.status !== "all" || filters.member !== "all",
+    facetLabels: [
+      ...(filters.project !== "all"
+        ? [`Project: ${filterOptions.find((option) => option.id === filters.project)?.label ?? "-"}`]
+        : []),
+      ...(filters.status !== "all"
+        ? [`Status: ${TIME_STATUS_OPTIONS.find((option) => option.value === filters.status)?.label ?? "-"}`]
+        : []),
+      ...(filters.member !== "all" ? [`Member: ${memberName((users ?? []).find((member) => member.id === filters.member) ?? {})}`] : []),
+    ],
   });
 
   if (entriesResponse && knownIds.current === null) {
@@ -521,7 +509,7 @@ function TimeEntriesPane() {
           ) : null}
         </div>
         {noTask ? (
-          <p className="df-empty" data-testid="v2-time-timer-no-task">
+          <p className="df-note" data-testid="v2-time-timer-no-task">
             This Project has no Task yet.{" "}
             {readOnly ? null : (
               <Link href={projectTasksHref(timerProjectId)} className="df-cta">
@@ -531,7 +519,7 @@ function TimeEntriesPane() {
           </p>
         ) : null}
         {page.timerHint ? (
-          <p className="df-empty" data-testid="v2-time-timer-hint">
+          <p className="df-note" data-testid="v2-time-timer-hint">
             {page.timerHint.href ? (
               <>
                 <Link href={page.timerHint.href} className="df-cta">
@@ -593,7 +581,7 @@ function TimeEntriesPane() {
       {writeRefusal ? <p className="df-refusal">{writeRefusal}</p> : null}
 
       <section className="df-card df-time-register" data-testid="v2-time-register">
-        {layout.stackedRegister || loadFailed ? null : (
+        {layout.stackedRegister || loadFailed || page.emptyState ? null : (
           <div className="df-register-head df-desktop-only">
             <span>When</span>
             <span>Project</span>
@@ -605,9 +593,8 @@ function TimeEntriesPane() {
           </div>
         )}
         {loadFailed ? (
-          <LoadFailed
-            title="Time Entries could not be loaded."
-            icon="time"
+          <V2LoadFailed
+            title="Time Entries could not be loaded"
             onRetry={() => refetch()}
             testId="v2-time-load-failed"
           />
@@ -788,9 +775,8 @@ function TimeStatsPane() {
       </header>
 
       {isError && !data ? (
-        <LoadFailed
-          title="Time stats could not be loaded."
-          icon="time"
+        <V2LoadFailed
+          title="Time stats could not be loaded"
           onRetry={() => refetch()}
           testId="v2-time-stats-load-failed"
         />
@@ -835,7 +821,7 @@ function TimeStatsPane() {
               <h2 className="df-card-title">By Project</h2>
             </div>
             {page.byProject.empty ? (
-              <V2CompactEmpty>{isLoading ? "Loading…" : page.byProject.emptyCopy}</V2CompactEmpty>
+              isLoading ? <p className="df-note">Loading…</p> : <V2CompactEmpty>{page.byProject.emptyCopy}</V2CompactEmpty>
             ) : (
               <div className="df-stat-bars">
                 {page.byProject.rows.map((row) => (
@@ -865,7 +851,7 @@ function TimeStatsPane() {
                 <h2 className="df-card-title">By Member</h2>
               </div>
               {page.byMember.empty ? (
-                <V2CompactEmpty>{isLoading ? "Loading…" : page.byMember.emptyCopy}</V2CompactEmpty>
+                isLoading ? <p className="df-note">Loading…</p> : <V2CompactEmpty>{page.byMember.emptyCopy}</V2CompactEmpty>
               ) : (
                 <div className="df-stat-bars">
                   {page.byMember.rows.map((row) => (
@@ -1032,9 +1018,8 @@ function ProjectTasksPane() {
     return (
       <>
         {header}
-        <LoadFailed
-          title="Projects could not be loaded."
-          icon="projects"
+        <V2LoadFailed
+          title="Projects could not be loaded"
           onRetry={() => timeProjects.refetch()}
           testId="v2-time-projects-load-failed"
         />
@@ -1087,7 +1072,7 @@ function ProjectTasksPane() {
             </label>
           </div>
           {projectsLoading && page.projectsEmpty ? (
-            <p className="df-empty">Loading…</p>
+            <p className="df-note">Loading…</p>
           ) : page.projectsEmptyState ? (
             <V2RecordEmpty
               model={page.projectsEmptyState}
@@ -1127,7 +1112,7 @@ function ProjectTasksPane() {
         {page.selectedProjectName === null && !page.showChoose ? null : (
         <section className="df-card" data-testid="v2-time-tasks">
           {page.selectedProjectName === null ? (
-            <p className="df-empty">{page.chooseCopy}</p>
+            <V2EmptyState icon="tasks" title="No Project chosen" copy={page.chooseCopy} />
           ) : (
             <>
               <div className="df-card-head">
@@ -1154,9 +1139,8 @@ function ProjectTasksPane() {
               </div>
 
               {tasksError && !tasksResponse ? (
-                <LoadFailed
-                  title="Tasks could not be loaded."
-                  icon="tasks"
+                <V2LoadFailed
+                  title="Tasks could not be loaded"
                   onRetry={() => refetchTasks()}
                   testId="v2-time-tasks-load-failed"
                 />
@@ -1164,8 +1148,9 @@ function ProjectTasksPane() {
               <V2TaskTable
                 rows={page.rows}
                 canWrite={page.canWrite}
-                emptyCopy={tasksLoading ? "Loading…" : (page.active.emptyState?.copy ?? "")}
-                emptyTitle={tasksLoading ? undefined : page.active.emptyState?.title}
+                loading={tasksLoading}
+                emptyCopy={page.active.emptyState?.copy ?? ""}
+                emptyTitle={page.active.emptyState?.title ?? "No Tasks"}
                 editingId={editingId}
                 editingName={editingName}
                 confirmDeleteId={confirmDeleteId}

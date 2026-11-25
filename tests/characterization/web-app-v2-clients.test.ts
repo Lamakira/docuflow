@@ -803,10 +803,10 @@ describe("Client record: edit, head, missing, contacts (F33-F36)", () => {
   it("renders only an empty state, with a way back, for a missing or failed Client (F35)", () => {
     expect(source).toContain('testId="v2-client-missing"');
     expect(source).toContain('testId="v2-client-load-failed"');
-    expect(source).toContain('title="This Client is not in this Workspace, or it was deleted."');
+    expect(source).toContain('title="This Client is not in this Workspace, or it was deleted"');
     expect(source).toContain('copy="Check the link, or find it in Clients."');
-    expect(source).toContain('title="This Client could not be loaded."');
-    expect(source).toContain("onClick={() => refetch()}");
+    expect(source).toContain('title="This Client could not be loaded"');
+    expect(source).toContain("onRetry={() => refetch()}");
     expect(source).toContain('<Link href="/clients">Back to Clients</Link>');
     expect(source).not.toContain("Client unavailable");
     expect(source).not.toContain("Client not found");

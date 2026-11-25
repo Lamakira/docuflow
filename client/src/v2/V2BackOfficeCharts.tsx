@@ -12,6 +12,7 @@ import { Table2 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Toggle } from "@/components/ui/toggle";
 import { formatCount, type DistributionEntry, StatsChartTable, StatsChartsModel } from "./backOffice";
+import { V2EmptyLine } from "./V2EmptyState";
 
 /* Series colors are tokens (--df-chart-*), read through the shadcn ChartConfig. */
 
@@ -121,10 +122,6 @@ export function ChartSkeleton() {
   return <Skeleton className="df-chart-skeleton" data-testid="v2-chart-skeleton" />;
 }
 
-function ChartNote({ children }: { children: ReactNode }) {
-  return <p className="df-chart-note">{children}</p>;
-}
-
 function dayAxis() {
   return <XAxis dataKey="label" tickLine={false} axisLine={false} tickMargin={8} minTickGap={24} />;
 }
@@ -171,7 +168,7 @@ export function GrowthChart({ growth }: { growth: NonNullable<StatsChartsModel["
       {growth.series
         .filter((series) => series.empty)
         .map((series) => (
-          <ChartNote key={series.key}>{series.emptyCopy}</ChartNote>
+          <V2EmptyLine key={series.key}>{series.emptyCopy}</V2EmptyLine>
         ))}
     </>
   );
@@ -199,7 +196,7 @@ export function ActiveWorkspacesChart({ active }: { active: NonNullable<StatsCha
           />
         </BarChart>
       </ChartContainer>
-      {active.empty ? <ChartNote>{active.emptyCopy}</ChartNote> : null}
+      {active.empty ? <V2EmptyLine>{active.emptyCopy}</V2EmptyLine> : null}
       <p className="df-chart-caption">{active.caption}</p>
     </>
   );
@@ -260,7 +257,7 @@ export function PaymentsChart({ payments }: { payments: NonNullable<StatsChartsM
           />
         </BarChart>
       </ChartContainer>
-      {payments.empty ? <ChartNote>{payments.emptyCopy}</ChartNote> : null}
+      {payments.empty ? <V2EmptyLine>{payments.emptyCopy}</V2EmptyLine> : null}
     </>
   );
 }

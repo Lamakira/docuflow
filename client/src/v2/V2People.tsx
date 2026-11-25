@@ -18,7 +18,7 @@ import {
 } from "./people";
 import { workspaceOwnerName } from "./workspace";
 import { useV2Chrome } from "./V2Shell";
-import { V2RecordEmpty } from "./V2EmptyState";
+import { V2LoadFailed, V2RecordEmpty } from "./V2EmptyState";
 import { V2FilterSelect } from "./V2Select";
 import { V2RefusalPopover } from "./V2RefusalPopover";
 import { V2FormDialog } from "./V2FormDialog";
@@ -53,7 +53,7 @@ export function V2PeoplePage() {
   const canManage = canReviewArchived;
 
   const listUrl = workspaceMembershipsPath({ includeArchived: canReviewArchived && includeArchived });
-  const { data, isLoading, isError } = useQuery<WorkspaceMembershipsResponse>({
+  const { data, isLoading, isError, refetch } = useQuery<WorkspaceMembershipsResponse>({
     queryKey: ["/api/workspace/memberships", listUrl],
     queryFn: async () => {
       const res = await fetch(listUrl, { credentials: "include" });
@@ -258,7 +258,12 @@ export function V2PeoplePage() {
             <h1 className="df-title">People</h1>
           </div>
         </header>
-        <p className="df-empty">Memberships in this Workspace could not be loaded.</p>
+        <V2LoadFailed
+          title="People could not be loaded"
+          copy="Something went wrong while loading them. Try again."
+          onRetry={() => refetch()}
+          testId="v2-people-load-failed"
+        />
       </div>
     );
   }
@@ -272,7 +277,7 @@ export function V2PeoplePage() {
         <span className="df-count-chip df-people-seats">{page.rows.length}</span>
       </header>
 
-      <p className="df-empty df-people-seats" data-edge="end">
+      <p className="df-note df-people-seats" data-edge="end">
         {page.seatCopy}
       </p>
 

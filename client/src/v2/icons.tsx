@@ -1,4 +1,5 @@
 import {
+  CircleAlert,
   Activity,
   FilterX,
   SearchX,
@@ -126,6 +127,7 @@ export type EmptyStateIconId =
   | "reminders"
   | "documents"
   | "files"
+  | "failed"
   | "search"
   | "filters"
   | "access"
@@ -146,6 +148,7 @@ const EMPTY_STATE_ICONS: Record<EmptyStateIconId, LucideIcon> = {
   reminders: Bell,
   documents: FileText,
   files: Paperclip,
+  failed: CircleAlert,
   search: SearchX,
   filters: FilterX,
   access: ShieldCheck,

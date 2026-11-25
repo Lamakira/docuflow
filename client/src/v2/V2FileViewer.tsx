@@ -42,6 +42,7 @@ import {
   type FileFamily,
   type FileViewerModel,
 } from "./fileViewer";
+import { V2EmptyState } from "./V2EmptyState";
 
 // The worker ships with the app. A viewer that reaches a CDN for it stops
 // working exactly where a Workspace is most likely to be: behind a firewall.
@@ -99,13 +100,22 @@ export function V2FilePage() {
 }
 
 const LOADING_COPY = "Loading this File…";
-const UNREADABLE_COPY = "This File could not be read here. Download it to open it.";
 
-/** Every preview answers with this while it reads, and when it cannot. */
-function FileStatus({ copy }: { copy: string }) {
+/** What a preview answers when it cannot show the File: not here, or not readable. */
+function FileStatus({ icon = "failed", title = "This File could not be read here", copy = "Download it to open it." }: {
+  icon?: "failed" | "files";
+  title?: string;
+  copy?: string;
+}) {
   return (
     <div className="df-file-body">
-      <p className="df-empty">{copy}</p>
+      <V2EmptyState
+        icon={icon}
+        title={title}
+        copy={copy}
+        role={icon === "failed" ? "alert" : undefined}
+        testId="v2-file-status"
+      />
     </div>
   );
 }
@@ -149,12 +159,12 @@ function FileFallbackPanel({ family, fallback }: { family: FileFamily; fallback:
   const Icon = FAMILY_ICONS[family];
   return (
     <div className="df-file-body">
-      <div className="df-empty-panel df-file-fallback" data-testid="v2-file-fallback" data-family={family}>
-        <span className="df-empty-panel-icon df-file-fallback-icon">
-          <Icon aria-hidden="true" strokeWidth={1.5} />
-        </span>
-        <p className="df-empty-panel-title">{fallback.title}</p>
-        <p className="df-empty-panel-copy">{fallback.copy}</p>
+      <div className="df-file-fallback" data-testid="v2-file-fallback" data-family={family}>
+        <V2EmptyState
+          icon={{ mark: <Icon aria-hidden="true" strokeWidth={1.5} /> }}
+          title={fallback.title}
+          copy={fallback.copy}
+        />
       </div>
     </div>
   );
@@ -166,7 +176,7 @@ function FileBody({ viewer }: { viewer: FileViewerModel }) {
   }
 
   if (viewer.missing || viewer.preview === "none" || !viewer.streamHref) {
-    return <FileStatus copy={viewer.emptyCopy} />;
+    return <FileStatus icon="files" title={viewer.missing ? "File not found" : "No preview for this File"} copy={viewer.emptyCopy} />;
   }
 
   if (viewer.preview === "image") {
@@ -219,7 +229,7 @@ function ImagePreview({ src, alt }: { src: string; alt: string }) {
   }, [src]);
 
   if (failed) {
-    return <FileStatus copy={UNREADABLE_COPY} />;
+    return <FileStatus />;
   }
 
   if (!url) {
@@ -301,7 +311,7 @@ function PdfPreview({ src }: { src: string }) {
   }
 
   if (state === "failed" || !pdf) {
-    return <FileStatus copy={UNREADABLE_COPY} />;
+    return <FileStatus />;
   }
 
   const pages = Array.from({ length: pdf.numPages }, (_, index) => index + 1);
@@ -395,7 +405,7 @@ function WordPreview({ href }: { href: string }) {
   }
 
   if (isError || body.length === 0) {
-    return <FileStatus copy={UNREADABLE_COPY} />;
+    return <FileStatus />;
   }
 
   return (
@@ -422,7 +432,7 @@ function TextPreview({ src }: { src: string }) {
   }
 
   if (isError) {
-    return <FileStatus copy={UNREADABLE_COPY} />;
+    return <FileStatus />;
   }
 
   return (

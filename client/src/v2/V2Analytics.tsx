@@ -317,7 +317,7 @@ function AnalyticsSections({
           </Button>
         </div>
         {loading ? (
-          <p className="df-empty">Reading analytics for this range…</p>
+          <p className="df-note">Reading analytics for this range…</p>
         ) : (
           <FigureBand figures={analytics.overview} testId="v2-analytics-overview" />
         )}

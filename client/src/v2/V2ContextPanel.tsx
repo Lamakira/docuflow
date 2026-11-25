@@ -19,6 +19,7 @@ import { motionForSurface } from "./motion";
 import { notify } from "./notify";
 import type { V2ChromeLayout, V2CommandPanel } from "./presentation";
 import { useV2Chrome } from "./V2Shell";
+import { V2CompactEmpty } from "./V2EmptyState";
 
 const ASK_COMPOSER_MOTION = motionForSurface("ask-composer").enterExit;
 const NOTICE_MOTION = motionForSurface("notification-inbox").enterExit;
@@ -132,7 +133,7 @@ function AskBody() {
     <>
       <div className="df-panel-scroll-stack">
         {model.messages.length === 0 ? (
-          <p style={{ fontSize: 14, lineHeight: 1.55, maxWidth: "62ch", color: "var(--df-archive-slate)" }}>{model.emptyCopy}</p>
+          <V2CompactEmpty>{model.emptyCopy}</V2CompactEmpty>
         ) : (
           model.messages.map((message, index) =>
             message.role === "user" ? (
@@ -246,7 +247,7 @@ function NotificationsBody({ onClose }: { onClose: () => void }) {
     <>
       <div style={{ flex: 1, minHeight: 0, overflow: "auto" }}>
         {model.rows.length === 0 ? (
-          <p className="df-subhead df-card-body">{model.emptyCopy}</p>
+          <V2CompactEmpty>{model.emptyCopy}</V2CompactEmpty>
         ) : (
           model.rows.map((row) => (
             <Link

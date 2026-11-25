@@ -436,6 +436,14 @@ export function composeTeamDailyUpdates(input: TeamDailyUpdatesInput): TeamDaily
   const shortRange = Boolean(input.rangeDays) && input.rangeDays !== "30";
   const wider = input.rangeDays ? widerDailyUpdateRange(input.rangeDays) : null;
   const facetsActive = Boolean(needle) || input.statusFilter !== "all" || input.memberFilter !== "all";
+  const facetLabels: string[] = [];
+  if (input.statusFilter !== "all") {
+    facetLabels.push(`Status: ${dailyUpdateStatusOptions.find((option) => option.value === input.statusFilter)?.label ?? input.statusFilter}`);
+  }
+  if (input.memberFilter !== "all") {
+    facetLabels.push(`Member: ${members.get(input.memberFilter)?.name ?? "-"}`);
+  }
+  const rangeWindow = input.rangeDays === "1" ? "today" : `in the last ${input.rangeDays} days`;
   const submitted = input.submittedToday.map(teamMemberChip);
   const missing = input.missingToday.map(teamMemberChip);
 
@@ -473,9 +481,10 @@ export function composeTeamDailyUpdates(input: TeamDailyUpdatesInput): TeamDaily
         copy: "A Daily Update is a Member's one submission for the workday. They appear here as your Members submit them.",
       },
       {
-        window: input.rangeDays === "1" ? "today" : `in the last ${input.rangeDays} days`,
+        window: rangeWindow,
         widenLabel: wider ? `Show last ${wider} days` : null,
       },
+      { search: input.filterQuery, filters: facetLabels, window: input.rangeDays ? rangeWindow : undefined },
     ),
     groups,
     members: [...members.values()].sort((a, b) => a.name.localeCompare(b.name)),

@@ -27,6 +27,7 @@ import { notify } from "./notify";
 import { BackOfficeRegister } from "./V2BackOfficeParts";
 import { V2FormDialog } from "./V2FormDialog";
 import { V2FilterSelect, V2_SELECT_NONE } from "./V2Select";
+import { V2EmptyLine } from "./V2EmptyState";
 
 /** A Workspace opened read-only, by a Support Access Grant or by break-glass. */
 export function OperatorWorkspaceSheet({ workspaceId, onClose }: { workspaceId: string | null; onClose: () => void }) {
@@ -43,12 +44,12 @@ export function OperatorWorkspaceSheet({ workspaceId, onClose }: { workspaceId: 
           <SheetTitle>{view?.title ?? "Workspace"}</SheetTitle>
           <SheetDescription>{view ? `${view.access}. ${view.note}` : "Read-only."}</SheetDescription>
         </SheetHeader>
-        {isLoading ? <p className="df-empty">Opening Workspace…</p> : null}
+        {isLoading ? <p className="df-note">Opening Workspace…</p> : null}
         {error ? <p className="df-refusal">{(error as Error).message}</p> : null}
         {view ? (
           <div className="df-backoffice-lines">
             <span className="df-analytics-figure-label">PROJECTS</span>
-            {view.projects.length === 0 ? <p className="df-empty df-flush">{view.emptyCopy}</p> : null}
+            {view.projects.length === 0 ? <V2EmptyLine>{view.emptyCopy}</V2EmptyLine> : null}
             {view.projects.map((project) => (
               <div key={project.id} className="df-backoffice-line" data-testid={`v2-backoffice-operator-project-${project.id}`}>
                 <span className="df-row-title">{project.name}</span>

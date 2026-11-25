@@ -30,7 +30,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const read = (path: string) => readFileSync(join(root, path), "utf8");
 const page = read("client/src/v2/V2Document.tsx");
 const dialog = read("client/src/v2/V2MoveDocumentDialog.tsx");
-const commandBar = read("client/src/v2/V2CommandBar.tsx");
+const recordLabelSource = read("client/src/v2/useRecordLabel.ts");
 const css = read("client/src/v2/tokens.css").replace(/\/\*[\s\S]*?\*\//g, "");
 
 function rule(selector: string): string {
@@ -307,8 +307,8 @@ describe("F52: the read that opens the editor", () => {
     expect(page).toContain("isFetchedAfterMount");
     expect(page).toContain("const waiting = !opened && (!isFetchedAfterMount || isFetching);");
     expect(page).toContain("const loadFailed = !opened && !waiting && isError;");
-    expect(page).toContain("This Document could not be loaded.");
-    expect(page).toContain("Try again");
+    expect(page).toContain("This Document could not be loaded");
+    expect(page).toContain("<V2LoadFailed");
     expect(page).not.toMatch(/if \(!res\.ok\) return \[\]/);
   });
 
@@ -422,7 +422,7 @@ describe("F58: the Document page reads as a document", () => {
     expect(labels()).toEqual(["Harbor Co", "Workspace Documents", "Document"]);
     expect(breadcrumbFor("/files", "Harbor Co", "x").map((crumb) => crumb.label)).toEqual(["Harbor Co", "File"]);
     // The bar's observer must carry the editor's own read: its options can become the query's.
-    expect(commandBar).toMatch(/queryFn: \(\) => loadDocument\("workspace", documentId\),\s*enabled: false/);
+    expect(recordLabelSource).toMatch(/queryFn: \(\) => loadDocument\("workspace", documentId\),\s*enabled: false/);
   });
 
   it("shows the designed state for a missing Document", () => {

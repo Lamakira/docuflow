@@ -18,7 +18,7 @@ import { V2ProjectPicker } from "./V2ProjectPicker";
 import { V2RegisterPager } from "./V2RegisterPager";
 import { V2DateField } from "./V2DateField";
 import { V2CaptureImage } from "./V2CaptureImage";
-import { V2EmptyState } from "./V2EmptyState";
+import { V2EmptyState, V2LoadFailed, V2RecordEmpty } from "./V2EmptyState";
 import {
   activityEvidencePath,
   activityPaging,
@@ -71,7 +71,6 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { V2RecordEmpty } from "./V2EmptyState";
 import { SkeletonRegister, SkeletonSection, V2PageSkeleton } from "./V2Skeleton";
 
 type ScreenshotsResponse = {
@@ -128,22 +127,6 @@ function SetUpAgentAction() {
     <Button asChild variant="outline" className="df-btn">
       <Link href="/devices">Set up the desktop agent</Link>
     </Button>
-  );
-}
-
-function ActivityLoadFailed({ onRetry }: { onRetry: () => void }) {
-  return (
-    <V2EmptyState
-      icon="activity"
-      title="Activity Evidence could not be loaded."
-      copy="Something went wrong while loading it. Try again."
-      testId="v2-activity-load-failed"
-      action={
-        <Button variant="default" type="button" className="df-btn" onClick={onRetry}>
-          Try again
-        </Button>
-      }
-    />
   );
 }
 
@@ -295,7 +278,16 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
   });
   const everRecorded = everResponse ? everResponse.data.length > 0 : null;
 
+  const projectOptions = useMemo(() => filterProjectOptions(activityProjects.list ?? []), [activityProjects.list]);
   const facetsActive = filters.project !== "all" || filters.member !== "all" || filters.low || filters.similar;
+  const facetLabels = [
+    ...(filters.project !== "all"
+      ? [`Project: ${projectOptions.find((option) => option.id === filters.project)?.label ?? "-"}`]
+      : []),
+    ...(filters.member !== "all" ? [`Member: ${memberName((users ?? []).find((member) => member.id === filters.member) ?? {})}`] : []),
+    ...(filters.low ? ["Low activity"] : []),
+    ...(filters.similar ? ["Similar"] : []),
+  ];
   const page = composeActivity({
     now,
     currentUserId: user?.id ?? "",
@@ -306,6 +298,7 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
     policy: policyResponse?.screenshotPolicy ?? null,
     evidence: rows,
     facetsActive,
+    facetLabels,
     everRecorded,
     range: filters.range,
   });
@@ -323,6 +316,7 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
     offset,
     evidence: rows,
     facetsActive,
+    facetLabels,
     everRecorded,
     range: filters.range,
   };
@@ -453,11 +447,18 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
   );
   const showPager = !loadFailed && !rangeProblem && total > 0;
   const notice = loadFailed ? (
-    <ActivityLoadFailed onRetry={() => refetch()} />
+    <V2LoadFailed
+      title="Activity Evidence could not be loaded"
+      onRetry={() => refetch()}
+      testId="v2-activity-load-failed"
+    />
   ) : rangeProblem ? (
-    <p className="df-empty" data-testid="v2-activity-range-problem">
-      {rangeProblem}
-    </p>
+    <V2EmptyState
+      icon="activity"
+      title={rangeProblem}
+      copy="Set the dates above to see captures."
+      testId="v2-activity-range-problem"
+    />
   ) : null;
   const countChip = loadFailed || rangeProblem || !data ? null : captureCountCopy(total);
 
@@ -561,7 +562,7 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
           valueLabel="All"
           active={filters.project !== "all"}
           onChange={(project) => setFilters({ ...filters, project, page: 1 })}
-          options={[{ id: "all", label: "All", meta: null }, ...filterProjectOptions(activityProjects.list ?? [])]}
+          options={[{ id: "all", label: "All", meta: null }, ...projectOptions]}
           state={activityProjects.state}
           testId="v2-activity-filter-project"
         />
@@ -615,7 +616,7 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
         data-testid="v2-activity-register"
         aria-busy={isPlaceholderData && !rangeProblem}
       >
-        {layout.stackedRegister || notice ? null : (
+        {layout.stackedRegister || notice || page.emptyState ? null : (
           <div className="df-register-head df-desktop-only">
             <span>When</span>
             <span>Project</span>
@@ -812,10 +813,10 @@ function ActivityGallery({
   const openerId = useRef<string | null>(null);
   return (
     <section className="df-card df-gallery" data-testid="v2-activity-gallery" aria-busy={busy}>
-      {notice ? null : (
+      {/* Nothing to count, select or download in an empty gallery. */}
+      {notice || gallery.emptyState ? null : (
         <div className="df-card-head">
           <h2 className="df-card-title">{gallery.countCopy}</h2>
-          {/* Nothing to select or download in an empty gallery. */}
           {gallery.count > 0 ? (
             <span className="df-gallery-actions">
               <Button variant="outline" type="button" onClick={onSelectShown} className="df-btn">

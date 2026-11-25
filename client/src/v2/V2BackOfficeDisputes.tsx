@@ -29,6 +29,7 @@ import { notify } from "./notify";
 import { BackOfficeRegister, StripeLink } from "./V2BackOfficeParts";
 import { V2FilterSelect, V2_SELECT_NONE } from "./V2Select";
 import { SkeletonBand, V2PageSkeleton } from "./V2Skeleton";
+import { V2EmptyLine } from "./V2EmptyState";
 
 export function V2BackOfficeDisputes() {
   const now = useMemo(() => new Date(), []);
@@ -235,7 +236,7 @@ export function V2BackOfficeSupportRequest({ requestId }: { requestId: string })
           <h2 className="df-card-title">Answers and notes</h2>
         </div>
         <div className="df-backoffice-thread">
-          {page.entries.length === 0 ? <p className="df-empty df-flush">{page.entriesEmptyCopy}</p> : null}
+          {page.entries.length === 0 ? <V2EmptyLine>{page.entriesEmptyCopy}</V2EmptyLine> : null}
           {page.entries.map((item) => (
             <div key={item.id} className="df-backoffice-entry" data-kind={item.kind} data-testid={`v2-backoffice-entry-${item.id}`}>
               <span className="df-status" data-tone={item.kind === "answer" ? "positive" : undefined}>{item.label}</span>

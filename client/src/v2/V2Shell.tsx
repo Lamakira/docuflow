@@ -9,6 +9,7 @@ import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { V2AppBar } from "./V2AppBar";
 import { V2CommandBar } from "./V2CommandBar";
 import { V2ContextPanel } from "./V2ContextPanel";
+import { V2PageTitle } from "./V2PageTitle";
 import { V2Rail } from "./V2Rail";
 import { V2TimerChip } from "./V2TimerChip";
 import { useV2Fonts } from "./useV2Fonts";
@@ -250,6 +251,7 @@ export function V2Shell({ children }: { children: React.ReactNode }) {
         data-sheet-open={sheetOpen ? "true" : "false"}
         style={{ height: "100vh", display: "flex", overflow: "hidden" }}
       >
+        <V2PageTitle />
         {mobile && navOpen ? (
           <button
             type="button"

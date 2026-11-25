@@ -29,7 +29,7 @@ import { useWorkspaceOwnerName } from "./useWorkspaceOwner";
 import { useV2Chrome } from "./V2Shell";
 import { WORKSPACE_LIBRARY_OPEN_KEY, readLibraryOpenState, writeLibraryOpenState, type LibraryOpenState } from "./presentation";
 import { V2LibraryRegister, useFolderExpandMotion } from "./V2Library";
-import { V2EmptyState } from "./V2EmptyState";
+import { V2LoadFailed } from "./V2EmptyState";
 import { V2FormDialog } from "./V2FormDialog";
 import { V2ManageAccessDialog } from "./V2ManageAccessDialog";
 import { V2UploadDialog, fileTitle, storeUpload } from "./V2UploadDialog";
@@ -440,16 +440,11 @@ export function V2DocumentsPage() {
             <h1 className="df-title">Workspace Documents</h1>
           </div>
         </header>
-        <V2EmptyState
-          icon="documents"
-          title="Workspace Documents could not be loaded."
+        <V2LoadFailed
+          title="Workspace Documents could not be loaded"
           copy="Something went wrong while loading them. Try again."
+          onRetry={() => refetch()}
           testId="v2-documents-load-failed"
-          action={
-            <Button variant="default" type="button" className="df-btn" onClick={() => refetch()}>
-              Try again
-            </Button>
-          }
         />
       </div>
     );
@@ -581,21 +576,10 @@ export function V2DocumentsPage() {
             testId="v2-documents-register"
             instantExpand={folderMotion.instantExpand}
             onFolderClick={onFolderClick}
-            emptyAction={
-              library.filtered ? (
-                <Button
-                  variant="outline"
-                  type="button"
-                  className="df-btn"
-                  onClick={() => {
-                    setFilterQuery("");
-                    setFilters(clearLibraryFilters());
-                  }}
-                >
-                  {library.emptyState?.kind === "search" ? "Clear search" : "Clear filters"}
-                </Button>
-              ) : null
-            }
+            onClear={() => {
+              setFilterQuery("");
+              setFilters(clearLibraryFilters());
+            }}
             createActions={
               <>
                 <Button variant="default" type="button" onClick={() => openCreate("document")} className="df-btn">

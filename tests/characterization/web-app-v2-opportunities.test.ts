@@ -68,6 +68,10 @@ const commandBarSource = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), "../../client/src/v2/V2CommandBar.tsx"),
   "utf8",
 );
+const recordLabelSource = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), "../../client/src/v2/useRecordLabel.ts"),
+  "utf8",
+);
 
 describe("Opportunities routing (#187)", () => {
   it("names a top-level page only by its Workspace crumb, and keeps a record's full breadcrumb", () => {
@@ -163,8 +167,8 @@ describe("Opportunity record (#213)", () => {
   });
 
   it("names the record in the breadcrumb from the page's cache entry", () => {
-    expect(commandBarSource).toContain('queryKey: ["/api/crm/projects", opportunityId]');
-    expect(commandBarSource).toContain("enabled: false");
+    expect(recordLabelSource).toContain('queryKey: ["/api/crm/projects", opportunityId]');
+    expect(recordLabelSource).toContain("enabled: false");
     expect(commandBarSource).toContain("breadcrumbFor(location, workspaceName, recordLabel, ");
   });
 
@@ -186,10 +190,9 @@ describe("Opportunity record (#213)", () => {
   });
 
   it("tells the two failed loads apart and gives a way out of each", () => {
-    expect(pageSource).toContain("This Opportunity is not in this Workspace, or it was deleted.");
-    expect(pageSource).toContain("This Opportunity could not be loaded.");
-    expect(pageSource).toContain("Try again");
-    expect(pageSource).toContain("onClick={() => refetch()}");
+    expect(pageSource).toContain("This Opportunity is not in this Workspace, or it was deleted");
+    expect(pageSource).toContain("This Opportunity could not be loaded");
+    expect(pageSource).toContain("onRetry={() => refetch()}");
     expect(pageSource).toContain("Back to Opportunities");
   });
 

@@ -33,7 +33,7 @@ import {
 } from "./presentation";
 import { workspaceSwitcher, type MembershipOption, type MembershipsResponse } from "./workspace";
 import { planGateFor, useEntitlements } from "./plan";
-import { useRecordRoot } from "./V2CommandBar";
+import { useRecordRoot } from "./useRecordLabel";
 
 type V2RailProps = {
   collapsed: boolean;

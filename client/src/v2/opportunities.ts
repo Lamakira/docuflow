@@ -389,7 +389,7 @@ export function composeOpportunityPipeline(input: OpportunityPipelineInput): Opp
     emptyState: emptyModelOf(emptyKindOf(empty, Boolean(needle)), "Opportunities", {
       title: "Add your first Opportunity",
       copy: "An Opportunity is a sale in the pipeline. Add one to follow it from lead to won.",
-    }, undefined, { searchOnly: true }),
+    }, undefined, { search: input.filterQuery, searchOnly: true }),
     columns,
     count,
   };

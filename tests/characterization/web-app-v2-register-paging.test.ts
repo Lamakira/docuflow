@@ -24,6 +24,7 @@ import {
   clearDocumentationFilters,
   composeProjectDocumentation,
   documentationFilterLabels,
+  documentationFilterWords,
   documentationRegisterPath,
   readDocumentationFilters,
   writeDocumentationFilters,
@@ -169,7 +170,8 @@ describe("an emptied register says why", () => {
       activeFilters,
       selectedId: null,
     });
-    expect(register.emptyState?.copy).toBe("No Projects match these filters.");
+    expect(register.emptyState?.title).toBe("No Projects match these filters");
+    expect(register.emptyState?.copy).toMatch(/^Nothing here matches Search: “pier” · Status: .+ · Client: Acme\. Clear the filters/);
     expect(register.emptyState?.kind).toBe("filtered");
     expect(register.filtered).toBe(true);
   });
@@ -266,7 +268,8 @@ describe("Clients filters in the URL and on the route", () => {
       activeFilters: clientFilterLabels(filters),
       selectedId: null,
     });
-    expect(register.emptyState?.copy).toBe("No Clients match these filters.");
+    expect(register.emptyState?.title).toBe("No Clients match these filters");
+    expect(register.emptyState?.copy).toContain("Search: “pier” · Status: ");
     expect(register.emptyState?.kind).toBe("filtered");
     expect(register.filtered).toBe(true);
     expect(clearClientFilters(filters)).toMatchObject({ q: "", status: "all", source: "all", open: "all", page: 1, pageSize: 100 });
@@ -306,10 +309,8 @@ describe("Project Documentation filters in the URL and on the route", () => {
 
   it("names each filter when the register empties, and clearing goes back to enabled", () => {
     const filters = readDocumentationFilters("?project=p1&client=c1&docs=disabled&q=run&size=25");
-    const activeFilters = documentationFilterLabels(filters, {
-      projects: new Map([["p1", "Acme site"]]),
-      clients: new Map([["c1", "Acme"]]),
-    });
+    const names = { projects: new Map([["p1", "Acme site"]]), clients: new Map([["c1", "Acme"]]) };
+    const activeFilters = documentationFilterLabels(filters, names);
     const library = composeProjectDocumentation({
       now: NOW,
       workspaceName: "Harbor Co",
@@ -317,10 +318,12 @@ describe("Project Documentation filters in the URL and on the route", () => {
       documents: [],
       expandedProjectIds: [],
       selectedProjectId: null,
-      filterQuery: "",
+      filterQuery: "run",
       activeFilters,
+      filterWords: documentationFilterWords(filters, names),
     });
-    expect(library.emptyCopy).toBe("No Projects match “run” · Project Acme site · Client Acme · Documentation Disabled.");
+    expect(library.emptyState?.title).toBe("No Project Documents match these filters");
+    expect(library.emptyState?.copy).toContain("Search: “run” · Project: Acme site · Client: Acme · Documentation: Disabled");
     expect(library.filtered).toBe(true);
     expect(clearDocumentationFilters(filters)).toMatchObject({
       q: "",

@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -6,7 +6,7 @@ import { composeActivity, composeActivityGallery, EVIDENCE_DATE_MODES, widerEvid
 import { composeClientRegister } from "../../client/src/v2/clients";
 import { composeDevices } from "../../client/src/v2/devices";
 import { composeTeamDailyUpdates, widerDailyUpdateRange } from "../../client/src/v2/dailyUpdate";
-import { emptyKindOf, emptyModelOf, filteredEmptyCopy } from "../../client/src/v2/emptyState";
+import { emptyKindOf, emptyModelOf, filteredEmptyModel } from "../../client/src/v2/emptyState";
 import {
   composeOpportunityPipeline,
   composeOpportunityStages,
@@ -18,15 +18,14 @@ import { composeProjectTasks } from "../../client/src/v2/tasks";
 import { composeTimeStats, composeTimeTracking, widerTimeRange } from "../../client/src/v2/time";
 
 /**
- * Empty states (#325). Three cases, one rule each: nothing exists yet reads as
- * the designed V2EmptyState; filters that hide every row read as one short line
- * with Clear filters; a record list whose Range holds nothing reads as the
- * designed state with an action that widens the Range; a dashboard section with
- * no data for its range keeps a compact in-card line.
+ * Empty states (#325, one component since 2026-11-25). Nothing exists yet,
+ * filters hide every row, and a Range that holds nothing are three cases of one
+ * look (V2RecordEmpty); a failed load has its own (V2LoadFailed); a section of a
+ * card keeps one centred line. Every one of them is drawn in V2EmptyState.tsx.
  */
 
-const v2 = (name: string) =>
-  readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../../client/src/v2", name), "utf8");
+const v2Dir = join(dirname(fileURLToPath(import.meta.url)), "../../client/src/v2");
+const v2 = (name: string) => readFileSync(join(v2Dir, name), "utf8");
 
 const NOW = new Date(2026, 8, 10, 15, 0, 0);
 
@@ -43,7 +42,6 @@ describe("the shared empty-state kinds", () => {
     expect(emptyKindOf(false, false)).toBeNull();
     expect(emptyKindOf(true, true)).toBe("filtered");
     expect(emptyKindOf(true, false)).toBe("none");
-    expect(filteredEmptyCopy("Projects")).toBe("No Projects match these filters.");
   });
 
   it("is a range, never none, when an unfiltered list is read over a Range shorter than the widest", () => {
@@ -55,26 +53,21 @@ describe("the shared empty-state kinds", () => {
   it("bundles the kind, headline and copy as one model, and none for a list that has rows", () => {
     const first = { title: "Add your first Thing", copy: "A Thing is a thing." };
     expect(emptyModelOf(null, "Things", first)).toBeNull();
-    expect(emptyModelOf("none", "Things", first)).toEqual({ kind: "none", ...first, widenLabel: null, clearLabel: null });
+    expect(emptyModelOf("none", "Things", first)).toEqual({ kind: "none", ...first, icon: null, widenLabel: null, clearLabel: null });
     expect(emptyModelOf("filtered", "Things", first)).toEqual({
       kind: "filtered",
-      title: "",
-      copy: "No Things match these filters.",
+      title: "No Things match these filters",
+      copy: "Clear the filters to see the rest.",
+      icon: "filters",
       widenLabel: null,
       clearLabel: "Clear filters",
-    });
-    expect(emptyModelOf("filtered", "Things", first, undefined, { searchOnly: true })).toEqual({
-      kind: "filtered",
-      title: "",
-      copy: "No Things match your search.",
-      widenLabel: null,
-      clearLabel: "Clear search",
     });
     const range = { window: "today", widenLabel: "Show this week" };
     expect(emptyModelOf("range", "Things", first, range)).toEqual({
       kind: "range",
       title: "No Things today",
       copy: "Only this Range is shown. Widen it to look further back.",
+      icon: null,
       widenLabel: "Show this week",
       clearLabel: null,
     });
@@ -87,21 +80,90 @@ describe("the shared empty-state kinds", () => {
       kind: "range",
       title: "No Things in this Range",
       copy: "Only this Range is shown. Widen it to look further back.",
+      icon: null,
       widenLabel: null,
       clearLabel: null,
     });
   });
 
-  it("renders every case through one V2RecordEmpty, and every dashboard section through one compact line", () => {
-    for (const file of ["V2Clients.tsx", "V2Projects.tsx", "V2Opportunities.tsx", "V2People.tsx", "V2Activity.tsx", "V2DailyUpdates.tsx", "V2Time.tsx"]) {
-      const source = v2(file);
-      expect(source, file).toContain("<V2RecordEmpty");
-      expect(source, file).not.toContain("<V2FilteredEmpty");
+  it("names the search when it stands alone, and every filter when one is on", () => {
+    expect(filteredEmptyModel("Things", { search: " pier ", filters: [] })).toMatchObject({
+      title: "No Things match “pier”",
+      copy: "Try another word, or clear the search.",
+      icon: "search",
+      clearLabel: "Clear search",
+    });
+    expect(filteredEmptyModel("Things", { searchOnly: true }).title).toBe("No Things match your search");
+    // A screen that puts its search among its filter labels reads the same way.
+    expect(filteredEmptyModel("Things", { filters: ["“pier”"] }).title).toBe("No Things match “pier”");
+    expect(filteredEmptyModel("Things", { filters: ["“pier”", "Status: Lead"], window: "today" })).toMatchObject({
+      title: "No Things match these filters",
+      copy: "Nothing today matches Search: “pier” · Status: Lead. Clear the filters to see the rest.",
+      clearLabel: "Clear filters",
+    });
+    // A search among filters the screen cannot name does not take the blame alone.
+    expect(filteredEmptyModel("Things", { search: "pier" }).title).toBe("No Things match these filters");
+  });
+
+  it("renders every record list through one V2RecordEmpty", () => {
+    for (const file of [
+      "V2Clients.tsx", "V2Projects.tsx", "V2Opportunities.tsx", "V2People.tsx", "V2Activity.tsx",
+      "V2DailyUpdates.tsx", "V2Time.tsx", "V2Library.tsx", "V2Help.tsx",
+    ]) {
+      expect(v2(file), file).toContain("<V2RecordEmpty");
     }
-    for (const file of ["V2Analytics.tsx", "V2Today.tsx", "V2Time.tsx", "V2TaskTable.tsx"]) {
-      expect(v2(file), file).toContain("<V2CompactEmpty");
+  });
+
+  it("gives a failed load its own icon, an alert role and Try again", () => {
+    const source = v2("V2EmptyState.tsx");
+    expect(source).toMatch(/icon="failed"\s*role="alert"/);
+    expect(source).toContain("Try again");
+    expect(v2("icons.tsx")).toMatch(/failed: CircleAlert/);
+  });
+
+  it("hides the count and the column heads above an empty list", () => {
+    expect(v2("V2Activity.tsx")).toContain("{notice || gallery.emptyState ? null : (");
+    expect(v2("V2Activity.tsx")).toContain("{layout.stackedRegister || notice || page.emptyState ? null : (");
+    expect(v2("V2Time.tsx")).toContain("{layout.stackedRegister || loadFailed || page.emptyState ? null : (");
+  });
+});
+
+/**
+ * The gate: no screen draws an empty or failed region of its own. What it cannot
+ * see is a list that renders nothing at all, or words it does not know.
+ */
+describe("only V2EmptyState.tsx draws an empty or failed region", () => {
+  const screens = readdirSync(v2Dir).filter((name) => name.endsWith(".tsx") && name !== "V2EmptyState.tsx");
+  const HOST = "(?:p|div|span|td|li|em|strong|h[1-6])";
+
+  it("reads every screen", () => {
+    expect(screens.length).toBeGreaterThan(50);
+  });
+
+  it("keeps the empty classes in one file", () => {
+    for (const file of screens) expect(v2(file), file).not.toMatch(/df-empty/);
+    expect(v2("tokens.css")).not.toMatch(/\.df-empty(?:-state)?[\s.,:[{]/);
+  });
+
+  it("renders an empty copy only through a shared component", () => {
+    for (const file of screens) {
+      const bare = v2(file).match(new RegExp(`<${HOST}\\b[^>]*>\\s*\\{[^}<]*(?:[eE]mptyCopy|[eE]mptyTitle|emptyState\\??\\.(?:copy|title))[^}<]*\\}`, "g"));
+      expect(bare, file).toBeNull();
     }
-    expect(v2("V2EmptyState.tsx")).toContain('<p className="df-empty"');
+  });
+
+  it("writes no empty sentence in a plain element", () => {
+    for (const file of screens) {
+      const bare = v2(file).match(new RegExp(`<${HOST}\\b[^>]*>\\s*(?:No|Nothing|There (?:is|are) no) [^<{]*<`, "g"));
+      expect(bare, file).toBeNull();
+    }
+  });
+
+  it("writes no failed load in a plain element, nor in the plain empty state", () => {
+    for (const file of screens) {
+      expect(v2(file).match(new RegExp(`<${HOST}\\b[^>]*>\\s*[^<{]*could not be loaded`, "g")), file).toBeNull();
+      expect(v2(file).match(/<V2EmptyState[^/]*?could not be loaded/g), file).toBeNull();
+    }
   });
 });
 
@@ -118,8 +180,8 @@ describe("Clients", () => {
 
   it("says filters hide every row, for a search or a server filter", () => {
     const searched = composeClientRegister({ ...input, filterQuery: "pier" });
-    expect(searched.emptyState).toMatchObject({ kind: "filtered", copy: "No Clients match these filters." });
-    const narrowed = composeClientRegister({ ...input, activeFilters: ["Status Lead"] });
+    expect(searched.emptyState).toMatchObject({ kind: "filtered", title: "No Clients match “pier”", clearLabel: "Clear search" });
+    const narrowed = composeClientRegister({ ...input, activeFilters: ["Status: Lead"] });
     expect(narrowed.emptyState?.kind).toBe("filtered");
     expect(narrowed.filtered).toBe(true);
   });
@@ -156,10 +218,11 @@ describe("Projects", () => {
   });
 
   it("says filters hide every row, whichever filter did it", () => {
-    for (const overrides of [{ filterQuery: "x" }, { statusFilter: "on_hold" }, { tagFilter: "t-1" }, { activeFilters: ["Client Acme"] }]) {
+    for (const overrides of [{ statusFilter: "on_hold" }, { tagFilter: "t-1" }, { activeFilters: ["Client: Acme"] }]) {
       const register = composeProjectRegister({ ...input, ...overrides });
-      expect(register.emptyState).toMatchObject({ kind: "filtered", copy: "No Projects match these filters." });
+      expect(register.emptyState).toMatchObject({ kind: "filtered", title: "No Projects match these filters" });
     }
+    expect(composeProjectRegister({ ...input, filterQuery: "x" }).emptyState?.title).toBe("No Projects match “x”");
   });
 
   it("does the same on the board: columns give way to the designed state only when nothing exists", () => {
@@ -197,7 +260,7 @@ describe("Opportunities", () => {
 
   it("keeps the columns and adds Clear filters when a search hides every card", () => {
     const pipeline = composeOpportunityPipeline({ ...input, filterQuery: "zzz" });
-    expect(pipeline.emptyState).toMatchObject({ kind: "filtered", copy: "No Opportunities match your search.", clearLabel: "Clear search" });
+    expect(pipeline.emptyState).toMatchObject({ kind: "filtered", title: "No Opportunities match “zzz”", clearLabel: "Clear search" });
     expect(pipeline.columns.length).toBeGreaterThan(0);
   });
 });
@@ -226,6 +289,7 @@ describe("Time Tracking", () => {
       kind: "range",
       title: "No Time Entries today",
       copy: "Only this Range is shown. Widen it to look further back.",
+      icon: null,
       widenLabel: "Show this week",
       clearLabel: null,
     });
@@ -243,8 +307,12 @@ describe("Time Tracking", () => {
 
   it("says filters hide every row when the Project, Status or Member filter is on, on any Range", () => {
     for (const range of ["all", "today"] as const) {
-      const page = composeTimeTracking({ ...input, range, facetsActive: true });
-      expect(page.emptyState).toMatchObject({ kind: "filtered", copy: "No Time Entries match these filters." });
+      const page = composeTimeTracking({ ...input, range, facetsActive: true, facetLabels: ["Status: Stopped"] });
+      expect(page.emptyState).toMatchObject({
+        kind: "filtered",
+        title: "No Time Entries match these filters",
+        copy: `Nothing ${range === "today" ? "today" : "here"} matches Status: Stopped. Clear the filters to see the rest.`,
+      });
     }
   });
 
@@ -278,12 +346,12 @@ describe("Time Tracking", () => {
     const stats = composeTimeStats({ period: "week", workspaceName: "Harbor Co", canSeeEveryone: true, stats: null });
     expect(stats.byProject.empty).toBe(true);
     expect(stats.byProject.emptyCopy).toMatch(/^No Time Entry on a Project/);
-    expect(v2("V2Time.tsx")).toContain('<V2CompactEmpty>{isLoading ? "Loading…" : page.byProject.emptyCopy}</V2CompactEmpty>');
+    expect(v2("V2Time.tsx")).toContain("<V2CompactEmpty>{page.byProject.emptyCopy}</V2CompactEmpty>");
   });
 
   it("shows the timer hint in the card body with a visible link only when the reader may create", () => {
     const source = v2("V2Time.tsx");
-    expect(source).toMatch(/<p className="df-empty" data-testid="v2-time-timer-hint">[\s\S]*?className="df-cta"/);
+    expect(source).toMatch(/<p className="df-note" data-testid="v2-time-timer-hint">[\s\S]*?className="df-cta"/);
   });
 
   it("replaces the zero figures of Time stats with the designed state only when nothing was ever recorded", () => {
@@ -389,6 +457,7 @@ describe("Activity", () => {
       kind: "range",
       title: "No Activity Evidence today",
       copy: "Only this Range is shown. Widen it to look further back.",
+      icon: null,
       widenLabel: "Show this week",
       clearLabel: null,
     };
@@ -444,10 +513,18 @@ describe("Activity", () => {
   });
 
   it("offers Clear filters when a Project, Member or gallery filter hides the Evidence", () => {
-    expect(composeActivity({ ...activity, facetsActive: true }).emptyState).toMatchObject({
-      kind: "filtered",
-      copy: "No Activity Evidence match these filters.",
-    });
+    const facetLabels = ["Project: Acme, Site", "Similar"];
+    for (const model of [
+      composeActivity({ ...activity, range: "30d", facetsActive: true, facetLabels }).emptyState,
+      composeActivityGallery({ ...gallery, range: "30d", facetsActive: true, facetLabels }).emptyState,
+    ]) {
+      expect(model).toMatchObject({
+        kind: "filtered",
+        title: "No captures match these filters",
+        copy: "Nothing in the last 30 days matches Project: Acme, Site · Similar. Clear the filters to see the rest.",
+        clearLabel: "Clear filters",
+      });
+    }
     expect(composeActivityGallery({ ...gallery, lowActivityOnly: true }).emptyState?.kind).toBe("filtered");
   });
 });
@@ -466,7 +543,8 @@ describe("People, Devices and team Daily Updates", () => {
     expect(composePeople(input).emptyState).toMatchObject({ kind: "none", title: "Invite your first Member" });
     expect(composePeople({ ...input, filterQuery: "zzz" }).emptyState).toMatchObject({
       kind: "filtered",
-      copy: "No Memberships match these filters.",
+      title: "No Members match “zzz”",
+      clearLabel: "Clear search",
     });
   });
 
@@ -552,7 +630,7 @@ describe("People, Devices and team Daily Updates", () => {
       emptyState: { kind: "none", title: "No Daily Updates yet" },
     });
     const filtered = composeTeamDailyUpdates({ ...input, rangeDays: "7", statusFilter: "blocked" });
-    expect(filtered.emptyState).toMatchObject({ kind: "filtered", copy: "No Daily Updates match these filters." });
+    expect(filtered.emptyState).toMatchObject({ kind: "filtered", title: "No Daily Updates match these filters" });
   });
 });
 

@@ -23,7 +23,7 @@ import { readActivityFilters } from "../../client/src/v2/activity";
 const root = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const read = (path: string) => readFileSync(join(root, path), "utf8");
 const dossierSource = read("client/src/v2/V2Dossier.tsx");
-const commandBarSource = read("client/src/v2/V2CommandBar.tsx");
+const recordLabelSource = read("client/src/v2/useRecordLabel.ts");
 const css = read("client/src/v2/tokens.css").replace(/\/\*[\s\S]*?\*\//g, "");
 
 function rule(selector: string): string {
@@ -355,8 +355,8 @@ describe("Dossier review (F44-F51)", () => {
       expect(breadcrumbFor("/projects/prj-live", "Acme").at(-1)).toEqual({ label: "Overview" });
       // The top-level trimming is untouched.
       expect(breadcrumbFor("/projects", "Acme")).toEqual([{ label: "Acme" }]);
-      expect(commandBarSource).toContain('const projectId = route.kind === "dossier" ? route.projectId : "";');
-      expect(commandBarSource).toMatch(/queryKey: \["\/api\/crm\/projects", projectId\],\s*enabled: false,/);
+      expect(recordLabelSource).toContain('const projectId = route.kind === "dossier" ? route.projectId : "";');
+      expect(recordLabelSource).toMatch(/queryKey: \["\/api\/crm\/projects", projectId\],\s*enabled: false,/);
     });
 
     it("holds the search field still: the crumb has a fixed width and its last crumb ellipsizes", () => {

@@ -20,6 +20,8 @@ import { matchV2Route } from "./presentation";
 import { useV2Chrome } from "./V2Shell";
 import { canManageAdministration } from "./administration";
 import { Button } from "@/components/ui/button";
+import { V2EmptyState, V2RecordEmpty } from "./V2EmptyState";
+import { filteredEmptyModel } from "./emptyState";
 
 const ARTICLE_MOTION = motionForSurface("help-article").enterExit;
 
@@ -38,12 +40,17 @@ export function V2HelpPage() {
         <header className="df-today-head">
           <div>
             <h1 className="df-title">Help Center</h1>
-            <p className="df-subhead">{page.emptyCopy}</p>
           </div>
         </header>
-        <Button asChild variant="outline" className="df-btn"><Link href={page.backHref}>
-          Back to Help Center
-        </Link></Button>
+        <V2EmptyState
+          icon="documents"
+          title={page.emptyCopy}
+          action={
+            <Button asChild variant="outline" className="df-btn">
+              <Link href={page.backHref}>Back to Help Center</Link>
+            </Button>
+          }
+        />
       </div>
     );
   }
@@ -112,11 +119,15 @@ export function V2HelpPage() {
         />
       </label>
 
+      {page.topics.length === 0 ? (
+        <V2RecordEmpty
+          model={filteredEmptyModel("Help Center topics", { search: query, searchOnly: true })}
+          icon="search"
+          onClear={() => setQuery("")}
+        />
+      ) : (
       <section className="df-help-topics" data-testid="v2-help-hub">
-        {page.topics.length === 0 ? (
-          <p className="df-empty">No Help Center topics match that search.</p>
-        ) : (
-          page.topics.map((topic) => {
+          {page.topics.map((topic) => {
             const icon = HELP_HUB_ITEMS.find((item) => item.slug === topic.slug);
             const Icon = icon?.icon;
             return (
@@ -130,16 +141,16 @@ export function V2HelpPage() {
                   {Icon ? <Icon className="df-help-topic-icon" aria-hidden /> : null}
                   <span style={{ minWidth: 0 }}>
                     <div className="df-row-title">{topic.title}</div>
-                    <div className="df-empty df-flush">
+                    <div className="df-note df-flush">
                       {topic.subtitle}
                     </div>
                   </span>
                 </span>
               </Link>
             );
-          })
-        )}
+          })}
       </section>
+      )}
 
       <ContactSupport />
     </div>

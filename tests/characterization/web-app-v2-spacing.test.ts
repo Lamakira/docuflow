@@ -25,7 +25,7 @@ function defined(name: string): string[] {
 const CARD_SUBJECTS = [
   ".df-card-head",
   ".df-opportunity-card",
-  ".df-empty",
+  ".df-note",
   ".df-toolbar",
   ".df-figure-band",
   ".df-register-row",

@@ -69,6 +69,8 @@ export type ActivityInput = {
   evidence: ActivityEvidenceInput[];
   /** Whether a Project, Member, Low activity or Similar filter narrows the stream (the date range is not one). */
   facetsActive?: boolean;
+  /** Those filters in plain words, for the empty state. */
+  facetLabels?: string[];
   /** Whether the reader may see any Activity Evidence in any period; `null` while unknown. */
   everRecorded?: boolean | null;
   /** The date range being read; "today" when absent. */
@@ -231,11 +233,13 @@ function evidenceEmptyState(
   filtered: boolean,
   everRecorded: boolean | null = null,
   range: EvidenceDateMode = "today",
+  facetLabels?: string[],
 ): EmptyModel | null {
   const wider = widerEvidenceRange(range);
   return emptyModelOf(
     emptyKindOf(empty, filtered, range !== "all", everRecorded),
-    "Activity Evidence",
+    // Counted as the title and the chip count it; "Activity Evidence" has no plural to match.
+    filtered ? "captures" : "Activity Evidence",
     {
       title: "No Activity Evidence yet",
       copy: "Activity Evidence is captured by the desktop agent while a Member's Timer runs, following the Tracking Policy above.",
@@ -244,6 +248,7 @@ function evidenceEmptyState(
       window: EVIDENCE_RANGE_WINDOW[range],
       widenLabel: wider ? `Show ${evidenceDateLabel(wider).toLowerCase()}` : null,
     },
+    { filters: facetLabels, window: EVIDENCE_RANGE_WINDOW[range] },
   );
 }
 
@@ -297,7 +302,7 @@ export function composeActivity(input: ActivityInput): ActivityModel {
   const empty = rows.length === 0;
   return {
     empty,
-    emptyState: evidenceEmptyState(empty, Boolean(input.facetsActive), input.everRecorded ?? null, input.range),
+    emptyState: evidenceEmptyState(empty, Boolean(input.facetsActive), input.everRecorded ?? null, input.range, input.facetLabels),
     refusal,
     policyLines: composeTrackingPolicy(input.policy),
     policyFootnote: input.canReview
@@ -374,10 +379,10 @@ export function evidenceRangeProblem(
   mode: EvidenceDateMode,
   typed: { day?: string | null; from?: string | null; to?: string | null },
 ): string | null {
-  if (mode === "day") return typed.day ? null : "Choose a day.";
+  if (mode === "day") return typed.day ? null : "Choose a day";
   if (mode !== "custom") return null;
-  if (!typed.from || !typed.to) return "Choose both dates.";
-  return typed.to < typed.from ? "The end date is before the start date." : null;
+  if (!typed.from || !typed.to) return "Choose both dates";
+  return typed.to < typed.from ? "The end date is before the start date" : null;
 }
 
 /* ---------------------------------------------------------------------------
@@ -532,6 +537,8 @@ export type ActivityGalleryInput = {
   evidence: GalleryEvidenceInput[];
   /** Whether a Project, Member, Low activity or Similar filter narrows the gallery (the date range is not one). */
   facetsActive?: boolean;
+  /** Those filters in plain words, for the empty state. */
+  facetLabels?: string[];
   /** Whether the reader may see any Activity Evidence in any period; `null` while unknown. */
   everRecorded?: boolean | null;
   /** The date range being read; "today" when absent. */
@@ -709,6 +716,6 @@ export function composeActivityGallery(input: ActivityGalleryInput): ActivityGal
       selectedCount === 1 ? "Download 1 capture" : `Download ${selectedCount} captures`,
     viewer,
     empty: count === 0,
-    emptyState: evidenceEmptyState(count === 0, filtered, input.everRecorded ?? null, input.range),
+    emptyState: evidenceEmptyState(count === 0, filtered, input.everRecorded ?? null, input.range, input.facetLabels),
   };
 }

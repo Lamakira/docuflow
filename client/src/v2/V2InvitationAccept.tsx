@@ -69,7 +69,7 @@ export function V2InvitationAcceptPage() {
         <p className="df-subhead df-subhead-follow">
           {page.copy}
         </p>
-        {!isLoaded ? <p className="df-empty">Loading…</p> : null}
+        {!isLoaded ? <p className="df-note">Loading…</p> : null}
         {isLoaded && page.action === "sign-in" ? (
           <div data-testid="v2-invitation-sign-in">
             <SignIn

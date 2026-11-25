@@ -199,13 +199,15 @@ export function composePeople(input: PeopleInput): PeopleModel {
     // The invitation names Invite only to a reader who has it (#325).
     emptyState: emptyModelOf(
       emptyKindOf(empty, Boolean(query.trim())),
-      "Memberships",
+      "Members",
       input.canInvite === false
         ? { title: "No Members yet", copy: "Memberships are the people who work in this Workspace." }
         : {
             title: "Invite your first Member",
             copy: "Memberships are the people who work in this Workspace. Use Invite above to add the first Member.",
           },
+      undefined,
+      { search: query, searchOnly: true },
     ),
     rows,
     pagePrimary: "case-ink",

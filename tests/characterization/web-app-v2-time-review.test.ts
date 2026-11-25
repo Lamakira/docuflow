@@ -327,7 +327,7 @@ describe("filters in the address and failed loads (F73)", () => {
       expect(timeSource).toContain(`testId="${id}-load-failed"`);
       expect(timeSource).toContain(`"${id}-refresh-failed"`);
     }
-    expect(timeSource).toContain("Try again");
+    expect(timeSource.match(/<V2LoadFailed/g)).toHaveLength(4);
     expect(timeSource.match(/staleTime: 0/g)).toHaveLength(4);
     expect(timeSource).toContain("setFilters({ ...filters, page: paging.pageCount })");
     expect(timeSource).toContain("placeholderData: keepPreviousData");

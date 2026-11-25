@@ -18,6 +18,12 @@ the test that enforces it.
   Check: `tests/characterization/web-app-v2-design-rules.test.ts`.
   <!-- 2026-11-19: "je veux une barre de scroll intégrée au card, sans les boutons de haut bas la. qu'on ait l'impression que ça fond dans le décor en fait" -->
 
+- **Every empty or failed region is drawn by `client/src/v2/V2EmptyState.tsx`, never by hand: an icon, a title, one line and the way out, centred.**
+  `V2RecordEmpty` for a record list (nothing yet, filters hide every row, or a Range that holds nothing: the filters or the search are named, and the one action clears them), `V2LoadFailed` for a failed load (its own icon, Try again), `V2EmptyState` for any other region, `V2CompactEmpty` for a section of a card that has a title, `V2EmptyLine` inside a field, a settings row, a dialog or a sheet. The count and the column heads above an empty list go away. Muted text that is not an empty state (a hint, a footnote, a wait) wears `df-note`.
+  Why: empty states were being corrected one screen after another; the owner does not want to come back to it.
+  Check: `tests/characterization/web-app-v2-empty-states.test.ts` fails on an empty or failed line written in a screen.
+  <!-- 2026-11-25: "regarde encore un empty state mal géré"; "je ne veux vraiment plus revenir dessus. comment faire en sorte qu'un empty state soit partagé partout dans l'app de sorte à ne pas refaire ça ou corriger ça un par un" -->
+
 ## Spacing & layout
 
 - **A board (the Opportunities pipeline, or any future board) fills the page below its head, every column is the board's height, and a column with more cards than fit scrolls inside itself. The page itself never scrolls. Never size columns to their own content, and never stretch them to the longest one.**
@@ -36,6 +42,12 @@ the test that enforces it.
   Why: the name four times over (sidebar, breadcrumb, title, subtitle) adds nothing and crowds the head.
   Check: `tests/characterization/web-app-v2-design-rules.test.ts`, and the breadcrumb case in `tests/characterization/web-app-v2-opportunities.test.ts`.
   <!-- 2026-11-19: "le fait qu'il y ait "Opportunities" 3 fois la ici, je n'aime pas"; then chose: breadcrumb and subtitle, on every page -->
+
+- **The browser tab's title names the screen: what is open first, then what holds it, then DocuFlow (`Gallery - Activity - DocuFlow`, `Acme - Clients - DocuFlow`).**
+  Every title comes from `pageTitleFor` (`client/src/v2/presentation.ts`), set by `V2PageTitle`.
+  Why: every tab said `DocuFlow`, so several tabs of the app could not be told apart.
+  Check: `tests/characterization/web-app-v2-page-title.test.ts`.
+  <!-- 2026-11-25: "je ne peux pas savoir directement dans quel onglet je me trouve. ça affiche juste "Docuflow" quel que soit l'onglet" -->
 
 - **No em dash anywhere the app shows text: screens, dialogs, empty states, help articles, emails. Write a comma, a colon, a semicolon, brackets or a new sentence; where a dash is really needed, use a hyphen (`-`).**
   An empty value in a list or a record shows `-`. Code comments and operator messages (logs, configuration) are not text the app shows. v1 screens stay as they are.

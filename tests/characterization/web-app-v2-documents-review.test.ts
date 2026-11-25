@@ -122,8 +122,8 @@ describe("the register page source (F53, F55, F59)", () => {
   });
 
   it("shows the failed-load state with Try again, not an empty library", () => {
-    expect(documentsSource).toMatch(/if \(isError && !data\) \{[\s\S]*?v2-documents-load-failed[\s\S]*?Try again/);
-    expect(documentsSource).toContain("onClick={() => refetch()}");
+    expect(documentsSource).toMatch(/if \(isError && !data\) \{[\s\S]*?<V2LoadFailed[\s\S]*?v2-documents-load-failed/);
+    expect(documentsSource).toContain("onRetry={() => refetch()}");
     expect(documentsSource).toMatch(/isError && data[\s\S]*?notify\.error/);
   });
 

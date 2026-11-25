@@ -57,6 +57,8 @@ export type TimeTrackingInput = {
   range?: "today" | "week" | "all";
   /** Whether the Project, Status or Member filter narrows the register. */
   facetsActive?: boolean;
+  /** Those filters in plain words, for the empty state. */
+  facetLabels?: string[];
   /** Whether the reader has any Time Entry in any period; `null` while unknown. */
   everRecorded?: boolean | null;
   /** Whether the Workspace has any Project; omitted reads as yes. */
@@ -409,6 +411,7 @@ export function composeTimeTracking(input: TimeTrackingInput): TimeTrackingModel
           : "A Time Entry is logged against a Task in a Project, so a Project has to exist first. Create one, then start the Timer.",
       },
       { window: window ?? "in this Workspace", widenLabel },
+      { filters: input.facetLabels, window: window ?? undefined },
     ),
     emptyAction: !hasProjects && input.canCreateProject ? newProject : null,
     timerHint: hasProjects

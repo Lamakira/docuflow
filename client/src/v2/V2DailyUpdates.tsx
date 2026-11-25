@@ -16,7 +16,7 @@ import {
 } from "./dailyUpdate";
 import { useWorkspaceOwnerName } from "./useWorkspaceOwner";
 import { useV2Chrome } from "./V2Shell";
-import { V2RecordEmpty } from "./V2EmptyState";
+import { V2EmptyLine, V2RecordEmpty } from "./V2EmptyState";
 import { V2FilterSelect } from "./V2Select";
 import { SkeletonSection, V2PageSkeleton } from "./V2Skeleton";
 
@@ -166,9 +166,7 @@ export function V2TeamDailyUpdatesPage() {
           <div>
             <div className="df-mono df-meta">Submitted</div>
             {page.submitted.length === 0 ? (
-              <p className="df-empty df-band-y">
-                {page.submittedEmptyCopy}
-              </p>
+              <V2EmptyLine>{page.submittedEmptyCopy}</V2EmptyLine>
             ) : (
               <div className="df-chip-list df-chip-follow">
                 {page.submitted.map((member) => (
@@ -183,9 +181,7 @@ export function V2TeamDailyUpdatesPage() {
             <div className="df-mono df-meta">Missing</div>
             {page.missing.length === 0 ? (
               page.missingEmptyCopy ? (
-                <p className="df-empty df-band-y">
-                  {page.missingEmptyCopy}
-                </p>
+                <V2EmptyLine>{page.missingEmptyCopy}</V2EmptyLine>
               ) : null
             ) : (
               <div className="df-chip-list df-chip-follow">

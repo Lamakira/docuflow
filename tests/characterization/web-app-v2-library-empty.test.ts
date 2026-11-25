@@ -12,7 +12,7 @@ import {
 /**
  * The library registers' empty states (#278 follow-up): nothing matching the
  * filters, nothing matching the search, and nothing there yet read as three
- * designed V2EmptyStates (#277), and a filtered foot says how much is shown.
+ * cases of the one shared empty state, and a filtered foot says how much is shown.
  */
 
 const v2 = (name: string) =>
@@ -55,9 +55,12 @@ describe("Workspace Documents empty states", () => {
     expect(library.empty).toBe(true);
     expect(library.filtered).toBe(true);
     expect(library.emptyState).toEqual({
-      kind: "filters",
+      kind: "filtered",
       title: "No Workspace Documents match these filters",
-      copy: "Nothing here matches Access: Administrators only. Clear the filters to see everything you can open.",
+      copy: "Nothing here matches Access: Administrators only. Clear the filters to see the rest.",
+      icon: "filters",
+      widenLabel: null,
+      clearLabel: "Clear filters",
     });
   });
 
@@ -65,16 +68,20 @@ describe("Workspace Documents empty states", () => {
     const library = composeLibrary(
       input({ filterQuery: "zzz", filters: { ...facets, type: "file", owner: "u1", updated: "7" } }),
     );
-    expect(library.emptyState?.kind).toBe("filters");
+    expect(library.emptyState?.kind).toBe("filtered");
     expect(library.emptyState?.copy).toContain(
-      "Name: “zzz” · Type: File · Added by: Sam Lee · Updated: in the last 7 days",
+      "Search: “zzz” · Type: File · Added by: Sam Lee · Updated: in the last 7 days",
     );
   });
 
   it("mentions the search text when the search alone empties it", () => {
     const library = composeLibrary(input({ filterQuery: "zzz" }));
-    expect(library.emptyState).toMatchObject({ kind: "search", title: "No Workspace Documents match “zzz”" });
-    expect(library.emptyState?.copy).toContain("“zzz”");
+    expect(library.emptyState).toMatchObject({
+      kind: "filtered",
+      title: "No Workspace Documents match “zzz”",
+      icon: "search",
+      clearLabel: "Clear search",
+    });
   });
 
   it("explains an empty Workspace instead of blaming a filter", () => {
@@ -125,9 +132,9 @@ describe("Project Documentation empty states", () => {
     };
     expect(
       composeProjectDocumentation({ ...base, filterWords: ["Client: Acme"], activeFilters: ["CLIENT Acme"] }).emptyState,
-    ).toMatchObject({ kind: "filters", title: "No Project Documents match these filters" });
+    ).toMatchObject({ kind: "filtered", title: "No Project Documents match these filters" });
     expect(composeProjectDocumentation({ ...base, filterQuery: "run" }).emptyState).toMatchObject({
-      kind: "search",
+      kind: "filtered",
       title: "No Project Documents match “run”",
     });
     expect(composeProjectDocumentation(base).emptyState).toMatchObject({ kind: "none", title: "No Project Documents yet" });
@@ -137,10 +144,9 @@ describe("Project Documentation empty states", () => {
 describe("the register renders the designed empty state", () => {
   const register = v2("V2Library.tsx");
 
-  it("uses the shared V2EmptyState with a search-off, filter-off, or documents icon", () => {
-    expect(register).toContain('import { V2EmptyState } from "./V2EmptyState"');
-    expect(register).toMatch(/search: "search",\s*filters: "filters",\s*none: "documents"/);
-    expect(register).toMatch(/action=\{library\.emptyState\.kind === "none" \? createActions : emptyAction\}/);
+  it("uses the shared V2RecordEmpty with a search-off, filter-off, or documents icon", () => {
+    expect(register).toContain('import { V2RecordEmpty } from "./V2EmptyState"');
+    expect(register).toMatch(/<V2RecordEmpty[\s\S]*?icon="documents"[\s\S]*?action=\{createActions\}[\s\S]*?onClear=\{onClear\}/);
     const icons = v2("icons.tsx");
     expect(icons).toMatch(/search: SearchX/);
     expect(icons).toMatch(/filters: FilterX/);
@@ -155,10 +161,10 @@ describe("the register renders the designed empty state", () => {
   });
 
   for (const page of ["V2Documents.tsx", "V2ProjectDocumentation.tsx"]) {
-    it(`${page} offers the create actions when empty and names the clear action`, () => {
+    it(`${page} offers the create actions when empty and a way to clear what emptied it`, () => {
       const source = v2(page);
       expect(source).toMatch(/createActions=\{/);
-      expect(source).toContain('library.emptyState?.kind === "search" ? "Clear search" : "Clear filters"');
+      expect(source).toMatch(/onClear=\{\(\) => \{\s*setFilterQuery\(""\);\s*setFilters\(clear/);
     });
   }
 });

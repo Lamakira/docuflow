@@ -871,6 +871,31 @@ function fullBreadcrumbFor(
   ];
 }
 
+export const APP_NAME = "DocuFlow";
+
+/**
+ * The browser tab's title: the screen first, because a narrow tab shows only the
+ * first words, then what holds it, then the app.
+ */
+export function pageTitleFor(path: string, recordLabel?: string, recordRoot?: V2RecordRoot | null): string {
+  const match = matchV2Route(path);
+  if (match.kind === "placeholder") return `Page not found - ${APP_NAME}`;
+  if (match.kind === "platform") {
+    const location = parseBackOfficePath(path);
+    const tab = location ? backOfficeTabs(location.tab).find((item) => item.current)?.label : undefined;
+    const detail = location?.kind === "workspace" ? "Workspace" : location?.kind === "support-request" ? "Support request" : undefined;
+    return [detail, tab, "Platform", APP_NAME].filter(Boolean).join(" - ");
+  }
+  if (match.kind === "file-viewer") return `${recordLabel || "File"} - ${APP_NAME}`;
+  const names = fullBreadcrumbFor(path, "", recordLabel, recordRoot)
+    .slice(1)
+    .map((crumb) => crumb.label)
+    .reverse();
+  // A Project's tabs open side by side, so the tab is part of its name.
+  if (match.kind === "dossier" && recordLabel && match.tab !== "overview") names.splice(1, 0, DOSSIER_TAB_LABEL[match.tab]);
+  return [...names, APP_NAME].join(" - ");
+}
+
 export type TimerChipInput = {
   isRunning: boolean;
   isPaused: boolean;

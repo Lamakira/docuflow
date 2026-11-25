@@ -4,6 +4,7 @@ import { projectStatusColor } from "./palette";
 import { budgetedHoursTotal, projectHref } from "./today";
 import { readPage, readPageSize, writePaging } from "./paging";
 import { dateToDay, formatFullDate, utcDay } from "./dates";
+import { sentenceCase } from "./text";
 import { emptyKindOf, emptyModelOf, type EmptyModel } from "./emptyState";
 
 /**
@@ -285,12 +286,12 @@ export function projectFilterLabels(
     options.find((option) => option.value === value)?.label ?? value.toUpperCase();
   const labels: string[] = [];
   if (filters.q.trim()) labels.push(`“${filters.q.trim()}”`);
-  if (filters.status !== "all") labels.push(`Status ${optionLabel(PROJECT_STATUS_OPTIONS, filters.status)}`);
-  if (filters.client !== "all") labels.push(`Client ${names.clients.get(filters.client) ?? "-"}`);
-  if (filters.lead !== "all") labels.push(`Project manager ${names.leads.get(filters.lead) ?? "-"}`);
-  if (filters.tag !== "all") labels.push(`Tag ${names.tags.get(filters.tag) ?? "-"}`);
-  if (filters.type !== "all") labels.push(`Type ${optionLabel(PROJECT_TYPE_OPTIONS, filters.type)}`);
-  if (filters.due !== "all") labels.push(`Due ${optionLabel(PROJECT_DUE_OPTIONS, filters.due)}`);
+  if (filters.status !== "all") labels.push(`Status: ${sentenceCase(optionLabel(PROJECT_STATUS_OPTIONS, filters.status))}`);
+  if (filters.client !== "all") labels.push(`Client: ${names.clients.get(filters.client) ?? "-"}`);
+  if (filters.lead !== "all") labels.push(`Project manager: ${names.leads.get(filters.lead) ?? "-"}`);
+  if (filters.tag !== "all") labels.push(`Tag: ${names.tags.get(filters.tag) ?? "-"}`);
+  if (filters.type !== "all") labels.push(`Type: ${optionLabel(PROJECT_TYPE_OPTIONS, filters.type)}`);
+  if (filters.due !== "all") labels.push(`Due: ${optionLabel(PROJECT_DUE_OPTIONS, filters.due)}`);
   return labels;
 }
 
@@ -340,7 +341,11 @@ export function composeProjectRegister(input: ProjectRegisterInput): ProjectRegi
     empty && (activeFilters.length > 0 || Boolean(needle) || input.statusFilter !== "all" || input.tagFilter !== "all");
   return {
     empty,
-    emptyState: emptyModelOf(emptyKindOf(empty, filtered), "Projects", PROJECTS_NONE),
+    emptyState: emptyModelOf(emptyKindOf(empty, filtered), "Projects", PROJECTS_NONE, undefined, {
+      search: input.filterQuery,
+      // A status or Tag narrowed here has no words of its own.
+      filters: input.statusFilter === "all" && input.tagFilter === "all" ? activeFilters : undefined,
+    }),
     filtered,
     rows,
     count: rows.length,
@@ -442,6 +447,8 @@ export type ProjectBoardFilters = Pick<ProjectRegisterFilters, "status" | "clien
 export type ProjectBoardInput = {
   projects: ProjectBoardRowInput[];
   filterQuery: string;
+  /** The active filters in plain words, for the empty state. */
+  activeFilters?: string[];
   changingId: string | null;
   filters?: ProjectBoardFilters;
   /** COMPLETED and ARCHIVED columns the reader opened past their first {@link PROJECT_CLOSED_PREVIEW} cards. */
@@ -582,10 +589,11 @@ export function composeProjectBoard(input: ProjectBoardInput): ProjectBoardModel
   const filtersActive = boardFiltersActive(input.filters);
   return {
     empty,
-    // Filters emptied it: "No Projects match these filters" and Clear filters, as
-    // the register says; the search alone keeps its search line.
+    // Filters emptied it: the register's words; the search alone names its text.
     emptyState: emptyModelOf(emptyKindOf(empty, Boolean(needle) || filtersActive), "Projects", PROJECTS_NONE, undefined, {
+      search: input.filterQuery,
       searchOnly: !filtersActive,
+      filters: input.activeFilters,
     }),
     columns,
     count,
