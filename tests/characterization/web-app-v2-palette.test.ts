@@ -265,7 +265,7 @@ describe("where colour goes", () => {
   it("reads the tone from the composer, not from a word in JSX", () => {
     const toned: Record<string, string> = {
       "V2Devices.tsx": "statusTone(",
-      "V2Administration.tsx": "billingConditionTone(",
+      "V2AdministrationBilling.tsx": "billingConditionTone(",
     };
     for (const [name, call] of Object.entries(toned)) {
       expect(read(`client/src/v2/${name}`), name).toContain(`data-tone={${call}`);
@@ -539,7 +539,7 @@ describe("the named option colours are Tailwind's own (Pipeline & lists)", () =>
   });
 
   it("shows each picker option as a solid chip of its colour beside the badge", () => {
-    const admin = read("client/src/v2/V2Administration.tsx");
+    const admin = read("client/src/v2/V2AdministrationPipelineLists.tsx");
     expect(admin).toMatch(/<span className="df-colour-option" style=\{swatchStyle\(colour\.hex\)\}>\s*<span className="df-colour-chip" aria-hidden="true" \/>\s*<span className="df-status" data-swatch="">\{colour\.name\}<\/span>/);
     expect(rule(".df-colour-chip")).toMatch(/background:\s*var\(--df-swatch-base\)/);
     expect(rule(".df-colour-chip")).not.toMatch(/#[0-9a-f]{3,6}\b/i);

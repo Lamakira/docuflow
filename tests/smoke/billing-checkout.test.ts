@@ -1,4 +1,6 @@
+import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
+import { workspaceBilling } from "../../shared/schema";
 import { FakeBillingProvider } from "../fakes/billingProvider";
 import { resetDb, ownerDb } from "../helpers/db";
 import { inSeededWorkspace } from "../helpers/workspace";
@@ -196,6 +198,30 @@ async function plantPaidWorkspace(purchasedSeatCapacity = 3) {
   });
 }
 
+function providerSubscription(seatQuantity: number) {
+  return {
+    providerCustomerId: "cus_fake_1",
+    providerSubscriptionId: SUBSCRIPTION_ID,
+    planKey: "pro" as const,
+    interval: "monthly" as const,
+    seatQuantity,
+    currentPeriodEnd: PERIOD_END,
+    cancelAtPeriodEnd: false,
+    collectionState: "Current" as const,
+    unitAmountMinor: null,
+    currency: null,
+  };
+}
+
+async function seatAudits(): Promise<string[]> {
+  const { auditEvents } = await import("../../shared/schema");
+  const rows = await ownerDb
+    .select({ action: auditEvents.action })
+    .from(auditEvents)
+    .where(eq(auditEvents.workspaceId, PAID_WORKSPACE_ID));
+  return rows.map((row) => row.action).filter((action) => action.startsWith("billing.seats"));
+}
+
 async function plantPaidMembers(count: number) {
   const { memberships, users } = await import("../../shared/schema");
   for (let i = 0; i < count; i += 1) {
@@ -219,16 +245,22 @@ describe("seat changes", () => {
     await resetDb();
   });
 
-  it("applies an increase immediately and tells the provider afterwards", async () => {
+  it("asks the provider first on an increase, then applies it at once", async () => {
     const { changeSeats, getBillingProjection } = await import("../../server/modules/billing");
     const { runWithWorkspaceContext } = await import("../../server/workspaceContext");
     const provider = new FakeBillingProvider();
     await plantPaidWorkspace(3);
+    let capacityWhenAsked: number | null = null;
+    provider.onSeatUpdate = async () => {
+      const [row] = await ownerDb.select().from(workspaceBilling).where(eq(workspaceBilling.workspaceId, PAID_WORKSPACE_ID));
+      capacityWhenAsked = row.purchasedSeatCapacity;
+    };
 
     const next = await runWithWorkspaceContext({ workspaceId: PAID_WORKSPACE_ID }, () =>
       changeSeats(5, SYSTEM, provider)
     );
     expect(next.purchasedSeatCapacity).toBe(5);
+    expect(capacityWhenAsked).toBe(3);
 
     const pin = await runWithWorkspaceContext({ workspaceId: PAID_WORKSPACE_ID }, () =>
       getBillingProjection()
@@ -242,6 +274,116 @@ describe("seat changes", () => {
         proration: "create_prorations",
       },
     ]);
+  });
+
+  it("leaves seats and a planned decrease as they were when the provider refuses an increase", async () => {
+    const { changeSeats, getBillingProjection, BillingProviderError } = await import("../../server/modules/billing");
+    const { runWithWorkspaceContext } = await import("../../server/workspaceContext");
+    const provider = new FakeBillingProvider();
+    await plantPaidWorkspace(5);
+    await runWithWorkspaceContext({ workspaceId: PAID_WORKSPACE_ID }, () => changeSeats(4, SYSTEM, provider));
+    provider.refusal = new BillingProviderError("Your card was declined.");
+
+    await expect(
+      runWithWorkspaceContext({ workspaceId: PAID_WORKSPACE_ID }, () => changeSeats(8, SYSTEM, provider))
+    ).rejects.toThrow("Your card was declined.");
+
+    const [row] = await ownerDb.select().from(workspaceBilling).where(eq(workspaceBilling.workspaceId, PAID_WORKSPACE_ID));
+    expect(row).toMatchObject({ purchasedSeatCapacity: 5, pendingSeatQuantity: 4, authorizationVersion: 1 });
+    const pin = await runWithWorkspaceContext({ workspaceId: PAID_WORKSPACE_ID }, () => getBillingProjection());
+    expect(pin.purchasedSeatCapacity).toBe(5);
+    expect(await seatAudits()).toEqual(["billing.seats_change_scheduled"]);
+  });
+
+  it("clears a planned decrease on an increase, and on the current number again", async () => {
+    const { changeSeats } = await import("../../server/modules/billing");
+    const { runWithWorkspaceContext } = await import("../../server/workspaceContext");
+    const provider = new FakeBillingProvider();
+    await plantPaidWorkspace(5);
+    const inPaid = <T>(fn: () => Promise<T>) => runWithWorkspaceContext({ workspaceId: PAID_WORKSPACE_ID }, fn);
+    const pending = async () =>
+      (await ownerDb.select().from(workspaceBilling).where(eq(workspaceBilling.workspaceId, PAID_WORKSPACE_ID)))[0]
+        .pendingSeatQuantity;
+
+    await inPaid(() => changeSeats(3, SYSTEM, provider));
+    expect(await pending()).toBe(3);
+    await inPaid(() => changeSeats(5, SYSTEM, provider));
+    expect(await pending()).toBeNull();
+    expect(provider.seatUpdates).toEqual([]);
+
+    await inPaid(() => changeSeats(3, SYSTEM, provider));
+    const raised = await inPaid(() => changeSeats(6, SYSTEM, provider));
+    expect(raised.purchasedSeatCapacity).toBe(6);
+    expect(await pending()).toBeNull();
+    expect(provider.seatUpdates.map((update) => update.seatQuantity)).toEqual([6]);
+  });
+
+  it("takes two increases at once one after the other, so Stripe ends on the seats DocuFlow grants", async () => {
+    const { changeSeats } = await import("../../server/modules/billing");
+    const { runWithWorkspaceContext } = await import("../../server/workspaceContext");
+    const provider = new FakeBillingProvider();
+    await plantPaidWorkspace(3);
+    provider.subscriptions.set(SUBSCRIPTION_ID, providerSubscription(3));
+    const inPaid = <T>(fn: () => Promise<T>) => runWithWorkspaceContext({ workspaceId: PAID_WORKSPACE_ID }, fn);
+
+    // The second request arrives while Stripe is still answering the first.
+    let second: Promise<unknown> | null = null;
+    provider.onSeatUpdate = async () => {
+      second = inPaid(() => changeSeats(7, SYSTEM, provider));
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    };
+    await inPaid(() => changeSeats(5, SYSTEM, provider));
+    await second;
+
+    const [row] = await ownerDb.select().from(workspaceBilling).where(eq(workspaceBilling.workspaceId, PAID_WORKSPACE_ID));
+    expect(provider.seatUpdates.map((update) => update.seatQuantity)).toEqual([5, 7]);
+    expect(provider.subscriptions.get(SUBSCRIPTION_ID)?.seatQuantity).toBe(7);
+    expect(row.purchasedSeatCapacity).toBe(7);
+  });
+
+  it("keeps an increase when Stripe's event read before it lands after it", async () => {
+    const { changeSeats, handleProjectBillingJob, ingestBillingWebhook, BILLING_PROJECT_JOB } = await import(
+      "../../server/modules/billing"
+    );
+    const { runWithWorkspaceContext } = await import("../../server/workspaceContext");
+    const { createJobRunner } = await import("../../server/worker");
+    const provider = new FakeBillingProvider();
+    await plantPaidWorkspace(3);
+    provider.subscriptions.set(SUBSCRIPTION_ID, providerSubscription(3));
+    const jobsPort = await billingJobs();
+    await ingestBillingWebhook({
+      provider,
+      jobs: jobsPort,
+      payload: JSON.stringify({
+        providerEventId: "evt_old_quantity",
+        type: "customer.subscription.updated",
+        objectId: SUBSCRIPTION_ID,
+      }),
+      signature: "signed",
+    });
+    // The Worker read the Subscription at 3 seats; its write waits behind the increase.
+    const staleRead = Object.create(provider) as FakeBillingProvider;
+    staleRead.fetchSubscription = async () => providerSubscription(3);
+    const worker = createJobRunner({
+      role: "worker",
+      jobs: jobsPort,
+      handlers: {
+        [BILLING_PROJECT_JOB]: (job) => handleProjectBillingJob(job, staleRead),
+      },
+      claimerId: "worker-1",
+    });
+    let projected: Promise<unknown> | null = null;
+    provider.onSeatUpdate = async () => {
+      projected = worker.runOne();
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    };
+
+    await runWithWorkspaceContext({ workspaceId: PAID_WORKSPACE_ID }, () => changeSeats(5, SYSTEM, provider));
+    await projected;
+
+    const [row] = await ownerDb.select().from(workspaceBilling).where(eq(workspaceBilling.workspaceId, PAID_WORKSPACE_ID));
+    expect(row.purchasedSeatCapacity).toBe(5);
+    expect(provider.subscriptions.get(SUBSCRIPTION_ID)?.seatQuantity).toBe(5);
   });
 
   it("applies a decrease at period end, floored at consumption, then tells the provider", async () => {

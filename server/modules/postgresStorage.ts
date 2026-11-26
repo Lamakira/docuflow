@@ -168,7 +168,7 @@ import {
 import { notDuplicateCapture } from "./activity/duplicates";
 import { getScreenshotPolicy, upsertScreenshotPolicy } from "./activity/policy";
 import type { ScreenshotCoverageReport } from "./activity/persistence";
-import { getAllowedTimezones, upsertAllowedTimezones } from "./time/schedule";
+import { getAllowedTimezones, upsertAllowedTimezones, upsertWorkspaceTimeZone } from "./time/schedule";
 import { applyTimerCommand, listTimerCommands } from "./time/commands";
 import { dayCalendar, dayPortions } from "./time/dayCalendar";
 import type { TimeExportRow } from "./time/timeExport";
@@ -324,6 +324,15 @@ function nextUpdatedAt(column: AnyColumn, expected: Date | undefined): Date | SQ
   const now = new Date();
   if (!expected) return now;
   return sql`greatest(${now.toISOString()}::timestamp, date_trunc('milliseconds', ${column}) + interval '1 millisecond')`;
+}
+
+/** A list saved from a copy older than the stored one would undo someone else's change (F106). */
+export class FieldListChangedError extends Error {
+  readonly statusCode = 409;
+  constructor() {
+    super("Someone changed this list since you opened it. It has been reloaded; make your change again.");
+    this.name = "FieldListChangedError";
+  }
 }
 
 export class DatabaseStorage implements IStorage {
@@ -2587,11 +2596,28 @@ export class DatabaseStorage implements IStorage {
     data: Partial<InsertCrmModuleField>,
     renames: OptionRename[],
     columns: OptionRenameColumn[],
+    expectedUpdatedAt?: Date,
   ): Promise<CrmModuleField | undefined> {
     return db.transaction(async (tx) => {
+      if (expectedUpdatedAt) {
+        // Compared here, under the row lock, in milliseconds: a stamp written by
+        // the database carries microseconds the client never saw.
+        const [current] = await tx
+          .select({ updatedAt: crmModuleFields.updatedAt })
+          .from(crmModuleFields)
+          .where(and(inWorkspace(crmModuleFields), eq(crmModuleFields.id, id)))
+          .for("update");
+        if (current && current.updatedAt?.getTime() !== expectedUpdatedAt.getTime()) {
+          throw new FieldListChangedError();
+        }
+      }
       const [updated] = await tx
         .update(crmModuleFields)
-        .set({ ...data, options: data.options as string[] | null | undefined, updatedAt: new Date() })
+        .set({
+          ...data,
+          options: data.options as string[] | null | undefined,
+          updatedAt: nextUpdatedAt(crmModuleFields.updatedAt, expectedUpdatedAt),
+        })
         .where(and(inWorkspace(crmModuleFields), eq(crmModuleFields.id, id)))
         .returning();
       if (!updated || renames.length === 0) return updated;
@@ -3411,33 +3437,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async mergeHelpCenterScreenshots(partial: Record<string, string | null>): Promise<void> {
-    const current = await this.getHelpCenterScreenshots();
-    const merged: Record<string, string> = {};
-    for (const [k, v] of Object.entries(current)) {
-      if (typeof v === "string" && v.length > 0) merged[k] = v;
-    }
-    for (const [k, v] of Object.entries(partial)) {
-      if (v === null) delete merged[k];
-      else merged[k] = v;
-    }
-    const [row] = await db
-      .select()
-      .from(orgSettings)
-      .where(and(inWorkspace(orgSettings), eq(orgSettings.id, "default")));
-    if (!row) {
-      await db.insert(orgSettings).values(stampWorkspace({
-        id: "default",
-        screenshotPolicy: DEFAULT_SCREENSHOT_POLICY,
-        allowedTimezones: [...DEFAULT_ALLOWED_TIMEZONES],
-        helpCenterScreenshots: merged,
-        updatedAt: new Date(),
-      }));
-    } else {
-      await db
-        .update(orgSettings)
-        .set({ helpCenterScreenshots: merged, updatedAt: new Date() })
-        .where(and(inWorkspace(orgSettings), eq(orgSettings.id, "default")));
-    }
+    return mergeHelpCenterScreenshots(partial);
   }
 
   async isAgentBatchProcessed(batchId: string): Promise<boolean> {
@@ -4109,5 +4109,61 @@ export class DatabaseStorage implements IStorage {
       revokedAt: d.revokedAt ?? null,
       createdAt: d.createdAt ?? null,
     }));
+  }
+}
+
+/**
+ * Org settings saved in one transaction (F108): a refusal anywhere, such as an
+ * interval pair out of order, leaves every setting as it was. Callers validate
+ * each value first.
+ */
+export async function saveOrgSettings(change: {
+  timeZone?: string;
+  screenshotPolicy?: Partial<ScreenshotPolicy>;
+  allowedTimezones?: string[];
+  helpCenterScreenshots?: Record<string, string | null>;
+}): Promise<void> {
+  await db.transaction(async (tx) => {
+    if (change.timeZone !== undefined) await upsertWorkspaceTimeZone(change.timeZone, tx);
+    if (change.screenshotPolicy) await upsertScreenshotPolicy(change.screenshotPolicy, tx);
+    if (change.allowedTimezones !== undefined) await upsertAllowedTimezones(change.allowedTimezones, tx);
+    if (change.helpCenterScreenshots) await mergeHelpCenterScreenshots(change.helpCenterScreenshots, tx);
+  });
+}
+
+/** Pass a transaction to save the slots with other settings at once (F108). */
+export async function mergeHelpCenterScreenshots(
+  partial: Record<string, string | null>,
+  executor: Pick<typeof db, "select" | "insert" | "update"> = db,
+): Promise<void> {
+  const [row] = await executor
+    .select()
+    .from(orgSettings)
+    .where(and(inWorkspace(orgSettings), eq(orgSettings.id, "default")))
+    .for("update");
+  const raw = row?.helpCenterScreenshots;
+  const merged: Record<string, string> = {};
+  if (raw && typeof raw === "object") {
+    for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+      if (typeof v === "string" && v.length > 0) merged[k] = v;
+    }
+  }
+  for (const [k, v] of Object.entries(partial)) {
+    if (v === null) delete merged[k];
+    else merged[k] = v;
+  }
+  if (!row) {
+    await executor.insert(orgSettings).values(stampWorkspace({
+      id: "default",
+      screenshotPolicy: DEFAULT_SCREENSHOT_POLICY,
+      allowedTimezones: [...DEFAULT_ALLOWED_TIMEZONES],
+      helpCenterScreenshots: merged,
+      updatedAt: new Date(),
+    }));
+  } else {
+    await executor
+      .update(orgSettings)
+      .set({ helpCenterScreenshots: merged, updatedAt: new Date() })
+      .where(and(inWorkspace(orgSettings), eq(orgSettings.id, "default")));
   }
 }

@@ -34,6 +34,7 @@ import {
   listWebhookEndpoints,
   rotateWebhookEndpointSecret,
   UnknownWebhookEventTypeError,
+  WebhookAddressError,
   WebhookEndpointNotFoundError,
 } from "./webhookEndpoints";
 import {
@@ -70,11 +71,13 @@ import {
   restoreMembership,
   updateMembership,
 } from "./membershipManagement";
+import { renameWorkspace, WorkspaceRenameRefusedError } from "./rename";
 import { SeatExhaustedError } from "../billing/writeClassification";
 import { MembershipManagementError, requireAdministration } from "../../workspaceRole";
 
+// The address is checked by the module, so every caller gets the same refusal.
 const createBody = z.object({
-  url: z.string().url(),
+  url: z.string({ required_error: "Use a public https address" }),
   eventTypes: z.array(z.string()).min(1),
 });
 
@@ -100,7 +103,7 @@ export function registerWebhookEndpointRoutes(app: Express): void {
       if (error instanceof z.ZodError) {
         return res.status(400).json({ message: error.errors[0]?.message ?? "Invalid request" });
       }
-      if (error instanceof UnknownWebhookEventTypeError) {
+      if (error instanceof UnknownWebhookEventTypeError || error instanceof WebhookAddressError) {
         return res.status(400).json({ message: error.message });
       }
       throw error;
@@ -384,6 +387,13 @@ const createWorkspaceBody = z.object({
   timeZone: z.unknown().optional(),
 });
 const successorBody = z.object({ userId: z.string().min(1) });
+const renameBody = z.object({
+  name: z
+    .string({ required_error: "Give the Workspace a name" })
+    .trim()
+    .min(1, "Give the Workspace a name")
+    .max(100, "A Workspace name is at most 100 characters"),
+});
 const deleteWorkspaceBody = z.object({ confirmName: z.string() });
 
 function badRequest(res: Responder, error: z.ZodError): void {
@@ -407,6 +417,20 @@ export function registerWorkspaceLifecycleRoutes(app: Express): void {
       res.status(201).json(await createWorkspace(userId, parsed.data));
     } catch (error) {
       if (!lifecycleError(res, error)) throw error;
+    }
+  });
+
+  // The Workspace this session entered, not one named in the path: renaming
+  // needs the Owner Membership in it.
+  app.patch("/api/workspace", isAuthenticated, async (req, res) => {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ message: "Unauthorized" });
+    const parsed = renameBody.safeParse(req.body);
+    if (!parsed.success) return badRequest(res, parsed.error);
+    try {
+      res.json(await renameWorkspace(userId, parsed.data.name));
+    } catch (error) {
+      if (!refuse(res, error, [WorkspaceRenameRefusedError])) throw error;
     }
   });
 

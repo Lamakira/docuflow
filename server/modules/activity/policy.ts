@@ -79,10 +79,39 @@ export async function assertScreenshotProjectCapacity(ids: string[] | null | und
   throw new PlanFeatureNotIncludedError("screenshotProjects", projection.planKey, "use", capacity);
 }
 
-export async function upsertScreenshotPolicy(policy: Partial<ScreenshotPolicy>): Promise<void> {
-  const current = await getScreenshotPolicy();
-  const merged: ScreenshotPolicy = { ...current, ...policy };
-  await db
+export class CaptureIntervalOrderError extends Error {
+  readonly statusCode = 400;
+  constructor() {
+    super("Min capture interval cannot exceed max");
+    this.name = "CaptureIntervalOrderError";
+  }
+}
+
+type Executor = Pick<typeof db, "select" | "insert">;
+
+/**
+ * Merges a partial policy into the stored one. Pass the transaction to save it
+ * with other settings at once (F108): the stored row is then locked while it
+ * is merged. The interval pair is checked on the merged policy, and only when
+ * the change touches it, so a pair already out of order does not refuse every
+ * other save.
+ */
+export async function upsertScreenshotPolicy(
+  policy: Partial<ScreenshotPolicy>,
+  executor: Executor = db,
+): Promise<void> {
+  requireWorkspaceContext();
+  const [row] = await executor
+    .select({ screenshotPolicy: orgSettings.screenshotPolicy })
+    .from(orgSettings)
+    .where(and(inWorkspace(orgSettings), eq(orgSettings.id, "default")))
+    .for("update");
+  const merged: ScreenshotPolicy = { ...DEFAULT_SCREENSHOT_POLICY, ...(row?.screenshotPolicy ?? {}), ...policy };
+  const touchesInterval = policy.captureIntervalMinMin !== undefined || policy.captureIntervalMaxMin !== undefined;
+  if (touchesInterval && merged.captureIntervalMinMin > merged.captureIntervalMaxMin) {
+    throw new CaptureIntervalOrderError();
+  }
+  await executor
     .insert(orgSettings)
     .values(stampWorkspace({ id: "default", screenshotPolicy: merged, updatedAt: new Date() }))
     .onConflictDoUpdate({

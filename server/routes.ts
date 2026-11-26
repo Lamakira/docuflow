@@ -63,6 +63,7 @@ import { isDeliveryProject, projectHasOpportunity } from "@shared/projectLifecyc
 import {
   assertScreenshotProject,
   assertScreenshotProjectCapacity,
+  CaptureIntervalOrderError,
   deliveredTrackingPolicy,
 } from "./modules/activity/policy";
 import {
@@ -73,7 +74,8 @@ import {
   projectWriteFeature,
 } from "./modules/billing";
 import { registerPublicApiV1 } from "./publicApi/http";
-import { getWorkspaceTimeZone, upsertWorkspaceTimeZone } from "./modules/time";
+import { getWorkspaceTimeZone } from "./modules/time";
+import { FieldListChangedError, saveOrgSettings } from "./modules/postgresStorage";
 import type { ScreenshotListOptions } from "./modules/activity/evidence";
 import { isLowActivityThreshold } from "@shared/activityEvidence";
 import { isIanaTimeZone } from "@shared/timeZone";
@@ -3329,86 +3331,100 @@ Instructions:
     }
   });
 
-  app.patch("/api/admin/org-settings", isAuthenticated, requireAdministration, async (req: any, res) => {
-    try {
-      const { screenshotPolicy, allowedTimezones, helpCenterScreenshots, timeZone } = req.body;
-      const ops: Promise<void>[] = [];
-      if (timeZone !== undefined) {
-        if (!isIanaTimeZone(timeZone))
-          return res.status(400).json({ message: "Time zone must be an IANA time zone, for example Europe/Paris" });
-        ops.push(upsertWorkspaceTimeZone(timeZone));
-      }
-      if (screenshotPolicy && typeof screenshotPolicy === "object") {
-        const p = screenshotPolicy;
-        // ── Screenshot interval validation ──────────────────────────────────
-        if (typeof p.captureIntervalMinMin === "number") {
-          if (p.captureIntervalMinMin < 3)
-            return res.status(400).json({ message: "Minimum capture interval must be at least 3 minutes (1 minute is not allowed)" });
-          if (p.captureIntervalMaxMin !== undefined && p.captureIntervalMaxMin > 15)
-            return res.status(400).json({ message: "Maximum capture interval cannot exceed 15 minutes" });
-          if (p.captureIntervalMaxMin !== undefined && p.captureIntervalMinMin > p.captureIntervalMaxMin)
-            return res.status(400).json({ message: "Min capture interval cannot exceed max" });
-        }
-        // ── Idle policy validation ───────────────────────────────────────────
-        if (typeof p.idleTimeoutMinutes === "number") {
-          if (p.idleTimeoutMinutes < 1 || p.idleTimeoutMinutes > 60)
-            return res.status(400).json({ message: "Idle timeout must be between 1 and 60 minutes" });
-        }
-        if (typeof p.idleCountdownSeconds === "number") {
-          if (p.idleCountdownSeconds < 15 || p.idleCountdownSeconds > 120)
-            return res.status(400).json({ message: "Idle countdown must be between 15 and 120 seconds" });
-        }
-        // ── Low-activity threshold (#341) ────────────────────────────────────
-        if (p.lowActivityThresholdPercent !== undefined && !isLowActivityThreshold(p.lowActivityThresholdPercent))
-          return res.status(400).json({ message: "Low-activity threshold must be a whole percentage from 0 to 100" });
-        // ── Active hours validation ──────────────────────────────────────────
-        for (const key of ["activeHoursStart", "activeHoursEnd"] as const) {
-          if (p[key] !== undefined && !isTrackingPolicyClockTime(p[key]))
-            return res.status(400).json({ message: "Active hours must be 24-hour HH:mm times, for example 08:00" });
-        }
-        if (p.screenshotProjectIds !== undefined) {
-          const ids = p.screenshotProjectIds;
-          if (ids !== null && !(Array.isArray(ids) && ids.every((id: unknown) => typeof id === "string" && id)))
-            return res.status(400).json({ message: "Screenshot Projects must be a list of Project ids" });
-          try {
-            await assertScreenshotProjectCapacity(ids);
-          } catch (error) {
-            if (error instanceof PlanFeatureNotIncludedError) return res.status(403).json(error.body());
-            throw error;
-          }
-        }
-        ops.push(storage.upsertScreenshotPolicy(screenshotPolicy));
-      }
-      if (Array.isArray(allowedTimezones)) {
-        // Each entry must be a non-empty string (IANA tz validation happens client-side)
-        const valid = allowedTimezones.every((t) => typeof t === "string" && t.length > 0);
-        if (!valid) return res.status(400).json({ message: "allowedTimezones must be an array of non-empty strings" });
-        ops.push(storage.upsertAllowedTimezones(allowedTimezones));
-      }
-      if (helpCenterScreenshots && typeof helpCenterScreenshots === "object" && !Array.isArray(helpCenterScreenshots)) {
-        const partial: Record<string, string | null> = {};
-        const pathOk = (p: string) => /^\/public-objects\/[a-zA-Z0-9_\/.-]+$/.test(p);
-        for (const [k, v] of Object.entries(helpCenterScreenshots as Record<string, unknown>)) {
+  // One schema for the whole body, checked before anything is written (F108).
+  // Unknown policy keys are dropped; a key sent with a bad value refuses the
+  // whole save.
+  const wholeMinutes = (message: string, min: number, max: number) =>
+    z.number({ invalid_type_error: message }).int(message).min(min, message).max(max, message);
+  const onOff = z.boolean({ invalid_type_error: "Each Tracking Policy switch must be on or off" });
+  const clockTime = z.custom<string>(isTrackingPolicyClockTime, "Active hours must be 24-hour HH:mm times, for example 08:00");
+  const trackingPolicyChange = z.object(
+    {
+      screenshotsEnabled: onOff.optional(),
+      activeHoursEnabled: onOff.optional(),
+      idlePromptEnabled: onOff.optional(),
+      captureIntervalMinMin: z
+        .number({ invalid_type_error: "Minimum capture interval must be a whole number of minutes" })
+        .int("Minimum capture interval must be a whole number of minutes")
+        .min(3, "Minimum capture interval must be at least 3 minutes (1 minute is not allowed)")
+        .max(15, "Minimum capture interval cannot exceed 15 minutes")
+        .optional(),
+      captureIntervalMaxMin: z
+        .number({ invalid_type_error: "Maximum capture interval must be a whole number of minutes" })
+        .int("Maximum capture interval must be a whole number of minutes")
+        .min(3, "Maximum capture interval must be at least 3 minutes")
+        .max(15, "Maximum capture interval cannot exceed 15 minutes")
+        .optional(),
+      idleTimeoutMinutes: wholeMinutes("Idle timeout must be between 1 and 60 minutes", 1, 60).optional(),
+      idleCountdownSeconds: wholeMinutes("Idle countdown must be between 15 and 120 seconds", 15, 120).optional(),
+      lowActivityThresholdPercent: z
+        .custom<number>(isLowActivityThreshold, "Low-activity threshold must be a whole percentage from 0 to 100")
+        .optional(),
+      activeHoursStart: clockTime.optional(),
+      activeHoursEnd: clockTime.optional(),
+      screenshotProjectIds: z
+        .custom<string[] | null>(
+          (ids) => ids === null || (Array.isArray(ids) && ids.every((id) => typeof id === "string" && id)),
+          "Screenshot Projects must be a list of Project ids",
+        )
+        .optional(),
+    },
+    { invalid_type_error: "The Tracking Policy must be a set of settings" },
+  );
+  const helpScreenshotPath = (p: string) => /^\/public-objects\/[a-zA-Z0-9_\/.-]+$/.test(p);
+  const orgSettingsChange = z.object({
+    timeZone: z.custom<string>(isIanaTimeZone, "Time zone must be an IANA time zone, for example Europe/Paris").optional(),
+    allowedTimezones: z
+      .array(z.custom<string>(isIanaTimeZone, "Each time zone in the list must be an IANA time zone, for example Europe/Paris"), {
+        invalid_type_error: "The time zones must be a list",
+      })
+      .optional(),
+    screenshotPolicy: trackingPolicyChange.optional(),
+    helpCenterScreenshots: z
+      .record(z.unknown(), { invalid_type_error: "helpCenterScreenshots must map slots to paths" })
+      .superRefine((slots, ctx) => {
+        for (const [k, v] of Object.entries(slots)) {
           if (!isHelpScreenshotSlotId(k)) {
-            return res.status(400).json({ message: `Invalid help screenshot slot: ${k}` });
+            ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Invalid help screenshot slot: ${k}` });
+            return;
           }
-          if (v === null) {
-            partial[k] = null;
-          } else if (typeof v === "string" && pathOk(v)) {
-            partial[k] = v;
-          } else {
-            return res.status(400).json({ message: `Invalid public object path for slot ${k}` });
+          if (v !== null && !(typeof v === "string" && helpScreenshotPath(v))) {
+            ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Invalid public object path for slot ${k}` });
+            return;
           }
         }
-        if (Object.keys(partial).length === 0) {
-          return res.status(400).json({ message: "helpCenterScreenshots must contain at least one slot" });
+        if (Object.keys(slots).length === 0) {
+          ctx.addIssue({ code: z.ZodIssueCode.custom, message: "helpCenterScreenshots must contain at least one slot" });
         }
-        ops.push(storage.mergeHelpCenterScreenshots(partial));
+      })
+      .transform((slots) => slots as Record<string, string | null>)
+      .optional(),
+  });
+
+  app.patch("/api/admin/org-settings", isAuthenticated, requireAdministration, async (req: any, res) => {
+    const parsed = orgSettingsChange.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({ message: parsed.error.errors[0]?.message ?? "Invalid request" });
+    }
+    const { timeZone, allowedTimezones, helpCenterScreenshots } = parsed.data;
+    const policy = parsed.data.screenshotPolicy;
+    const policyChange = policy && Object.keys(policy).length > 0 ? policy : undefined;
+    if (timeZone === undefined && allowedTimezones === undefined && !policyChange && !helpCenterScreenshots) {
+      return res.status(400).json({ message: "Nothing to update" });
+    }
+    try {
+      if (policyChange?.screenshotProjectIds !== undefined) {
+        try {
+          await assertScreenshotProjectCapacity(policyChange.screenshotProjectIds);
+        } catch (error) {
+          if (error instanceof PlanFeatureNotIncludedError) return res.status(403).json(error.body());
+          throw error;
+        }
       }
-      if (ops.length === 0) return res.status(400).json({ message: "Nothing to update" });
-      await Promise.all(ops);
+      await saveOrgSettings({ timeZone, screenshotPolicy: policyChange, allowedTimezones, helpCenterScreenshots });
       res.json({ ok: true });
     } catch (error) {
+      if (error instanceof CaptureIntervalOrderError) return res.status(400).json({ message: error.message });
       console.error("Error updating org settings:", error);
       res.status(500).json({ message: "Failed to update org settings" });
     }
@@ -3839,6 +3855,15 @@ Instructions:
       if (!field) {
         return res.status(404).json({ message: "Field not found" });
       }
+      // The field as the client read it (F106). v1 sends none and saves as before.
+      const rawExpected = req.body?.expectedUpdatedAt;
+      const expectedUpdatedAt = rawExpected == null ? undefined : new Date(rawExpected);
+      if (expectedUpdatedAt && (typeof rawExpected !== "string" || Number.isNaN(expectedUpdatedAt.getTime()))) {
+        return res.status(400).json({ message: "expectedUpdatedAt must be the field's updatedAt as read" });
+      }
+      if (expectedUpdatedAt && field.updatedAt?.getTime() !== expectedUpdatedAt.getTime()) {
+        throw new FieldListChangedError();
+      }
       const data = pickEditable(req.body, EDITABLE_FIELD_KEYS) as Partial<InsertCrmModuleField>;
       if (field.isSystem === 1 && changes(field, data, ["slug", "fieldType"])) {
         return res.status(403).json({ message: "Cannot change the slug or type of a system field" });
@@ -3863,9 +3888,10 @@ Instructions:
       if (list?.key === "lost-reasons") columns.push("projects.lostReason");
       if (module?.slug === "contacts" && field.slug === "status") columns.push("clients.status");
 
-      const updated = await storage.updateCrmModuleFieldOptions(req.params.id, data, renames, columns);
+      const updated = await storage.updateCrmModuleFieldOptions(req.params.id, data, renames, columns, expectedUpdatedAt);
       res.json(updated);
     } catch (error) {
+      if (error instanceof FieldListChangedError) return res.status(409).json({ message: error.message });
       console.error("Error updating field:", error);
       res.status(500).json({ message: "Failed to update field" });
     }

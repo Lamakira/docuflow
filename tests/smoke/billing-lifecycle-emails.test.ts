@@ -316,11 +316,24 @@ describe("Read-only", () => {
     const { applyPeriodEnd, cancelAtPeriodEnd } = await import("../../server/modules/billing");
     const { owner, workspaceId } = await paidWorkspace();
     const afterPeriodEnd = new Date("2026-11-01T09:01:00.000Z");
+    const provider = new FakeBillingProvider();
+    provider.subscriptions.set(SUBSCRIPTION_ID, CURRENT_SUBSCRIPTION);
 
     await runWithWorkspaceContext({ workspaceId }, async () => {
-      await cancelAtPeriodEnd({ kind: "user", id: owner.id });
+      await cancelAtPeriodEnd({ kind: "user", id: owner.id }, provider);
       await applyPeriodEnd({ kind: "system" }, { now: afterPeriodEnd });
       await applyPeriodEnd({ kind: "system" }, { now: afterPeriodEnd });
+    });
+    // Stripe ends the Subscription at the same date and says so.
+    provider.subscriptions.set(SUBSCRIPTION_ID, {
+      ...CURRENT_SUBSCRIPTION,
+      cancelAtPeriodEnd: true,
+      collectionState: "Canceled",
+    });
+    await deliverWebhook(provider, {
+      providerEventId: "evt_cancelled_deleted",
+      type: "customer.subscription.deleted",
+      objectId: SUBSCRIPTION_ID,
     });
     await runBillingJobs();
 

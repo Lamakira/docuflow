@@ -36,7 +36,7 @@ import {
   type AnalyticsCoverageInput,
   type AnalyticsProductivityInput,
 } from "../../client/src/v2/analytics";
-import { composeAdministration, type AdministrationInput } from "../../client/src/v2/administration";
+import { composeBilling, composeWorkspaceCard } from "../../client/src/v2/administration";
 
 /**
  * Analytics on its own rail entry, a readable Recorded time, and Administration
@@ -49,6 +49,18 @@ const here = dirname(fileURLToPath(import.meta.url));
 const read = (path: string) => readFileSync(join(here, path), "utf8");
 const appSource = read("../../client/src/v2/V2AuthenticatedApp.tsx");
 const adminSource = read("../../client/src/v2/V2Administration.tsx");
+const adminBillingSource = read("../../client/src/v2/V2AdministrationBilling.tsx");
+const adminWorkspaceSource = read("../../client/src/v2/V2AdministrationWorkspace.tsx");
+/** The shell and its tabs, one file each since the Administration review (F107). */
+const adminPagesSource = [
+  adminSource,
+  adminBillingSource,
+  adminWorkspaceSource,
+  read("../../client/src/v2/V2AdministrationTrackingPolicy.tsx"),
+  read("../../client/src/v2/V2AdministrationPipelineLists.tsx"),
+  read("../../client/src/v2/V2AdministrationIntegrations.tsx"),
+  read("../../client/src/v2/V2DestructiveConfirm.tsx"),
+].join("\n");
 const analyticsSource = read("../../client/src/v2/V2Analytics.tsx");
 const railIcons = read("../../client/src/v2/icons.tsx");
 const css = read("../../client/src/v2/tokens.css").replace(/\/\*[\s\S]*?\*\//g, "");
@@ -126,16 +138,11 @@ const COVERAGE: AnalyticsCoverageInput = {
   ],
 };
 
-function adminInput(overrides: Partial<AdministrationInput> = {}): AdministrationInput {
+function workspaceInput(overrides: Partial<Parameters<typeof composeWorkspaceCard>[0]> = {}): Parameters<typeof composeWorkspaceCard>[0] {
   return {
     workspaceName: "Harbor Co",
     ownerName: "Sam Lee",
     workspaceRole: "Owner",
-    condition: null,
-    serviceAccounts: [],
-    webhookEndpoints: [],
-    billing: null,
-    revealedSecret: null,
     ...overrides,
   };
 }
@@ -172,8 +179,8 @@ describe("Analytics is its own destination on the rail (#281)", () => {
     ]) {
       expect(analyticsSource).toContain(testId);
     }
-    expect(adminSource).not.toMatch(/composeAnalytics|analyticsOverviewPath|analyticsProductivityPath/);
-    expect(adminSource).not.toContain("AdministrationAnalytics");
+    expect(adminPagesSource).not.toMatch(/composeAnalytics|analyticsOverviewPath|analyticsProductivityPath/);
+    expect(adminPagesSource).not.toContain("AdministrationAnalytics");
   });
 
   it("reads behind the same gate and names Analytics when it refuses", () => {
@@ -449,7 +456,6 @@ describe("Administration shows one configuration section at a time (#281)", () =
     expect(ADMINISTRATION_TAB_IDS).toEqual([
       "workspace",
       "billing",
-      "members",
       "tracking-policy",
       "pipeline-lists",
       "integrations",
@@ -498,6 +504,10 @@ describe("Administration shows one configuration section at a time (#281)", () =
     expect(appSource.indexOf('path="/administration/crm-fields"')).toBeLessThan(
       appSource.indexOf('path="/administration/:tab?"'),
     );
+    // Members & Roles went: its address opens People, which holds the Members and their Roles (F110).
+    expect(matchV2Route("/administration/members")).toEqual({ kind: "people", title: "People", href: "/people" });
+    expect(appSource).toMatch(/<Route path="\/administration\/members">\s*<Redirect to="\/people" \/>/);
+    expect(appSource.indexOf('path="/administration/members"')).toBeLessThan(appSource.indexOf('path="/administration/:tab?"'));
     // A tab that does not exist lands on Workspace rather than an empty page.
     expect(adminSource).toContain('navigate(administrationTabHref("workspace"), { replace: true })');
   });
@@ -507,14 +517,13 @@ describe("Administration shows one configuration section at a time (#281)", () =
     expect(owner.map((tab) => tab.label)).toEqual([
       "Workspace",
       "Billing",
-      "Members & Roles",
       "Tracking Policy",
-      "Pipeline & lists",
+      "Pipeline and lists",
       "Integrations",
       "Support access",
     ]);
     expect(owner.filter((tab) => tab.active).map((tab) => tab.id)).toEqual(["billing"]);
-    expect(administrationTabs("workspace", "ADMINISTRATOR")).toHaveLength(7);
+    expect(administrationTabs("workspace", "ADMINISTRATOR")).toHaveLength(6);
     expect(administrationTabs("workspace", "MEMBER")).toEqual([]);
   });
 
@@ -527,21 +536,31 @@ describe("Administration shows one configuration section at a time (#281)", () =
     for (const id of ADMINISTRATION_TAB_IDS) {
       expect(adminSource).toContain(`<TabsContent value="${id}"`);
     }
-    // Each section sits in the panel the grouping names.
+    // Each panel renders its tab's own file, which reads only what it shows (F107).
     const panel = (id: string) => {
       const start = adminSource.indexOf(`<TabsContent value="${id}"`);
       return adminSource.slice(start, adminSource.indexOf("</TabsContent>", start));
     };
-    expect(panel("billing")).toContain('data-testid="v2-administration-billing"');
-    expect(panel("pipeline-lists")).toContain('data-testid="v2-administration-pipeline-lists"');
-    expect(panel("pipeline-lists")).toContain("<PipelineListCard");
-    expect(panel("integrations")).toContain('data-testid="v2-administration-service-accounts"');
-    expect(panel("integrations")).toContain('data-testid="v2-administration-webhooks"');
-    expect(panel("integrations")).toContain('data-testid="v2-administration-secret"');
-    expect(panel("tracking-policy")).toContain('data-testid="v2-administration-tracking-policy"');
-    expect(panel("tracking-policy")).toContain('data-testid="v2-administration-timezones"');
-    expect(panel("billing")).toContain("<CancelControl");
+    expect(panel("workspace")).toContain("<V2AdministrationWorkspace");
+    expect(panel("billing")).toContain("<V2AdministrationBilling");
+    expect(panel("tracking-policy")).toContain("<V2AdministrationTrackingPolicy");
+    expect(panel("pipeline-lists")).toContain("<V2AdministrationPipelineLists");
+    expect(panel("integrations")).toContain("<V2AdministrationIntegrations");
+    expect(panel("support-access")).toContain("<V2SupportAccess");
+    expect(adminSource).not.toContain("useQuery");
+    const tab = (name: string) => read(`../../client/src/v2/${name}`);
+    expect(adminBillingSource).toContain('data-testid="v2-administration-billing"');
+    expect(tab("V2AdministrationPipelineLists.tsx")).toContain('data-testid="v2-administration-pipeline-lists"');
+    expect(tab("V2AdministrationPipelineLists.tsx")).toContain("<PipelineListCard");
+    expect(tab("V2AdministrationIntegrations.tsx")).toContain('data-testid="v2-administration-service-accounts"');
+    expect(tab("V2AdministrationIntegrations.tsx")).toContain('data-testid="v2-administration-secret"');
+    expect(tab("V2AdministrationTrackingPolicy.tsx")).toContain('data-testid="v2-administration-tracking-policy"');
+    // The Workspace time zone moved to the Workspace tab; Screencasts timezones left v2 (F110).
+    expect(adminWorkspaceSource).toContain('data-testid="v2-administration-workspace-timezone"');
+    expect(adminPagesSource).not.toContain('data-testid="v2-administration-timezones"');
+    expect(adminBillingSource).toContain('testId="v2-administration-billing-cancel"');
     expect(adminSource).not.toContain('value="danger-zone"');
+    expect(adminSource).not.toContain('value="members"');
   });
 
   it("starts every tab's content one page gap below the strip", () => {
@@ -558,7 +577,17 @@ describe("Administration shows one configuration section at a time (#281)", () =
   });
 
   it("returns a Stripe customer to the Billing tab", () => {
-    expect(adminSource).toContain('administrationTabHref("billing")');
+    expect(adminBillingSource).toContain('administrationTabHref("billing")');
+  });
+
+  it("scrolls the strip without a bar on a phone and brings the open tab into view (F110)", () => {
+    expect(adminSource).toContain('?.querySelector<HTMLElement>(\'[data-state="active"]\')');
+    expect(adminSource).toContain('?.scrollIntoView({ block: "nearest", inline: "nearest" });');
+    expect(adminSource).toContain("<TabsList ref={strip}");
+    expect(css).toMatch(/\.df-admin-tabs \.df-tabs::-webkit-scrollbar \{\s*display: none;/);
+    // DESIGN.md: never scrollbar-width on the element outside the Firefox fallback.
+    expect(css).toMatch(/@supports not selector\(::-webkit-scrollbar\) \{\s*\.df-admin-tabs \.df-tabs \{\s*scrollbar-width: none;/);
+    expect(rule(".df-admin-tabs .df-tabs")).toBe("");
   });
 
   it("wears the v2 tab strip over shadcn's pill, in tokens that hold in the dark palette", () => {
@@ -581,10 +610,10 @@ describe("Administration shows one configuration section at a time (#281)", () =
   });
 });
 
-describe("The Workspace, Members & Roles and Billing tabs (#281)", () => {
+describe("The Workspace and Billing tabs (#281, F110)", () => {
   it("states who owns the Workspace and the Role the reader holds", () => {
-    const page = composeAdministration(
-      adminInput({
+    const card = composeWorkspaceCard(
+      workspaceInput({
         workspaceRole: "ADMINISTRATOR",
         members: [
           { firstName: "Sam", lastName: "Lee", email: "sam@harbor.test", workspaceRole: "Owner" },
@@ -592,97 +621,88 @@ describe("The Workspace, Members & Roles and Billing tabs (#281)", () => {
         ],
       }),
     );
-    expect(page.kind).toBe("ready");
-    if (page.kind !== "ready") return;
-    expect(page.workspace).toEqual({
+    expect(card).toEqual({
       name: "Harbor Co",
       initials: "HC",
       roleBadge: "You are Administrator",
+      renamable: false,
+      renameNote: "Only the Owner, Sam Lee, can rename the Workspace.",
       owner: { name: "Sam Lee", initials: "SL" },
       members: "2 Members",
     });
   });
 
-  it("leaves the owner and members empty when unknown, and singularises one Member", () => {
-    const unknown = composeAdministration(adminInput({ ownerName: null, members: undefined }));
-    expect(unknown.kind).toBe("ready");
-    if (unknown.kind !== "ready") return;
-    expect(unknown.workspace.owner).toBeNull();
-    expect(unknown.workspace.members).toBeNull();
+  it("lets the Owner alone rename the Workspace, beside the name", () => {
+    expect(composeWorkspaceCard(workspaceInput({ workspaceRole: "OWNER" }))).toMatchObject({ renamable: true, renameNote: null });
+    expect(adminWorkspaceSource).toContain('apiRequest("PATCH", workspacePath(), { name })');
+    // The chrome reads the name from /api/memberships, so a rename refreshes that.
+    expect(adminWorkspaceSource).toContain('const CHROME_MEMBERSHIPS_KEY = ["/api/memberships"];');
+    expect(adminWorkspaceSource).toContain("{card.renamable ? (");
+  });
 
-    const one = composeAdministration(
-      adminInput({
+  it("leaves the owner and members empty when unknown, and singularises one Member", () => {
+    const unknown = composeWorkspaceCard(workspaceInput({ workspaceRole: "ADMINISTRATOR", ownerName: null, members: undefined }));
+    expect(unknown.owner).toBeNull();
+    expect(unknown.members).toBeNull();
+    expect(unknown.renameNote).toBe("Only the Owner can rename the Workspace.");
+
+    const one = composeWorkspaceCard(
+      workspaceInput({
         members: [{ firstName: "Sam", lastName: "Lee", email: "sam@harbor.test", workspaceRole: "Owner" }],
       }),
     );
-    expect(one.kind).toBe("ready");
-    if (one.kind !== "ready") return;
-    expect(one.workspace.members).toBe("1 Member");
+    expect(one.members).toBe("1 Member");
   });
 
-  it("lists each Member's Workspace Role and sends a change to People", () => {
-    const page = composeAdministration(
-      adminInput({
-        members: [{ firstName: null, lastName: null, email: "kit@harbor.test", workspaceRole: "MEMBER" }],
-      }),
-    );
-    expect(page.kind).toBe("ready");
-    if (page.kind !== "ready") return;
-    expect(page.members.rows).toEqual([
-      { id: "kit@harbor.test", name: "kit@harbor.test", email: "kit@harbor.test", workspaceRole: "Member" },
-    ]);
-    expect(page.members.note).toBe(
-      "Analytics and Administration are open to the Owner and Administrators. A Workspace Role is changed in People.",
-    );
-    expect(adminSource).toContain('<Link href="/people"');
+  it("sends a change of Role to People: Members & Roles is gone", () => {
+    expect(adminWorkspaceSource).toContain('<Link href="/people"');
+    expect(adminPagesSource).not.toContain("Members &amp; Roles");
+    expect(adminPagesSource).not.toContain("v2-administration-members");
   });
 
   it("keeps Cancel at period end on Billing, in its own row below the routine actions", () => {
-    const page = composeAdministration(
-      adminInput({
-        billing: {
-          planKey: "pro",
-          billingState: "Active",
-          purchasedSeatCapacity: 8,
-          consumedSeatCount: 3,
-          trialEndsAt: null,
-          periodEndsAt: "2026-10-01T00:00:00.000Z",
-          cancelAtPeriodEnd: false,
-          stripeCustomerId: "cus_123",
-        },
-      }),
-    );
-    expect(page.kind).toBe("ready");
-    if (page.kind !== "ready") return;
-    const cancel = page.billing.actions.find((action) => action.tone === "destructive");
+    const billing = composeBilling({
+      billing: {
+        planKey: "pro",
+        billingState: "Active",
+        purchasedSeatCapacity: 8,
+        consumedSeatCount: 3,
+        trialEndsAt: null,
+        periodEndsAt: "2026-10-01T00:00:00.000Z",
+        cancelAtPeriodEnd: false,
+        stripeCustomerId: "cus_123",
+        canCancel: true,
+      },
+      condition: null,
+    });
+    const cancel = billing.actions.find((action) => action.tone === "destructive");
     expect(cancel?.id).toBe("cancel");
     expect(cancel?.consequence).toBeTruthy();
-    expect(page).not.toHaveProperty("dangerZone");
+    expect(billing).not.toHaveProperty("dangerZone");
 
-    const start = adminSource.indexOf('<TabsContent value="billing"');
-    const billing = adminSource.slice(start, adminSource.indexOf("</TabsContent>", start));
-    const routine = billing.indexOf('className="df-billing-actions"');
-    const row = billing.indexOf('data-testid="v2-administration-billing-cancel"');
+    const routine = adminBillingSource.indexOf('className="df-billing-actions"');
+    const row = adminBillingSource.indexOf('data-testid="v2-administration-billing-cancel-row"');
     expect(routine).toBeGreaterThan(-1);
     expect(row).toBeGreaterThan(routine);
-    expect(billing.slice(row)).toContain("{action.consequence}");
-    expect(billing.slice(row)).toContain("<CancelControl");
-    expect(adminSource).not.toContain("Ending the Subscription is under");
-    expect(adminSource).not.toContain("Danger zone");
+    expect(adminBillingSource.slice(row)).toContain("{cancel.consequence}");
+    expect(adminBillingSource.slice(row)).toContain("<DestructiveConfirm");
+    expect(adminPagesSource).not.toContain("Ending the Subscription is under");
+    expect(adminPagesSource).not.toContain("Danger zone");
   });
 });
 
 describe("A destructive row action asks before it runs (#281)", () => {
   it("confirms removing a list option and revoking a Service Account in an AlertDialog", () => {
-    expect(adminSource).toContain("function DestructiveConfirm(");
-    expect(adminSource).toMatch(/<DestructiveConfirm\s+(?:\w+=\{\w+\}\s+)*label="Remove"\s+title=\{`Remove \$\{row\.label\}`\}\s+consequence=\{row\.removeConsequence\}/);
-    expect(adminSource).toMatch(/<DestructiveConfirm\s+(?:\w+=\{\w+\}\s+)*label="Revoke"/);
+    expect(adminPagesSource).toContain("export function DestructiveConfirm(");
+    expect(adminPagesSource).toMatch(/<DestructiveConfirm\s+(?:\w+=\{\w+\}\s+)*label="Remove"\s+title=\{`Remove \$\{row\.label\}`\}\s+consequence=\{row\.removeConsequence\}/);
+    expect(adminPagesSource).toMatch(/<DestructiveConfirm\s+(?:\w+=\{\w+\}\s+)*label="Revoke"/);
     // No press mutates on its own.
-    expect(adminSource).not.toMatch(/onClick=\{\(\) => onEdit\(removePipelineOption/);
-    expect(adminSource).not.toMatch(/onClick=\{\(\) => onRevoke\(/);
-    const confirm = adminSource.slice(adminSource.indexOf("function DestructiveConfirm("));
+    expect(adminPagesSource).not.toMatch(/onClick=\{\(\) => onEdit\(removePipelineOption/);
+    expect(adminPagesSource).not.toMatch(/onClick=\{\(\) => onRevoke\(/);
+    const confirm = adminPagesSource.slice(adminPagesSource.indexOf("export function DestructiveConfirm("));
     expect(confirm).toContain("<AlertDialogCancel className=\"df-btn\" autoFocus>");
-    expect(confirm).toContain('variant="destructiveOutline"');
+    // The trigger reads as destructive; only a neutral question drops the red.
+    expect(confirm).toContain('variant={destructive ? "destructiveOutline" : "outline"}');
   });
 });
 

@@ -16,6 +16,7 @@ import {
   platformStaff,
   projects,
   supportAccessGrants,
+  users,
   workspaceRoles,
   workspaces,
 } from "@shared/schema";
@@ -109,11 +110,34 @@ export async function findPlatformStaffBySubject(subjectId: string): Promise<Pla
   return row;
 }
 
-export async function listPlatformStaff(): Promise<Array<{ id: string; email: string | null }>> {
-  return db
-    .select({ id: platformStaff.id, email: platformStaff.email })
+/** "s***@docuflow.example": enough to tell two people apart, not an address to write to. */
+function maskedEmail(email: string): string {
+  const at = email.lastIndexOf("@");
+  if (at <= 0) return "***";
+  return `${email[0]}***${email.slice(at)}`;
+}
+
+/**
+ * The people a Workspace may grant support access to (F109). A customer reads
+ * their names, not every DocuFlow address: a staff member with no linked User
+ * is shown by a masked address.
+ */
+export async function listPlatformStaff(): Promise<Array<{ id: string; label: string }>> {
+  const rows = await db
+    .select({
+      id: platformStaff.id,
+      email: platformStaff.email,
+      firstName: users.firstName,
+      lastName: users.lastName,
+    })
     .from(platformStaff)
+    .leftJoin(users, eq(users.id, platformStaff.linkedUserId))
     .orderBy(platformStaff.email);
+  return rows.map((row) => {
+    const fullName = [row.firstName, row.lastName].map((part) => part?.trim()).filter(Boolean).join(" ");
+    if (fullName) return { id: row.id, label: fullName };
+    return { id: row.id, label: row.email ? `DocuFlow support (${maskedEmail(row.email)})` : "DocuFlow support" };
+  });
 }
 
 type GrantRow = {

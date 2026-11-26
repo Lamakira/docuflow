@@ -29,6 +29,8 @@ import {
   createBillingJobsPort,
   getSubscriptionStatus,
   ingestBillingWebhook,
+  keepSubscription,
+  readPrices,
   startCheckout,
   startPaymentMethodUpdate,
 } from "./index";
@@ -225,7 +227,8 @@ export function registerBillingRoutes(app: Express): void {
     requireAdministration,
     billingRoute(async (req, res) => {
       const body = seatsBody.parse(req.body);
-      res.json(await changeSeats(body.seatQuantity, actorOf(req), billingProvider));
+      await changeSeats(body.seatQuantity, actorOf(req), billingProvider);
+      res.json(await getSubscriptionStatus());
     })
   );
 
@@ -244,7 +247,27 @@ export function registerBillingRoutes(app: Express): void {
     isAuthenticated,
     requireAdministration,
     billingRoute(async (req, res) => {
-      res.json(await cancelAtPeriodEnd(actorOf(req)));
+      await cancelAtPeriodEnd(actorOf(req), billingProvider);
+      res.json(await getSubscriptionStatus());
+    })
+  );
+
+  app.post(
+    "/api/billing/keep-subscription",
+    isAuthenticated,
+    requireAdministration,
+    billingRoute(async (req, res) => {
+      await keepSubscription(actorOf(req), billingProvider);
+      res.json(await getSubscriptionStatus());
+    })
+  );
+
+  app.get(
+    "/api/billing/prices",
+    isAuthenticated,
+    requireAdministration,
+    billingRoute(async (_req, res) => {
+      res.json({ prices: await readPrices(billingProvider) });
     })
   );
 }

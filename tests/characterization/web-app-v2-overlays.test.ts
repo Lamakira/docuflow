@@ -152,7 +152,8 @@ describe("floating surfaces are shadcn primitives (#249)", () => {
     const rowMenu = source("client/src/v2/V2RowMenu.tsx");
     const panel = source("client/src/v2/V2ContextPanel.tsx");
     const command = source("client/src/v2/V2CommandBar.tsx");
-    const admin = source("client/src/v2/V2Administration.tsx");
+    // Administration's confirmations go through the one shared dialog (F110).
+    const admin = source("client/src/v2/V2DestructiveConfirm.tsx");
     const shell = source("client/src/v2/V2Shell.tsx");
 
     expect(refusalPopover).toContain('from "@/components/ui/popover"');
@@ -228,9 +229,11 @@ describe("controls have hover, focus-visible, and disabled states (#249)", () =>
   it("opens a destructive confirmation from a control that does not flood", () => {
     // The flood is the answer to the dialog's question, not the invitation to ask
     // it — and a chromatic flood is a loud thing in a palette of two voices.
-    const admin = source("client/src/v2/V2Administration.tsx");
-    expect(admin).toContain('variant="destructiveOutline"');
-    expect(admin).not.toContain('variant="destructive"');
+    const admin = source("client/src/v2/V2DestructiveConfirm.tsx");
+    expect(admin).toContain('variant={destructive ? "destructiveOutline" : "outline"}');
+    for (const file of ["V2Administration.tsx", "V2AdministrationBilling.tsx", "V2AdministrationIntegrations.tsx", "V2AdministrationPipelineLists.tsx", "V2DestructiveConfirm.tsx"]) {
+      expect(source(`client/src/v2/${file}`), file).not.toContain('variant="destructive"');
+    }
     expect(source("client/src/components/ui/button.tsx")).toContain("destructiveOutline");
   });
 
@@ -281,7 +284,7 @@ describe("controls have hover, focus-visible, and disabled states (#249)", () =>
   });
 
   it("points the keyboard at the dismissal, not at the destructive action", () => {
-    const admin = source("client/src/v2/V2Administration.tsx");
+    const admin = source("client/src/v2/V2DestructiveConfirm.tsx");
     expect(admin).toMatch(/<AlertDialogCancel[^>]*autoFocus/);
   });
 

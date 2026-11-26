@@ -27,7 +27,7 @@ describe("Support access in the Workspace (#300)", () => {
         { id: "g1", platformStaffId: "s1", email: null, expiresAt: "2026-10-02T12:00:00.000Z" },
         { id: "g2", platformStaffId: "s2", email: "bea@example.com", expiresAt: "2026-10-03T12:00:00.000Z" },
       ]),
-    ).toBe("2 Platform Staff have read-only access to this Workspace.");
+    ).toBe("2 people from DocuFlow support have read-only access to this Workspace.");
   });
 
   it("names the expiry as a calendar day", () => {

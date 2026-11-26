@@ -1853,8 +1853,37 @@ button.df-activity-row {
    band and shares its left edge, instead of floating centred between the
    figures and the buttons, belonging to neither. */
 .df-admin-seat-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--df-space-2);
   padding: 0 var(--df-space-4) var(--df-space-4);
-  max-width: 320px;
+  max-width: 480px;
+}
+
+/* The Owner renames the Workspace under its name (F110). */
+.df-card > .df-admin-rename {
+  flex-wrap: wrap;
+}
+
+.df-admin-rename > .df-refusal-inline {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+.df-v2 .df-timezone-trigger {
+  justify-content: space-between;
+  width: 100%;
+  max-width: 360px;
+  height: var(--df-control-h);
+}
+
+.df-timezone-check {
+  margin-left: auto;
+}
+
+.df-v2 .df-pipeline-move {
+  width: var(--df-control-h);
+  padding: 0;
 }
 
 /* Workspace and Billing read their facts as rows inside the card, not as grey
@@ -2144,6 +2173,68 @@ button.df-activity-row {
   align-items: flex-end;
   gap: var(--df-space-3);
   padding: 0 var(--df-space-5) var(--df-space-4);
+}
+
+/* A Plan's price per seat, and what the seats chosen cost in all (F103). */
+.df-plan-card-price {
+  margin: 0;
+  font-family: var(--df-font-data);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--df-text-2);
+  color: var(--df-case-ink);
+}
+
+.df-plan-seats {
+  flex: 0 0 120px;
+}
+
+.df-plan-total {
+  display: flex;
+  flex-direction: column;
+  gap: var(--df-space-1);
+  padding: 0 var(--df-space-5) var(--df-space-4);
+}
+
+.df-plan-total .df-form-note,
+.df-admin-seat-form .df-form-note {
+  margin: 0;
+  font-size: var(--df-text-2);
+}
+
+/* On a phone a Service Account's actions take the line under its name, which keeps its width. */
+.df-register-row > .df-project-mobile.df-admin-stacked-row {
+  flex-wrap: wrap;
+}
+
+.df-admin-stacked-row > .df-people-action {
+  flex-basis: 100%;
+}
+
+.df-plan-total-line {
+  margin: 0;
+  font-family: var(--df-font-data);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--df-text-2);
+  color: var(--df-case-ink);
+}
+
+/* A planned decrease, and a cancelling Subscription, each with the button that undoes it (F102, F104). */
+.df-billing-pending,
+.df-billing-keep {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--df-space-3);
+}
+
+.df-billing-pending {
+  padding-top: var(--df-space-3);
+}
+
+.df-billing-keep {
+  padding: var(--df-space-4);
+  border-top: 1px solid var(--df-divider-light);
 }
 
 .df-analytics-group-label {
@@ -4599,6 +4690,18 @@ button.df-activity-row {
   display: flex;
   flex-direction: column;
   gap: var(--df-space-5);
+}
+
+/* On a phone the strip scrolls sideways with no bar to see (F110): the bar the
+   DESIGN.md rule allows shows only under a pointer, which a phone has not. */
+.df-admin-tabs .df-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+@supports not selector(::-webkit-scrollbar) {
+  .df-admin-tabs .df-tabs {
+    scrollbar-width: none;
+  }
 }
 
 .df-v2 .df-admin-panel {

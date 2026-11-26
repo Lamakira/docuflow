@@ -22,6 +22,7 @@ import {
   type HostedBillingSession,
   type CancelAtPeriodEndUpdate,
   type PaymentMethodUpdateRequest,
+  type PlanPrice,
   type ProviderCheckoutSession,
   type ProviderDispute,
   type ProviderInvoice,
@@ -32,8 +33,10 @@ import {
   type WebhookEvent,
 } from "./billingProvider";
 import {
+  BILLING_INTERVALS,
   PLAN_LABEL,
   PLAN_REGISTRY_VERSION,
+  PRICED_PLAN_KEYS,
   isPlanKey,
   planDefinition,
   type BillingInterval,
@@ -44,6 +47,8 @@ import {
 export const PLAN_METADATA_KEY = "docuflow_plan";
 
 const PRICE_CACHE_MS = 5 * 60_000;
+/** Prices shown on the Billing page; Checkout and Plan changes keep their own, shorter cache. */
+const PRICE_LIST_CACHE_MS = 10 * 60_000;
 
 /** Stripe's refusal to bill one Customer in two currencies. */
 function isCurrencyConflict(error: unknown): boolean {
@@ -119,6 +124,7 @@ const DASHBOARD_PATH: Record<ProviderResourceKind, string> = {
 export class StripeBillingProvider implements BillingProvider {
   private readonly stripe: Stripe;
   private readonly prices = new Map<string, ResolvedPrice & { expiresAt: number }>();
+  private readonly priceLists = new Map<string, { prices: PlanPrice[]; expiresAt: number }>();
 
   constructor(
     private readonly billing: BillingProviderConfig,
@@ -276,6 +282,37 @@ export class StripeBillingProvider implements BillingProvider {
         cancel_at_period_end: update.cancel,
       });
     });
+  }
+
+  /** One list call for every lookup key; a Price with no flat unit amount is left out. */
+  async listPrices(currency: string | null): Promise<PlanPrice[]> {
+    const cacheKey = currency ?? "";
+    const cached = this.priceLists.get(cacheKey);
+    if (cached && cached.expiresAt > this.now()) return cached.prices;
+
+    const wanted = PRICED_PLAN_KEYS.flatMap((planKey) =>
+      BILLING_INTERVALS.flatMap((interval) => {
+        const lookupKey = planDefinition(planKey, PLAN_REGISTRY_VERSION).lookupKeys?.[interval];
+        return lookupKey ? [{ planKey, interval, lookupKey }] : [];
+      })
+    );
+    const prices = await fromStripe(async () => {
+      const { data } = await this.stripe.prices.list({
+        lookup_keys: wanted.map((entry) => entry.lookupKey),
+        active: true,
+        expand: ["data.currency_options"],
+      });
+      return wanted.flatMap(({ planKey, interval, lookupKey }) => {
+        const price = data.find((candidate) => candidate.lookup_key === lookupKey) as PriceLike | undefined;
+        if (!price) return [];
+        const own = price.currency?.toLowerCase() ?? null;
+        const billed = currency && price.currency_options?.[currency] ? currency : own;
+        const unitAmountMinor = unitAmountOf(price, billed);
+        return unitAmountMinor == null || !billed ? [] : [{ planKey, interval, unitAmountMinor, currency: billed }];
+      });
+    });
+    this.priceLists.set(cacheKey, { prices, expiresAt: this.now() + PRICE_LIST_CACHE_MS });
+    return prices;
   }
 
   /** Test-mode keys link to the test-mode dashboard. */

@@ -7,6 +7,7 @@ const MUTATING = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 const BILLING_RECOVERY_PATHS = new Set([
   "/api/billing/cancel-at-period-end",
   "/api/billing/checkout",
+  "/api/billing/keep-subscription",
   "/api/billing/payment-method",
   "/api/billing/plan",
 ]);

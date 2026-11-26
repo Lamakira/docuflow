@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
+import { CLIENTS_READ_CAPABILITY_ID } from "../../shared/schema";
 import { resetDb } from "../helpers/db";
 import { createSeededMember, inSeededWorkspace } from "../helpers/workspace";
 
@@ -67,7 +68,7 @@ describe("Billable Seat count", () => {
     await registerUser(app);
     const owner = await registerUser(app);
     await setWorkspaceRole(owner.id, "owner");
-    const created = await owner.agent.post("/api/service-accounts").send({ name: "CRM" });
+    const created = await owner.agent.post("/api/service-accounts").send({ name: "CRM", capabilityIds: [CLIENTS_READ_CAPABILITY_ID] });
     expect(created.status).toBe(201);
 
     await expect(inSeededWorkspace(() => countConsumedSeats())).resolves.toBe(2);
@@ -209,7 +210,7 @@ describe("distinct seat exhaustion error", () => {
     const app = await makeApp();
     const owner = await registerUser(app);
     await setWorkspaceRole(owner.id, "owner");
-    const created = await owner.agent.post("/api/service-accounts").send({ name: "CRM" });
+    const created = await owner.agent.post("/api/service-accounts").send({ name: "CRM", capabilityIds: [CLIENTS_READ_CAPABILITY_ID] });
     expect(created.status).toBe(201);
     const sa = newAgent(app).set("Authorization", `Bearer ${created.body.plaintextKey}`);
 

@@ -91,8 +91,9 @@ describe("a Client Source wears one mark everywhere v2 shows it", () => {
     join(dirname(fileURLToPath(import.meta.url)), "../../client/src/v2/V2Clients.tsx"),
     "utf8",
   );
+  // Pipeline and lists has its own file since the Administration review (F107).
   const adminSource = readFileSync(
-    join(dirname(fileURLToPath(import.meta.url)), "../../client/src/v2/V2Administration.tsx"),
+    join(dirname(fileURLToPath(import.meta.url)), "../../client/src/v2/V2AdministrationPipelineLists.tsx"),
     "utf8",
   );
   const selectSource = readFileSync(

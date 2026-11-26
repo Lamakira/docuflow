@@ -24,7 +24,12 @@ describe("create actions open a dialog", () => {
     "V2Opportunities.tsx": ["v2-opportunities-new"],
     "V2Projects.tsx": ["v2-projects-new"],
     "V2Clients.tsx": ["v2-clients-new", "v2-client-add-contact", "v2-client-edit"],
-    "V2Administration.tsx": ["v2-administration-new-service-account", "v2-administration-new-webhook-endpoint"],
+    // The Webhook Endpoint dialog is kept for F105, behind WEBHOOKS_AVAILABLE.
+    "V2AdministrationIntegrations.tsx": [
+      "v2-administration-new-service-account",
+      "v2-administration-edit-service-account",
+      "v2-administration-new-webhook-endpoint",
+    ],
     "V2Documents.tsx": ["v2-documents-new-folder", "v2-documents-new-document", "v2-documents-upload"],
     "V2ProjectDocumentation.tsx": ["v2-project-documentation-new-project", "v2-project-documentation-new-document"],
     "V2People.tsx": ["v2-people-invite-dialog", "v2-people-settings-dialog"],

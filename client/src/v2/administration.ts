@@ -1,10 +1,11 @@
 /**
- * Administration destination (#193), deepened with analytics, Tracking Policy,
- * and the remaining billing actions (#212).
- * Novelty: a newly created or rotated secret is shown once (rare state
+ * Administration destination (#193), deepened with Tracking Policy and the
+ * remaining billing actions (#212), one composer per tab since the
+ * Administration review (F101-F110).
+ * Novelty: a newly created or rotated key is shown once (rare state
  * indication); a saved Tracking Policy is signed off, not celebrated.
  * Do not animate: the settings form on every keystroke, billing numbers
- * counting up, analytics figures as decoration.
+ * counting up.
  */
 
 import {
@@ -16,7 +17,6 @@ import {
 } from "@shared/schema";
 import { isLowActivityThreshold } from "@shared/activityEvidence";
 import { chromeRefusal } from "./chrome";
-import { memberName } from "./today";
 import { workspaceRoleInCopy, type WorkspaceCondition, type WorkspaceMemberRow } from "./workspace";
 import { formatFullDate } from "./dates";
 
@@ -87,6 +87,15 @@ export type BillingInput = {
   periodEndsAt: string | Date | null;
   cancelAtPeriodEnd: boolean;
   stripeCustomerId: string | null;
+  /** A decrease waiting for the period's end; `null` when none is planned. */
+  pendingSeatQuantity?: number | null;
+  /** The price of one seat on the Subscription, in the currency's minor unit. */
+  unitAmountMinor?: number | null;
+  currency?: string | null;
+  /** A live Subscription that is not cancelling. */
+  canCancel?: boolean;
+  /** A live Subscription that is cancelling. */
+  canKeep?: boolean;
 };
 
 export type RevealedSecretInput = {
@@ -96,123 +105,33 @@ export type RevealedSecretInput = {
   plaintext: string;
 };
 
-export type AdministrationInput = {
-  workspaceName: string;
-  ownerName: string | null;
-  workspaceRole: string;
-  condition: WorkspaceCondition;
-  serviceAccounts: ServiceAccountInput[];
-  webhookEndpoints: WebhookEndpointInput[];
-  billing: BillingInput | null;
-  revealedSecret: RevealedSecretInput | null;
-  /** Active Memberships, for the Workspace and Members & Roles tabs (#281). */
-  members?: WorkspaceMemberRow[];
-};
-
-export type AdministrationMemberRow = {
-  id: string;
-  name: string;
-  email: string;
-  workspaceRole: string;
-};
-
 export type ServiceAccountRow = {
   id: string;
   name: string;
+  capabilityIds: string[];
   capabilities: string;
-  status: "ACTIVE" | "REVOKED";
+  status: "Active" | "Revoked";
   rotate: boolean;
   revoke: boolean;
+  edit: boolean;
 };
 
 export type WebhookEndpointRow = {
   id: string;
   url: string;
   eventTypes: string;
-  status: "ACTIVE" | "DISABLED";
+  status: "Active" | "Disabled";
   rotate: boolean;
   disable: boolean;
   enable: boolean;
 };
 
-export type BillingAction = {
-  id: "checkout" | "plan" | "seats" | "payment-method" | "cancel";
-  label: string;
-  /**
-   * A destructive action is set apart, so the reflex that reaches a routine
-   * button does not reach this one (#245, F1).
-   */
-  tone: "neutral" | "destructive";
-  /** What the action costs, stated before it runs. `null` when it costs nothing. */
-  consequence: string | null;
-};
-
-export type BillingSummary = {
-  plan: string;
-  /** One sentence on why the Plan stands as it does. `null` when there is nothing to add. */
-  lead: string | null;
-  seats: { label: string; percent: number; over: boolean };
-  writes: { allowed: boolean; label: "Writes allowed" | "Writes blocked" };
-  term: { label: string; value: string };
-};
-
-export type BillingModel = {
-  available: boolean;
-  plan: string;
-  condition: "Trial" | "Active" | "Past due" | "Read-only" | null;
-  seats: string;
-  /** What the seat field starts from, so it never contradicts the figure above it. */
-  seatQuantityDefault: string;
-  /** The subscription read as a summary; `null` exactly when billing is not available. */
-  summary: BillingSummary | null;
-  actions: BillingAction[];
-  checkout: "redirect";
-};
-
-export type SecretOnce = RevealedSecretInput & {
-  confirmation: string;
-};
-
-export type AdministrationModel =
-  | { kind: "refusal"; refusal: string; pagePrimary: "case-ink" }
-  | {
-      kind: "ready";
-      pagePrimary: "case-ink";
-      writeRefusal: string | null;
-      secretOnce: SecretOnce | null;
-      serviceAccounts: {
-        empty: boolean;
-        emptyCopy: string;
-        emptyTitle: string;
-        rows: ServiceAccountRow[];
-        createAllowed: boolean;
-      };
-      webhookEndpoints: {
-        empty: boolean;
-        emptyCopy: string;
-        emptyTitle: string;
-        rows: WebhookEndpointRow[];
-        createAllowed: boolean;
-      };
-      billing: BillingModel;
-      workspace: {
-        name: string;
-        initials: string;
-        roleBadge: string;
-        owner: { name: string; initials: string } | null;
-        members: string | null;
-      };
-      members: {
-        empty: boolean;
-        emptyCopy: string;
-        /** Who reaches what, and where a Workspace Role is changed. */
-        note: string;
-        rows: AdministrationMemberRow[];
-      };
-    };
-
 export function serviceAccountsPath(): string {
   return "/api/service-accounts";
+}
+
+export function serviceAccountPath(id: string): string {
+  return `/api/service-accounts/${id}`;
 }
 
 export function revokeServiceAccountPath(id: string): string {
@@ -259,6 +178,18 @@ export function billingCancelPath(): string {
   return "/api/billing/cancel-at-period-end";
 }
 
+export function billingKeepPath(): string {
+  return "/api/billing/keep-subscription";
+}
+
+export function billingPricesPath(): string {
+  return "/api/billing/prices";
+}
+
+export function workspacePath(): string {
+  return "/api/workspace";
+}
+
 export function hostedBillingSession(input: { url: string }): { kind: "redirect"; url: string } {
   return { kind: "redirect", url: input.url };
 }
@@ -266,6 +197,10 @@ export function hostedBillingSession(input: { url: string }): { kind: "redirect"
 export function canManageAdministration(workspaceRole: string): boolean {
   const role = workspaceRole.trim().toUpperCase();
   return role === "OWNER" || role === "ADMINISTRATOR";
+}
+
+export function isWorkspaceOwner(workspaceRole: string): boolean {
+  return workspaceRole.trim().toUpperCase() === "OWNER";
 }
 
 export type AdministrationWriteRefusal =
@@ -311,10 +246,112 @@ export function administrationWriteRefusal(input: AdministrationWriteRefusal): s
   return chromeRefusal({ kind: "generic", message });
 }
 
+/** The line over every tab of a Read-only Workspace; `null` otherwise. */
+export function administrationReadOnlyNote(workspaceName: string, condition: WorkspaceCondition): string | null {
+  return condition === "Read-only"
+    ? chromeRefusal({ kind: "workspace-condition", workspaceName, condition: "Read-only" })
+    : null;
+}
+
 function capabilityLabel(capabilityIds: string[]): string {
   if (capabilityIds.length === 0) return "-";
   return capabilityIds.map((id) => CAPABILITY_LABELS.get(id) ?? id).join(" · ");
 }
+
+/** Initials from the first two words; kept here because presentation.ts imports this module. */
+function nameInitials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+  return name.trim().slice(0, 2).toUpperCase();
+}
+
+/* ── Workspace tab ─────────────────────────────────────────────────────── */
+
+export const WORKSPACE_NAME_MAX = 100;
+
+export type WorkspaceCardModel = {
+  name: string;
+  initials: string;
+  roleBadge: string;
+  /** Only the Owner renames the Workspace. */
+  renamable: boolean;
+  /** Who can rename it, for a reader who cannot. */
+  renameNote: string | null;
+  owner: { name: string; initials: string } | null;
+  members: string | null;
+};
+
+export function composeWorkspaceCard(input: {
+  workspaceName: string;
+  workspaceRole: string;
+  ownerName: string | null;
+  members?: WorkspaceMemberRow[];
+}): WorkspaceCardModel {
+  const renamable = isWorkspaceOwner(input.workspaceRole);
+  return {
+    name: input.workspaceName,
+    initials: nameInitials(input.workspaceName) || "WS",
+    roleBadge: `You are ${workspaceRoleInCopy(input.workspaceRole)}`,
+    renamable,
+    renameNote: renamable
+      ? null
+      : input.ownerName
+        ? `Only the Owner, ${input.ownerName}, can rename the Workspace.`
+        : "Only the Owner can rename the Workspace.",
+    owner: input.ownerName ? { name: input.ownerName, initials: nameInitials(input.ownerName) } : null,
+    members: input.members
+      ? `${input.members.length} ${input.members.length === 1 ? "Member" : "Members"}`
+      : null,
+  };
+}
+
+/** What stops a rename before it is sent; `null` when it can go. */
+export function workspaceNameIssue(draft: string): string | null {
+  const name = draft.trim();
+  if (!name) return "Name the Workspace.";
+  if (name.length > WORKSPACE_NAME_MAX) return `Keep the name to ${WORKSPACE_NAME_MAX} characters or fewer.`;
+  return null;
+}
+
+/* ── Billing tab ───────────────────────────────────────────────────────── */
+
+export type BillingAction = {
+  id: "checkout" | "plan" | "seats" | "payment-method" | "cancel" | "keep";
+  label: string;
+  /**
+   * A destructive action is set apart, so the reflex that reaches a routine
+   * button does not reach this one (#245, F1).
+   */
+  tone: "neutral" | "destructive";
+  /** What the action costs, stated before it runs. `null` when it costs nothing. */
+  consequence: string | null;
+};
+
+export type BillingSummary = {
+  plan: string;
+  /** One sentence on why the Plan stands as it does. `null` when there is nothing to add. */
+  lead: string | null;
+  seats: { label: string; percent: number; over: boolean };
+  writes: { allowed: boolean; label: "You can edit" | "Read-only" };
+  term: { label: string; value: string };
+};
+
+export type BillingModel = {
+  available: boolean;
+  plan: string;
+  condition: "Trial" | "Active" | "Past due" | "Read-only" | null;
+  seats: string;
+  /** What the seat field starts from, so it never contradicts the figure above it. */
+  seatQuantityDefault: string;
+  /** No fewer seats than Billable Seats in use: one per Member. */
+  seatFloor: number;
+  /** A planned decrease, and the button that keeps today's seats. */
+  pendingSeats: { label: string; keepLabel: string; quantity: number } | null;
+  /** The subscription read as a summary; `null` exactly when billing is not available. */
+  summary: BillingSummary | null;
+  actions: BillingAction[];
+  checkout: "redirect";
+};
 
 const PLAN_LABEL: Record<string, string> = {
   trial: "Trial",
@@ -368,7 +405,8 @@ function billingTerm(pin: BillingInput): { label: string; value: string } {
   if (pin.periodEndsAt) {
     return { label: "Renews", value: formatFullDate(pin.periodEndsAt) };
   }
-  return { label: "Renews", value: "-" };
+  // Legacy, sales-led and offered Plans have no period: nothing renews (F102).
+  return { label: "Subscription", value: "Nothing renews" };
 }
 
 /** Why the Plan stands as it does; the first state that applies wins. */
@@ -392,14 +430,7 @@ function billingLead(pin: BillingInput, readOnly: boolean): string | null {
   return null;
 }
 
-/** Initials from the first two words; kept here because presentation.ts imports this module. */
-function nameInitials(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
-  return name.trim().slice(0, 2).toUpperCase();
-}
-
-/** What cancelling ends, and when — the card says it before the action runs. */
+/** What cancelling ends, and when: the card says it before the action runs. */
 function cancellationConsequence(pin: BillingInput): string {
   const tail = "Viewing, export, and recovery stay available.";
   if (pin.periodEndsAt) {
@@ -411,7 +442,11 @@ function cancellationConsequence(pin: BillingInput): string {
   return `Writes stop at the end of the current period and the Workspace becomes read-only. ${tail}`;
 }
 
-function composeBilling(input: AdministrationInput): BillingModel {
+function seatWord(count: number): string {
+  return `${count} ${count === 1 ? "seat" : "seats"}`;
+}
+
+export function composeBilling(input: { billing: BillingInput | null; condition: WorkspaceCondition }): BillingModel {
   const pin = input.billing;
   if (!pin) {
     return {
@@ -422,6 +457,8 @@ function composeBilling(input: AdministrationInput): BillingModel {
         : null,
       seats: "Seat counts are not available.",
       seatQuantityDefault: "",
+      seatFloor: 1,
+      pendingSeats: null,
       summary: null,
       actions: [],
       checkout: "redirect",
@@ -451,7 +488,9 @@ function composeBilling(input: AdministrationInput): BillingModel {
   if (pin.stripeCustomerId) {
     actions.push(routine("payment-method", "Update payment method"));
   }
-  if (!readOnly && pin.billingState === "Active" && !pin.cancelAtPeriodEnd) {
+  // The server says whether a live Subscription stands behind the Plan (F102):
+  // a Legacy or offered Plan has none to cancel, and a Past due one does.
+  if (!readOnly && pin.canCancel === true) {
     actions.push({
       id: "cancel",
       label: "Cancel at period end",
@@ -459,6 +498,19 @@ function composeBilling(input: AdministrationInput): BillingModel {
       consequence: cancellationConsequence(pin),
     });
   }
+  if (!readOnly && pin.canKeep === true) {
+    actions.push({
+      id: "keep",
+      label: "Keep the Subscription",
+      tone: "neutral",
+      consequence: pin.periodEndsAt ? `Access ends ${formatFullDate(pin.periodEndsAt)}` : "Access ends at the end of the period",
+    });
+  }
+
+  const pending =
+    pin.pendingSeatQuantity != null && pin.pendingSeatQuantity !== pin.purchasedSeatCapacity
+      ? pin.pendingSeatQuantity
+      : null;
 
   return {
     available: true,
@@ -466,6 +518,17 @@ function composeBilling(input: AdministrationInput): BillingModel {
     condition,
     seats: `${pin.consumedSeatCount} of ${pin.purchasedSeatCapacity} Billable Seats consumed.`,
     seatQuantityDefault: String(pin.purchasedSeatCapacity),
+    seatFloor: Math.max(1, pin.consumedSeatCount),
+    pendingSeats:
+      pending === null
+        ? null
+        : {
+            label: pin.periodEndsAt
+              ? `${seatWord(pending)} from ${formatFullDate(pin.periodEndsAt)}`
+              : `${seatWord(pending)} from the next period`,
+            keepLabel: `Keep ${seatWord(pin.purchasedSeatCapacity)}`,
+            quantity: pin.purchasedSeatCapacity,
+          },
     summary: {
       plan: planLabel(pin.planKey),
       lead: billingLead(pin, readOnly),
@@ -478,8 +541,8 @@ function composeBilling(input: AdministrationInput): BillingModel {
         over: pin.consumedSeatCount > pin.purchasedSeatCapacity,
       },
       writes: readOnly
-        ? { allowed: false, label: "Writes blocked" }
-        : { allowed: true, label: "Writes allowed" },
+        ? { allowed: false, label: "Read-only" }
+        : { allowed: true, label: "You can edit" },
       term: billingTerm(pin),
     },
     actions,
@@ -487,122 +550,332 @@ function composeBilling(input: AdministrationInput): BillingModel {
   };
 }
 
-export function composeAdministration(input: AdministrationInput): AdministrationModel {
-  if (!canManageAdministration(input.workspaceRole)) {
-    return {
-      kind: "refusal",
-      refusal: administrationRefusal({
-        workspaceRole: input.workspaceRole,
-        ownerName: input.ownerName,
-      }),
-      pagePrimary: "case-ink",
-    };
-  }
+export type BillingInterval = "monthly" | "annual";
 
+export type BillingPrice = {
+  planKey: string;
+  interval: BillingInterval | string;
+  unitAmountMinor: number;
+  currency: string;
+};
+
+const INTERVAL_WORD: Record<string, string> = { monthly: "month", annual: "year" };
+
+/** An amount in a currency's minor unit, with the currency's own number of decimals (none for JPY). */
+export function formatMoney(amountMinor: number, currency: string): string {
+  const code = currency.toUpperCase();
+  let digits = 2;
+  try {
+    digits = new Intl.NumberFormat("en-GB", { style: "currency", currency: code }).resolvedOptions().maximumFractionDigits ?? 2;
+  } catch {
+    return `${code} ${amountMinor}`;
+  }
+  const value = amountMinor / 10 ** digits;
+  return new Intl.NumberFormat("en-GB", {
+    style: "currency",
+    currency: code,
+    currencyDisplay: "code",
+    minimumFractionDigits: Number.isInteger(value) ? 0 : digits,
+    maximumFractionDigits: digits,
+  })
+    .format(value)
+    .replace(/ /g, " ");
+}
+
+export function planPrice(prices: BillingPrice[], planKey: string, interval: string): BillingPrice | null {
+  return prices.find((price) => price.planKey === planKey && price.interval === interval) ?? null;
+}
+
+/** "EUR 12 per seat, per month", under a Plan's name. */
+export function seatPriceLine(price: BillingPrice): string {
+  return `${formatMoney(price.unitAmountMinor, price.currency)} per seat, per ${INTERVAL_WORD[price.interval] ?? price.interval}`;
+}
+
+/** "3 seats x EUR 12 = EUR 36 per month, before tax". */
+export function checkoutTotalLine(price: BillingPrice, seats: number): string {
+  return (
+    `${seatWord(seats)} x ${formatMoney(price.unitAmountMinor, price.currency)} = ` +
+    `${formatMoney(price.unitAmountMinor * seats, price.currency)} per ${INTERVAL_WORD[price.interval] ?? price.interval}, before tax`
+  );
+}
+
+/** "At least 3: one per Member", beside the seat field. */
+export function seatFloorNote(floor: number): string {
+  return `At least ${floor}: one per Member`;
+}
+
+/** Why a typed number of seats cannot be sent; `null` when it can. */
+export function seatQuantityIssue(text: string, floor: number): string | null {
+  const value = text.trim();
+  if (!value) return "Enter a number of seats.";
+  if (!/^\d+$/.test(value)) return "Enter a whole number of seats.";
+  if (Number(value) < floor) return `Choose at least ${floor} ${floor === 1 ? "seat" : "seats"}: one per Member.`;
+  return null;
+}
+
+/** What the confirmation of a seat change says before it is sent (F104). */
+export function seatChangeConfirmation(input: {
+  from: number;
+  to: number;
+  periodEndsAt: string | Date | null;
+  unitAmountMinor?: number | null;
+  currency?: string | null;
+  interval?: string | null;
+}): { title: string; consequence: string; confirmLabel: string } {
+  const until = input.periodEndsAt ? formatFullDate(input.periodEndsAt) : null;
+  const title = `From ${input.from} to ${seatWord(input.to)}`;
+  if (input.to > input.from) {
+    const added = input.to - input.from;
+    const now = until
+      ? `The ${added === 1 ? "new seat is" : `${added} new seats are`} charged now, in proportion to the time left until ${until}.`
+      : `The ${added === 1 ? "new seat is" : `${added} new seats are`} charged now, in proportion to the time left in the period.`;
+    const next =
+      input.unitAmountMinor != null && input.currency
+        ? ` Then the Subscription costs ${formatMoney(input.unitAmountMinor * input.to, input.currency)}` +
+          `${input.interval && INTERVAL_WORD[input.interval] ? ` per ${INTERVAL_WORD[input.interval]}` : ""}, before tax.`
+        : "";
+    return { title, consequence: `${now}${next}`, confirmLabel: `Add ${seatWord(added)}` };
+  }
+  return {
+    title,
+    consequence: until
+      ? `The change applies on ${until}. Until then the Workspace keeps ${seatWord(input.from)}.`
+      : `The change applies at the end of the period. Until then the Workspace keeps ${seatWord(input.from)}.`,
+    confirmLabel: `Change to ${seatWord(input.to)}`,
+  };
+}
+
+/* ── Integrations tab ──────────────────────────────────────────────────── */
+
+export const SERVICE_ACCOUNT_NAME_MAX = 100;
+
+export type ServiceAccountsModel = {
+  empty: boolean;
+  emptyCopy: string;
+  emptyTitle: string;
+  rows: ServiceAccountRow[];
+  /** Revoked ones, hidden until asked for (F109). */
+  revokedCount: number;
+  createAllowed: boolean;
+};
+
+export function composeServiceAccounts(input: {
+  serviceAccounts: ServiceAccountInput[];
+  condition: WorkspaceCondition;
+  showRevoked: boolean;
+}): ServiceAccountsModel {
   const readOnly = input.condition === "Read-only";
-  const serviceRows: ServiceAccountRow[] = input.serviceAccounts.map((row) => {
+  const all: ServiceAccountRow[] = input.serviceAccounts.map((row) => {
     const revoked = row.revokedAt != null;
     return {
       id: row.id,
       name: row.name,
+      capabilityIds: row.capabilityIds,
       capabilities: capabilityLabel(row.capabilityIds),
-      status: revoked ? "REVOKED" : "ACTIVE",
-      rotate: !revoked,
-      revoke: !revoked,
+      status: revoked ? "Revoked" : "Active",
+      rotate: !revoked && !readOnly,
+      revoke: !revoked && !readOnly,
+      edit: !revoked && !readOnly,
     };
   });
-  const webhookRows: WebhookEndpointRow[] = input.webhookEndpoints.map((row) => {
+  const rows = input.showRevoked ? all : all.filter((row) => row.status === "Active");
+  return {
+    empty: rows.length === 0,
+    emptyCopy: "A Service Account lets an integration call the public API with its own key. Create one to get a key.",
+    emptyTitle: "Add your first Service Account",
+    rows,
+    revokedCount: all.length - all.filter((row) => row.status === "Active").length,
+    createAllowed: !readOnly,
+  };
+}
+
+/** What stops a Service Account from being saved; `null` when it can go. */
+export function serviceAccountIssue(name: string, capabilityIds: string[]): string | null {
+  const trimmed = name.trim();
+  if (!trimmed) return "Name the Service Account.";
+  if (trimmed.length > SERVICE_ACCOUNT_NAME_MAX) return `Keep the name to ${SERVICE_ACCOUNT_NAME_MAX} characters or fewer.`;
+  if (capabilityIds.length === 0) return "Choose at least one Capability, or the Service Account can do nothing.";
+  return null;
+}
+
+export type WebhookEndpointsModel = {
+  empty: boolean;
+  emptyCopy: string;
+  emptyTitle: string;
+  rows: WebhookEndpointRow[];
+  createAllowed: boolean;
+};
+
+export function composeWebhookEndpoints(input: {
+  webhookEndpoints: WebhookEndpointInput[];
+  condition: WorkspaceCondition;
+}): WebhookEndpointsModel {
+  const rows: WebhookEndpointRow[] = input.webhookEndpoints.map((row) => {
     const disabled = row.disabledAt != null;
     return {
       id: row.id,
       url: row.url,
       eventTypes: row.eventTypes.join(" · "),
-      status: disabled ? "DISABLED" : "ACTIVE",
+      status: disabled ? "Disabled" : "Active",
       rotate: true,
       disable: !disabled,
       enable: disabled,
     };
   });
-  const billing = composeBilling(input);
-  const memberRows: AdministrationMemberRow[] = (input.members ?? []).map((row, index) => ({
-    id: row.email || `member-${index}`,
-    name: memberName(row),
-    email: row.email ?? "",
-    workspaceRole: workspaceRoleInCopy(row.workspaceRole),
-  }));
   return {
-    kind: "ready",
-    pagePrimary: "case-ink",
-    writeRefusal: readOnly
-      ? chromeRefusal({
-          kind: "workspace-condition",
-          workspaceName: input.workspaceName,
-          condition: "Read-only",
-        })
-      : null,
-    secretOnce: input.revealedSecret
-      ? {
-          ...input.revealedSecret,
-          confirmation: "Copy this now. It will not be shown again.",
-        }
-      : null,
-    serviceAccounts: {
-      empty: serviceRows.length === 0,
-      emptyCopy: "A Service Account lets an integration call the public API with its own key. Create one to get a key.",
-      emptyTitle: "Add your first Service Account",
-      rows: serviceRows,
-      createAllowed: !readOnly,
-    },
-    webhookEndpoints: {
-      empty: webhookRows.length === 0,
-      emptyCopy: "A Webhook Endpoint is a URL that receives the events you choose. Add one to start receiving them.",
-      emptyTitle: "Add your first Webhook Endpoint",
-      rows: webhookRows,
-      createAllowed: !readOnly,
-    },
-    billing,
-    workspace: {
-      name: input.workspaceName,
-      initials: nameInitials(input.workspaceName) || "WS",
-      roleBadge: `You are ${workspaceRoleInCopy(input.workspaceRole)}`,
-      owner: input.ownerName ? { name: input.ownerName, initials: nameInitials(input.ownerName) } : null,
-      members: input.members
-        ? `${input.members.length} ${input.members.length === 1 ? "Member" : "Members"}`
-        : null,
-    },
-    members: {
-      empty: memberRows.length === 0,
-      emptyCopy: "No active Memberships in this Workspace.",
-      note: `Analytics and Administration are open to ${ADMINISTRATION_ROLES}. A Workspace Role is changed in People.`,
-      rows: memberRows,
-    },
+    empty: rows.length === 0,
+    emptyCopy: "A Webhook Endpoint is a public https address that receives the events you choose.",
+    emptyTitle: "Add your first Webhook Endpoint",
+    rows,
+    createAllowed: input.condition !== "Read-only",
   };
 }
 
-/* ── Workspace settings (#212) ─────────────────────────────────────────────
- * Analytics left for its own module, analytics.ts.
- */
+export type SecretOnce = RevealedSecretInput & {
+  confirmation: string;
+};
+
+/** A new or rotated key, shown once; the list never carries one. */
+export function secretOnce(revealed: RevealedSecretInput | null): SecretOnce | null {
+  return revealed ? { ...revealed, confirmation: "Copy this now. It will not be shown again." } : null;
+}
+
+/* ── Workspace settings (#212) ─────────────────────────────────────────── */
 
 export function workspaceSettingsPath(): string {
   return "/api/admin/org-settings";
 }
 
-/* ── Tracking Policy and the Screencasts timezone list (#212) ─────────────
- * Both live on `/api/admin/org-settings`. The save is signed off, never
- * celebrated, and the form itself does not animate on a keystroke.
+/* ── Tracking Policy (#212) ────────────────────────────────────────────────
+ * It lives on `/api/admin/org-settings`. The save sends only what changed, is
+ * signed off, never celebrated, and the form does not animate on a keystroke.
  */
+
+/** The number fields of the policy, with the server's bounds. */
+export const POLICY_NUMBERS = {
+  captureIntervalMinMin: { name: "Minimum interval", min: 3, max: 15 },
+  captureIntervalMaxMin: { name: "Maximum interval", min: 3, max: 15 },
+  lowActivityThresholdPercent: { name: "Low-activity threshold", min: 0, max: 100 },
+  idleTimeoutMinutes: { name: "Idle timeout", min: 1, max: 60 },
+  idleCountdownSeconds: { name: "Prompt countdown", min: 15, max: 120 },
+} as const;
+
+export type PolicyNumberKey = keyof typeof POLICY_NUMBERS;
+
+const POLICY_NUMBER_KEYS = Object.keys(POLICY_NUMBERS) as PolicyNumberKey[];
+
+/**
+ * Unsaved edits over the policy as read. A number holds the text typed, so a
+ * cleared field stays empty; the saved policy shows through every key left out.
+ */
+export type PolicyEdits = Partial<Omit<ScreenshotPolicy, PolicyNumberKey>> & Partial<Record<PolicyNumberKey, string>>;
+
+/** What the form shows: the saved policy under the edits, every number as text. */
+export type PolicyForm = Omit<ScreenshotPolicy, PolicyNumberKey> & Record<PolicyNumberKey, string>;
+
+function isPolicyNumberKey(key: string): key is PolicyNumberKey {
+  return key in POLICY_NUMBERS;
+}
+
+export function policyForm(saved: ScreenshotPolicy, edits: PolicyEdits): PolicyForm {
+  const form = { ...saved, ...edits } as Record<string, unknown>;
+  for (const key of POLICY_NUMBER_KEYS) form[key] = edits[key] ?? String(saved[key]);
+  return form as PolicyForm;
+}
+
+function sameValue(a: unknown, b: unknown): boolean {
+  if (Array.isArray(a) || Array.isArray(b)) {
+    return (a === null) === (b === null) && ((a as string[] | null) ?? []).join("\n") === ((b as string[] | null) ?? []).join("\n");
+  }
+  return a === b;
+}
+
+/** The edits without any key that matches the policy as read, so an undone edit is no edit. */
+export function pruneEdits(saved: ScreenshotPolicy, edits: PolicyEdits): PolicyEdits {
+  const kept: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(edits)) {
+    if (value === undefined) continue;
+    const same = isPolicyNumberKey(key)
+      ? value === String(saved[key])
+      : sameValue(value, saved[key as keyof ScreenshotPolicy]);
+    if (!same) kept[key] = value;
+  }
+  return kept as PolicyEdits;
+}
+
+/** A typed number the server would take, or `null`. */
+function parsedNumber(key: PolicyNumberKey, text: string): number | null {
+  const value = text.trim();
+  if (!/^\d+$/.test(value)) return null;
+  const number = Number(value);
+  if (key === "lowActivityThresholdPercent") return isLowActivityThreshold(number) ? number : null;
+  const { min, max } = POLICY_NUMBERS[key];
+  return number >= min && number <= max ? number : null;
+}
+
+/**
+ * The keys that differ from the policy as read, and why they cannot be saved.
+ * Only what is sent is checked, with the min/max pair on the merged policy, so
+ * a stored value out of bounds never blocks saving something else (F108).
+ */
+export function policyPatch(
+  saved: ScreenshotPolicy,
+  edits: PolicyEdits,
+): { patch: Partial<ScreenshotPolicy>; issue: string | null } {
+  const patch: Record<string, unknown> = {};
+  let issue: string | null = null;
+  for (const [key, value] of Object.entries(edits) as Array<[keyof ScreenshotPolicy, unknown]>) {
+    if (value === undefined) continue;
+    if (isPolicyNumberKey(key)) {
+      const text = value as string;
+      if (text === String(saved[key])) continue;
+      const number = parsedNumber(key, text);
+      const { name, min, max } = POLICY_NUMBERS[key];
+      if (number === null) {
+        issue ??= text.trim() === "" ? `Enter the ${name.toLowerCase()}.` : `${name} must be a whole number from ${min} to ${max}.`;
+        patch[key] = text;
+        continue;
+      }
+      if (number !== saved[key]) patch[key] = number;
+      continue;
+    }
+    if (sameValue(value, saved[key])) continue;
+    patch[key] = value;
+  }
+  if (
+    !issue &&
+    (("activeHoursStart" in patch && !isTrackingPolicyClockTime(String(patch.activeHoursStart))) ||
+      ("activeHoursEnd" in patch && !isTrackingPolicyClockTime(String(patch.activeHoursEnd))))
+  ) {
+    issue = "Active hours must be 24-hour times such as 08:00.";
+  }
+  if (!issue && ("captureIntervalMinMin" in patch || "captureIntervalMaxMin" in patch)) {
+    const min = (patch.captureIntervalMinMin as number | undefined) ?? saved.captureIntervalMinMin;
+    const max = (patch.captureIntervalMaxMin as number | undefined) ?? saved.captureIntervalMaxMin;
+    if (min > max) issue = "The minimum interval cannot exceed the maximum.";
+  }
+  return { patch: patch as Partial<ScreenshotPolicy>, issue };
+}
+
+/** The policy the hints describe: each valid edit over the saved value. */
+function effectivePolicy(saved: ScreenshotPolicy, edits: PolicyEdits): ScreenshotPolicy {
+  const merged = { ...saved, ...edits } as Record<string, unknown>;
+  for (const key of POLICY_NUMBER_KEYS) {
+    const text = edits[key];
+    merged[key] = text === undefined ? saved[key] : (parsedNumber(key, text) ?? saved[key]);
+  }
+  return merged as unknown as ScreenshotPolicy;
+}
 
 export type TrackingPolicyInput = {
   workspaceName: string;
   workspaceRole: string;
   ownerName: string | null;
   condition: WorkspaceCondition;
-  /** `null` when the saved policy has not been read — never edit defaults as if saved. */
+  /** `null` when the saved policy has not been read: never edit defaults as if saved. */
   saved: ScreenshotPolicy | null;
-  draft: ScreenshotPolicy;
-  savedTimezones: string[];
-  draftTimezones: string[];
-  /** The BFF refused the read behind the same Administration gate — name it, do not edit defaults. */
+  edits: PolicyEdits;
+  /** The BFF refused the read behind the same Administration gate: name it, do not edit defaults. */
   refused?: boolean;
 };
 
@@ -612,22 +885,16 @@ export type TrackingPolicyModel =
   | {
       kind: "ready";
       editable: boolean;
+      form: PolicyForm;
+      /** Only the keys that changed; the save sends this and nothing else. */
+      patch: Partial<ScreenshotPolicy>;
       dirty: boolean;
       issue: string | null;
       canSave: boolean;
       writeRefusal: string | null;
       footnote: string;
       hints: TrackingPolicyHints;
-      timezones: {
-        rows: string[];
-        empty: boolean;
-        emptyCopy: string;
-        dirty: boolean;
-        canSave: boolean;
-      };
     };
-
-export type TimezoneEdit = { ok: true; timezones: string[] } | { ok: false; reason: string };
 
 export type TrackingPolicyHints = {
   activeHours: string;
@@ -646,7 +913,7 @@ export function trackingPolicyHints(draft: ScreenshotPolicy): TrackingPolicyHint
       ? draft.activeHoursStart === draft.activeHoursEnd
         ? " The same start and end restricts nothing."
         : draft.activeHoursStart > draft.activeHoursEnd
-          ? ` ${draft.activeHoursStart}–${draft.activeHoursEnd} runs overnight, into the next morning.`
+          ? ` From ${draft.activeHoursStart} to ${draft.activeHoursEnd} runs overnight, into the next morning.`
           : ""
       : "";
   return {
@@ -660,38 +927,56 @@ export function trackingPolicyHints(draft: ScreenshotPolicy): TrackingPolicyHint
   };
 }
 
-/** Mirrors the `/api/admin/org-settings` bounds so a refusal is named before the PATCH. */
-export function trackingPolicyIssue(draft: ScreenshotPolicy): string | null {
-  if (draft.captureIntervalMinMin < 3) {
-    return "Minimum capture interval must be at least 3 minutes.";
-  }
-  if (draft.captureIntervalMaxMin > 15) {
-    return "Maximum capture interval cannot exceed 15 minutes.";
-  }
-  if (draft.captureIntervalMinMin > draft.captureIntervalMaxMin) {
-    return "Minimum capture interval cannot exceed the maximum.";
-  }
-  if (draft.idleTimeoutMinutes < 1 || draft.idleTimeoutMinutes > 60) {
-    return "Idle timeout must be between 1 and 60 minutes.";
-  }
-  if (!isLowActivityThreshold(draft.lowActivityThresholdPercent)) {
-    return "Low-activity threshold must be a whole number from 0 to 100.";
-  }
-  if (draft.idleCountdownSeconds < 15 || draft.idleCountdownSeconds > 120) {
-    return "Idle countdown must be between 15 and 120 seconds.";
-  }
-  if (
-    !isTrackingPolicyClockTime(draft.activeHoursStart) ||
-    !isTrackingPolicyClockTime(draft.activeHoursEnd)
-  ) {
-    return "Active hours must be 24-hour times such as 08:00.";
-  }
-  return null;
-}
-
 export function normalizeScreenshotPolicy(policy: Partial<ScreenshotPolicy> | null | undefined): ScreenshotPolicy {
   return { ...DEFAULT_SCREENSHOT_POLICY, ...(policy ?? {}) };
 }
+
+/** The sign-off a saved policy gets: what happens next, not a celebration. The desktop agent reads it every 60 s. */
+export const TRACKING_POLICY_SAVED = "Policy saved. Devices apply it within a minute.";
+
+export function composeTrackingPolicyEditor(input: TrackingPolicyInput): TrackingPolicyModel {
+  if (input.refused || !canManageAdministration(input.workspaceRole)) {
+    return {
+      kind: "refusal",
+      refusal: administrationRefusal({
+        workspaceRole: input.workspaceRole,
+        ownerName: input.ownerName,
+      }),
+    };
+  }
+
+  if (input.saved === null) {
+    return {
+      kind: "unreadable",
+      note: "The Tracking Policy could not be read. Editing stays closed until it loads.",
+    };
+  }
+
+  const readOnly = input.condition === "Read-only";
+  const { patch, issue } = policyPatch(input.saved, input.edits);
+  const dirty = Object.keys(patch).length > 0;
+
+  return {
+    kind: "ready",
+    editable: !readOnly,
+    form: policyForm(input.saved, input.edits),
+    patch,
+    dirty,
+    issue,
+    canSave: !readOnly && dirty && issue === null,
+    writeRefusal: readOnly
+      ? chromeRefusal({
+          kind: "workspace-condition",
+          workspaceName: input.workspaceName,
+          condition: "Read-only",
+        })
+      : null,
+    footnote: "Activity shows this policy to every Member. Devices apply it within a minute.",
+    hints: trackingPolicyHints(effectivePolicy(input.saved, input.edits)),
+  };
+}
+
+/* ── Workspace time zone (#341) ────────────────────────────────────────── */
 
 function isValidTimezone(value: string): boolean {
   try {
@@ -702,30 +987,18 @@ function isValidTimezone(value: string): boolean {
   }
 }
 
-export function addAllowedTimezone(timezones: string[], candidate: string): TimezoneEdit {
-  const value = candidate.trim();
-  if (!value) {
-    return { ok: false, reason: "Enter an IANA timezone, for example Europe/Paris." };
-  }
-  if (!isValidTimezone(value)) {
-    return { ok: false, reason: `"${value}" is not a valid IANA timezone.` };
-  }
-  if (timezones.includes(value)) {
-    return { ok: false, reason: `"${value}" is already in the list.` };
-  }
-  return { ok: true, timezones: [...timezones, value] };
-}
-
-/**
- * The zones the input offers as a list (#260). v1 chose from one; v2 kept the
- * free-text input and its validation, and suggests every IANA zone the runtime
- * knows that this Workspace does not allow yet.
- */
+/** Every IANA zone the runtime knows, except those already taken, sorted. */
 export function timezoneSuggestions(allowed: string[]): string[] {
   const taken = new Set(allowed);
   const supported =
     typeof Intl.supportedValuesOf === "function" ? Intl.supportedValuesOf("timeZone") : [];
   return supported.filter((zone) => !taken.has(zone)).sort();
+}
+
+/** The zones the combobox offers: the runtime's, and the saved one even when the runtime lists it under another name. */
+export function workspaceTimeZoneChoices(saved: string | null | undefined): string[] {
+  const zones = timezoneSuggestions([]);
+  return saved && !zones.includes(saved) ? [saved, ...zones] : zones;
 }
 
 export type WorkspaceTimeZoneInput = {
@@ -748,78 +1021,12 @@ export type WorkspaceTimeZoneModel = {
 export function composeWorkspaceTimeZone(input: WorkspaceTimeZoneInput): WorkspaceTimeZoneModel {
   const draft = input.draft.trim();
   const dirty = draft !== (input.saved ?? "");
-  const issue = draft && !isValidTimezone(draft) ? `"${draft}" is not a valid IANA timezone.` : null;
+  const issue = draft && !isValidTimezone(draft) ? `"${draft}" is not a time zone DocuFlow knows.` : null;
   return {
     current: input.saved || "Not set",
-    copy: "The Workday Daily Update reminders and notifications count in this time zone: the reminder goes out at 18:00 here.",
+    copy: "Workday Daily Update reminders go out at 18:00 in this time zone.",
     dirty,
     issue,
     canSave: input.editable && dirty && draft !== "" && issue === null,
-  };
-}
-
-export function removeAllowedTimezone(timezones: string[], value: string): string[] {
-  return timezones.filter((timezone) => timezone !== value);
-}
-
-function samePolicy(a: ScreenshotPolicy, b: ScreenshotPolicy): boolean {
-  return (Object.keys(DEFAULT_SCREENSHOT_POLICY) as Array<keyof ScreenshotPolicy>).every(
-    (key) =>
-      key === "screenshotProjectIds"
-        ? (a[key] ?? []).join("\n") === (b[key] ?? []).join("\n") && (a[key] === null) === (b[key] === null)
-        : a[key] === b[key],
-  );
-}
-
-/** The sign-off a saved policy gets: what happens next, not a celebration. */
-export const TRACKING_POLICY_SAVED = "Policy saved. Devices apply it on their next heartbeat.";
-
-export function composeTrackingPolicyEditor(input: TrackingPolicyInput): TrackingPolicyModel {
-  if (input.refused || !canManageAdministration(input.workspaceRole)) {
-    return {
-      kind: "refusal",
-      refusal: administrationRefusal({
-        workspaceRole: input.workspaceRole,
-        ownerName: input.ownerName,
-      }),
-    };
-  }
-
-  if (input.saved === null) {
-    return {
-      kind: "unreadable",
-      note: "The Tracking Policy could not be read. Editing stays closed until it loads.",
-    };
-  }
-
-  const readOnly = input.condition === "Read-only";
-  const issue = trackingPolicyIssue(input.draft);
-  const dirty = !samePolicy(input.saved, input.draft);
-  const timezonesDirty =
-    input.savedTimezones.length !== input.draftTimezones.length ||
-    input.savedTimezones.some((timezone, index) => timezone !== input.draftTimezones[index]);
-
-  return {
-    kind: "ready",
-    editable: !readOnly,
-    dirty,
-    issue,
-    canSave: !readOnly && dirty && issue === null,
-    writeRefusal: readOnly
-      ? chromeRefusal({
-          kind: "workspace-condition",
-          workspaceName: input.workspaceName,
-          condition: "Read-only",
-        })
-      : null,
-    footnote: "Activity shows this policy to every Member; Devices apply it on their next heartbeat.",
-    hints: trackingPolicyHints(input.draft),
-    timezones: {
-      rows: input.draftTimezones,
-      empty: input.draftTimezones.length === 0,
-      emptyCopy: "No timezone curated: each Member's browser timezone is used.",
-      dirty: timezonesDirty,
-      canSave: !readOnly && timezonesDirty,
-    },
   };
 }

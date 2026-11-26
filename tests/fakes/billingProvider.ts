@@ -15,6 +15,7 @@ import {
   type HostedBillingSession,
   type PaymentMethodUpdateRequest,
   type CancelAtPeriodEndUpdate,
+  type PlanPrice,
   type ProviderCheckoutSession,
   type ProviderDispute,
   type ProviderInvoice,
@@ -36,6 +37,13 @@ export class FakeBillingProvider implements BillingProvider {
   readonly seatUpdates: SeatQuantityUpdate[] = [];
   readonly paymentMethodUpdates: PaymentMethodUpdateRequest[] = [];
   readonly planChanges: SubscriptionPlanChange[] = [];
+  /** The currency each price list was asked in. */
+  readonly priceLists: Array<string | null> = [];
+  prices: PlanPrice[] = [];
+  /** Set to make the provider refuse, as Stripe refusing a card or being down would. */
+  refusal: Error | null = null;
+  /** Runs inside a seat update, before the provider records the new quantity. */
+  onSeatUpdate: ((update: SeatQuantityUpdate) => Promise<void>) | null = null;
 
   async createCheckout(request: CheckoutRequest): Promise<HostedBillingSession> {
     this.checkouts.push(request);
@@ -89,6 +97,7 @@ export class FakeBillingProvider implements BillingProvider {
   }
 
   async setCancelAtPeriodEnd(update: CancelAtPeriodEndUpdate): Promise<void> {
+    if (this.refusal) throw this.refusal;
     this.cancelAtPeriodEndUpdates.push(update);
     const subscription = this.subscriptions.get(update.providerSubscriptionId);
     if (subscription) {
@@ -104,7 +113,24 @@ export class FakeBillingProvider implements BillingProvider {
   }
 
   async updateSeatQuantity(update: SeatQuantityUpdate): Promise<void> {
+    if (this.refusal) throw this.refusal;
     this.seatUpdates.push(update);
+    const hook = this.onSeatUpdate;
+    this.onSeatUpdate = null;
+    await hook?.(update);
+    const subscription = this.subscriptions.get(update.providerSubscriptionId);
+    if (subscription) {
+      this.subscriptions.set(update.providerSubscriptionId, {
+        ...subscription,
+        seatQuantity: update.seatQuantity,
+      });
+    }
+  }
+
+  async listPrices(currency: string | null): Promise<PlanPrice[]> {
+    if (this.refusal) throw this.refusal;
+    this.priceLists.push(currency);
+    return this.prices;
   }
 
   async changeSubscriptionPlan(change: SubscriptionPlanChange): Promise<void> {

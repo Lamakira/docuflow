@@ -34,6 +34,7 @@
     "db:backfill:screenshot-fingerprints": "tsx --env-file-if-exists=.env scripts/backfill-screenshot-fingerprints.ts",
     "db:hide:duplicate-captures": "tsx --env-file-if-exists=.env scripts/hide-duplicate-captures.ts",
     "billing:assign-plan": "tsx --env-file-if-exists=.env scripts/assign-plan.ts",
+    "billing:clear-orphan-cancellations": "tsx --env-file-if-exists=.env scripts/clear-orphan-cancellations.ts",
     "identity:import:users": "tsx --env-file-if-exists=.env scripts/identity-import-users.ts",
     "identity:invite:password-set": "tsx --env-file-if-exists=.env scripts/identity-password-set-invites.ts",
     "db:env:check": "tsx --env-file-if-exists=.env scripts/db-env-check.ts",

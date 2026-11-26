@@ -2,6 +2,7 @@ import express, { type Request, Response, NextFunction } from "express";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import { createServer, type Server } from "http";
+import { installAsyncRoutes } from "./asyncRoutes";
 import { buildIdentity, PROCESS_STARTED_AT } from "./buildInfo";
 import { logError, logHttpRequest } from "./logger";
 import { registerRoutes } from "./routes";
@@ -39,6 +40,8 @@ export async function createApp(): Promise<{
   httpServer: Server;
   stopBackgroundJobs: () => void;
 }> {
+  // Before any route: an async handler's rejection must reach the error handler.
+  installAsyncRoutes();
   const app = express();
   app.set("trust proxy", 1);
   const httpServer = createServer(app);
@@ -159,18 +162,25 @@ export async function createApp(): Promise<{
 
   const { stopBackgroundJobs } = await registerRoutes(httpServer, app);
 
-  app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
-    const status = err.status || err.statusCode || 500;
-    const message = err.message || "Internal Server Error";
-    logError("unhandled-server-error", err, {
-      status,
-      path: _req.path,
-      method: _req.method,
-    });
-    if (!res.headersSent) {
-      res.status(status).json({ message });
-    }
-  });
+  app.use(apiErrorHandler);
 
   return { app, httpServer, stopBackgroundJobs };
+}
+
+/**
+ * The last word on an error. A 4xx keeps its message (body-parser's 400 and
+ * 413 say what was wrong); a 5xx says nothing of its cause. After the response
+ * has started there is nothing to answer: an unfinished one is cut, so the
+ * client cannot mistake it for complete.
+ */
+export function apiErrorHandler(err: any, req: Request, res: Response, _next: NextFunction): void {
+  const raw = err?.status ?? err?.statusCode;
+  const status = Number.isInteger(raw) && raw >= 400 && raw <= 599 ? raw : 500;
+  logError("unhandled-server-error", err, { status, path: req.path, method: req.method });
+  if (res.headersSent) {
+    if (!res.writableEnded) res.destroy();
+    return;
+  }
+  const message = status < 500 && typeof err?.message === "string" && err.message ? err.message : "Internal Server Error";
+  res.status(status).json({ message });
 }

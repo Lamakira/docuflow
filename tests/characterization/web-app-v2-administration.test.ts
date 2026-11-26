@@ -19,6 +19,8 @@ import {
 import {
   PIPELINE_LISTS,
   PIPELINE_LIST_QUERY_KEYS,
+  PIPELINE_STALE_MESSAGE,
+  isPipelineStale,
   addPipelineOption,
   composePipelineLists,
   movePipelineOption,
@@ -35,21 +37,36 @@ import {
 } from "../../client/src/v2/pipelineLists";
 import { diffFieldOptions, builtInList, serializeFieldOption } from "@shared/pipelineLists";
 import {
-  addAllowedTimezone,
+  administrationReadOnlyNote,
+  administrationRefusal,
   billingCancelPath,
   billingCheckoutPath,
+  billingKeepPath,
   billingPaymentMethodPath,
+  billingPricesPath,
   billingSeatsPath,
   billingSubscriptionPath,
-  composeAdministration,
+  checkoutTotalLine,
+  composeBilling,
+  composeServiceAccounts,
   composeTrackingPolicyEditor,
+  composeWebhookEndpoints,
   composeWorkspaceTimeZone,
+  formatMoney,
   normalizeScreenshotPolicy,
+  policyPatch,
+  pruneEdits,
+  secretOnce,
+  seatChangeConfirmation,
+  seatFloorNote,
+  seatPriceLine,
+  seatQuantityIssue,
+  serviceAccountIssue,
+  serviceAccountPath,
   TRACKING_POLICY_SAVED,
   hostedBillingSession,
   planPickerNote,
   workspaceSettingsPath,
-  removeAllowedTimezone,
   rotateServiceAccountPath,
   rotateWebhookEndpointPath,
   revokeServiceAccountPath,
@@ -57,18 +74,18 @@ import {
   webhookDisablePath,
   webhookEnablePath,
   webhookEndpointsPath,
+  workspaceTimeZoneChoices,
   administrationWriteRefusal,
-  trackingPolicyIssue,
   trackingPolicyHints,
-  type AdministrationInput,
   type BillingInput,
+  type PolicyEdits,
   type TrackingPolicyInput,
 } from "../../client/src/v2/administration";
 import { analyticsRefusal } from "../../client/src/v2/analytics";
 
 /**
  * Administration from existing Workspace operator routes (#193).
- * Seams: matchV2Route (flagged app chrome) and composeAdministration over `/api/*`.
+ * Seams: matchV2Route (flagged app chrome) and the composers in administration.ts over `/api/*`.
  * HTTP `/api/*` stays characterized elsewhere. Do not assert hex.
  */
 
@@ -79,10 +96,26 @@ const appSource = readFileSync(
   "utf8",
 );
 
-const pageSource = readFileSync(
-  join(dirname(fileURLToPath(import.meta.url)), "../../client/src/v2/V2Administration.tsx"),
-  "utf8",
-);
+const v2 = (name: string) => readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../../client/src/v2", name), "utf8");
+
+/** Administration is one shell and a file per tab since the review (F107). */
+const ADMIN_FILES = [
+  "V2Administration.tsx",
+  "V2AdministrationWorkspace.tsx",
+  "V2AdministrationBilling.tsx",
+  "V2AdministrationTrackingPolicy.tsx",
+  "V2AdministrationPipelineLists.tsx",
+  "V2AdministrationIntegrations.tsx",
+  "V2AdministrationParts.tsx",
+  "V2DestructiveConfirm.tsx",
+];
+const shellSource = v2("V2Administration.tsx");
+const billingSource = v2("V2AdministrationBilling.tsx");
+const policySource = v2("V2AdministrationTrackingPolicy.tsx");
+const pipelineSource = v2("V2AdministrationPipelineLists.tsx");
+const integrationsSource = v2("V2AdministrationIntegrations.tsx");
+const workspaceSource = v2("V2AdministrationWorkspace.tsx");
+const pageSource = ADMIN_FILES.map(v2).join("\n");
 
 const analyticsSource = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), "../../client/src/v2/V2Analytics.tsx"),
@@ -109,18 +142,8 @@ const css = readFileSync(
   "utf8",
 ).replace(/\/\*[\s\S]*?\*\//g, "");
 
-function emptyAdmin(overrides: Partial<AdministrationInput> = {}): AdministrationInput {
-  return {
-    workspaceName: "Harbor Co",
-    ownerName: "Sam Lee",
-    workspaceRole: "Owner",
-    condition: null,
-    serviceAccounts: [],
-    webhookEndpoints: [],
-    billing: null,
-    revealedSecret: null,
-    ...overrides,
-  };
+function billingOf(billing: BillingInput | null, condition: "Read-only" | null = null) {
+  return composeBilling({ billing, condition });
 }
 
 describe("Administration routing (#193)", () => {
@@ -191,7 +214,7 @@ function values(options: string[]): string[] {
   });
 }
 
-describe("Pipeline & lists replaces the CRM field builder", () => {
+describe("Pipeline and lists replaces the CRM field builder", () => {
   it("shows exactly the four lists records read, on the real module and field slugs", () => {
     expect(PIPELINE_LISTS.map((list) => [list.id, list.title, list.builtIn.module.slug, list.builtIn.field.slug])).toEqual([
       ["opportunity-stages", "Opportunity stages", "projects", "status"],
@@ -286,12 +309,14 @@ describe("Pipeline & lists replaces the CRM field builder", () => {
     expect(added.options).toHaveLength(SEEDED_STATUS.length + 1);
     // A new option has no id yet; the server gives it one.
     expect(JSON.parse(added.options[5])).toEqual({ label: "Contract review", color: expect.any(String) });
-    expect(addPipelineOption(stages, "Follow-up")).toEqual({ ok: false, reason: "“Follow-up” is already in this list." });
+    // Two names that store one value: the refusal names the option already there (F106).
+    expect(addPipelineOption(stages, "Follow-up")).toEqual({ ok: false, reason: "Too close to “follow_up”, already in this list." });
+    expect(addPipelineOption(stages, "follow_up")).toEqual({ ok: false, reason: "“follow_up” is already in this list." });
     expect(addPipelineOption(stages, "Won")).toEqual({ ok: false, reason: "Won and Lost are fixed outcomes. Name an open stage." });
     expect(addPipelineOption(stages, "Won - Paid").ok).toBe(true);
     expect(addPipelineOption(stages, "Won - In progress").ok).toBe(false);
     expect(addPipelineOption(stages, "   ")).toEqual({ ok: false, reason: "Name the stage." });
-    expect(addPipelineOption(stages, "!!!")).toEqual({ ok: false, reason: "Use at least one letter or number." });
+    expect(addPipelineOption(stages, "!!!")).toEqual({ ok: false, reason: "Use at least one letter from a to z or a number." });
 
     const types = listOf(seededModules(), "project-type");
     const retainer = addPipelineOption(types, "Retainer");
@@ -356,6 +381,67 @@ describe("Pipeline & lists replaces the CRM field builder", () => {
     expect(JSON.stringify(calls)).not.toContain("isSystem");
   });
 
+  it("sends the version a saved list was read at, so a stale save is refused (F106)", async () => {
+    const calls: Array<[string, string, Record<string, unknown>]> = [];
+    const send = async (method: "POST" | "PATCH", path: string, body: Record<string, unknown>) => {
+      calls.push([method, path, body]);
+      return {};
+    };
+    const modules = seededModules();
+    (modules[0].fields![0] as { updatedAt: unknown }).updatedAt = "2026-11-20T09:15:30.123Z";
+    const stages = listOf(modules, "opportunity-stages");
+    expect(stages.updatedAt).toBe("2026-11-20T09:15:30.123Z");
+    const moved = movePipelineOption(stages, 1, 1);
+    if (!moved.ok) throw new Error("edit refused");
+    await savePipelineList(stages, moved, send);
+    expect(calls).toEqual([
+      ["PATCH", "/api/admin/fields/fld-status", { options: moved.options, expectedUpdatedAt: "2026-11-20T09:15:30.123Z" }],
+    ]);
+  });
+
+  it("writes nothing over a list someone saved while this tab showed the defaults", async () => {
+    const calls: Array<[string, string, Record<string, unknown>]> = [];
+    // The real options of the dev Workspace, saved by someone else meanwhile.
+    const theirs = ['{"id":"lead","label":"lead","color":"#ec4899"}', '{"id":"x1","label":"In Negociation","color":"#3b82f6"}'];
+    const send = async (method: "POST" | "PATCH", path: string, body: Record<string, unknown>) => {
+      calls.push([method, path, body]);
+      return method === "POST"
+        ? [{ id: "mod-new", slug: "projects", fields: [{ id: "fld-new", slug: "status", options: theirs, updatedAt: "2026-11-25T10:00:00.000Z" }] }]
+        : {};
+    };
+    const stages = listOf([], "opportunity-stages");
+    const renamed = renamePipelineOption(stages, 2, "Proposal out");
+    if (!renamed.ok) throw new Error("edit refused");
+    const refusal = await savePipelineList(stages, renamed, send).catch((error: unknown) => error);
+    expect(isPipelineStale(refusal)).toBe(true);
+    expect((refusal as Error).message).toBe(PIPELINE_STALE_MESSAGE);
+    expect(calls.map(([method]) => method)).toEqual(["POST"]);
+
+    // The defaults the tab showed come back: the edit goes through, at their version.
+    const defaults = stages.entries.map(serializeFieldOption);
+    const created = async (method: "POST" | "PATCH", path: string, body: Record<string, unknown>) => {
+      calls.push([method, path, body]);
+      return method === "POST"
+        ? [{ id: "mod-new", slug: "projects", fields: [{ id: "fld-new", slug: "status", options: defaults, updatedAt: "2026-11-25T10:00:00.000Z" }] }]
+        : {};
+    };
+    calls.length = 0;
+    await savePipelineList(stages, renamed, created);
+    expect(calls[1]).toEqual(["PATCH", "/api/admin/fields/fld-new", { options: renamed.options, expectedUpdatedAt: "2026-11-25T10:00:00.000Z" }]);
+  });
+
+  it("tells the server's 409 from any other refusal", () => {
+    expect(PIPELINE_STALE_MESSAGE).toBe(
+      "Someone changed this list since you opened it. It has been reloaded; make your change again.",
+    );
+    expect(isPipelineStale(Object.assign(new Error("anything"), { status: 409 }))).toBe(true);
+    expect(isPipelineStale(new Error(PIPELINE_STALE_MESSAGE))).toBe(true);
+    expect(isPipelineStale(Object.assign(new Error("Forbidden"), { status: 403 }))).toBe(false);
+    // The tab writes through a send that keeps the status, and shows the 409 beside the list.
+    expect(pipelineSource).toContain("throw Object.assign(new Error(message), { status: res.status });");
+    expect(pipelineSource).toMatch(/if \(isPipelineStale\(error\)\) \{\s*setPipelineStatus\(pipelineFeedback\(feedback\.id, feedback\.listId, null,/);
+  });
+
   it("writes a saved list with one PATCH, and refuses when the server made no list", async () => {
     const calls: Array<[string, string, Record<string, unknown>]> = [];
     const send = async (method: "POST" | "PATCH", path: string, body: Record<string, unknown>) => {
@@ -410,13 +496,12 @@ describe("Pipeline & lists replaces the CRM field builder", () => {
       "utf8",
     );
     expect(opportunitiesSource).toContain('queryKey: ["/api/modules/projects/fields"]');
-    expect(pageSource).toContain("for (const queryKey of PIPELINE_LIST_QUERY_KEYS) queryClient.invalidateQueries({ queryKey });");
+    expect(pipelineSource).toContain("for (const queryKey of PIPELINE_LIST_QUERY_KEYS) queryClient.invalidateQueries({ queryKey });");
   });
 
   it("drops the module builder, the field-type select, the Enable toggle and the old copy", () => {
-    const start = pageSource.indexOf('<TabsContent value="pipeline-lists"');
-    const panel = pageSource.slice(start, pageSource.indexOf("</TabsContent>", start));
-    expect(panel).toContain("{PIPELINE_LISTS_INTRO}");
+    expect(shellSource).toMatch(/<TabsContent value="pipeline-lists"[^>]*>\s*<V2AdministrationPipelineLists context=\{context\} \/>/);
+    expect(pipelineSource).toContain("{PIPELINE_LISTS_INTRO}");
     expect(pageSource).not.toContain("Add module");
     expect(pageSource).not.toContain("Add field");
     expect(pageSource).not.toContain("CRM_FIELD_TYPES");
@@ -426,13 +511,35 @@ describe("Pipeline & lists replaces the CRM field builder", () => {
     expect(pageSource).not.toContain('apiRequest("DELETE", `/api/admin/modules/');
     expect(pageSource).not.toContain('apiRequest("DELETE", `/api/admin/fields/');
     // shadcn controls, not bare ones.
-    expect(pageSource).toContain('import { Input } from "@/components/ui/input";');
-    const card = pageSource.slice(pageSource.indexOf("function PipelineListCard("));
+    expect(pipelineSource).toContain('import { Input } from "@/components/ui/input";');
+    const card = pipelineSource.slice(pipelineSource.indexOf("function PipelineListCard("));
     expect(card).not.toMatch(/<input\b/);
     expect(card).not.toMatch(/<textarea\b/);
     expect(card).toContain("<ColourPicker");
     expect(card).toContain("<PopoverContent");
-    expect(card).toContain("BUILT IN");
+    // Statuses as the app's pills, in sentence case (F110).
+    expect(card).toContain('<span className="df-status-word">Built in</span>');
+    expect(card).toContain('<span className="df-status-word">Fixed outcome</span>');
+    expect(card).toContain('<span className="df-status-word">Defaults</span>');
+    expect(card).not.toMatch(/BUILT IN|FIXED OUTCOME|DEFAULTS/);
+  });
+
+  it("moves an option with chevron buttons that keep their names", () => {
+    const card = pipelineSource.slice(pipelineSource.indexOf("function PipelineListCard("));
+    expect(card).toContain("<ChevronUp strokeWidth={1.6} aria-hidden />");
+    expect(card).toContain("<ChevronDown strokeWidth={1.6} aria-hidden />");
+    expect(card).toContain("aria-label={`Move ${row.label} up`}");
+    expect(card).toContain("aria-label={`Move ${row.label} down`}");
+    expect(card).not.toMatch(/>\s*(Up|Down)\s*</);
+  });
+
+  it("edits nothing until the lists are read: a skeleton, then a failure with Try again", () => {
+    expect(pipelineSource).toContain('read.state === "loading" ? (');
+    expect(pipelineSource).toContain("<SkeletonSection key={spec.id} title={spec.title}");
+    expect(pipelineSource).toContain('<V2LoadFailed title="The lists could not be loaded" onRetry={read.retry}');
+    // A failed read is never composed into the defaults.
+    expect(pipelineSource).toContain('read.state === "ready" && read.data ? (');
+    expect(pipelineSource).not.toContain("?? []).map");
   });
 
   it("styles the rows in tokens that hold in the dark palette", () => {
@@ -445,8 +552,8 @@ describe("Pipeline & lists replaces the CRM field builder", () => {
   });
 });
 
-describe("Pipeline & lists says when a change saves", () => {
-  const card = pageSource.slice(pageSource.indexOf("function PipelineListCard("), pageSource.indexOf("/** The colours an option may wear"));
+describe("Pipeline and lists says when a change saves", () => {
+  const card = pipelineSource.slice(pipelineSource.indexOf("function PipelineListCard("), pipelineSource.indexOf("/** The colours an option may wear"));
 
   it("tells a focused name which keys rename and cancel, without moving the list", () => {
     expect(PIPELINE_RENAME_HINT).toBe("Press Enter to rename · Esc to cancel");
@@ -492,37 +599,29 @@ describe("Pipeline & lists says when a change saves", () => {
 
   it("shows a refused save beside its row and puts the saved name back", () => {
     expect(pageSource).toContain('<p id={hintId} className="df-pipeline-status df-refusal" data-phase="failed" role="alert">');
-    expect(card).toContain('key={`${row.label}:${rowStatus?.phase === "failed" ? rowStatus.id : 0}`}');
+    expect(card).toContain('key={`${row.label}:${rowStatus?.phase === "failed" ? rowStatus.id : listStatus?.phase === "failed" ? `list-${listStatus.id}` : 0}`}');
     expect(card).toContain("<PipelineStatus status={listStatus} />");
     expect(card).not.toContain("{issue ?");
-    // A server refusal still reaches the page's refusal line too.
-    expect(pageSource).toMatch(/onError: \(error: Error, \{ feedback \}\) => \{\s*refuseWrite\(error\.message\);/);
+    // Any other server refusal still reaches the tab's refusal line.
+    expect(pipelineSource).toMatch(/onError: \(error: Error, \{ feedback \}\) => \{[\s\S]*?return;\s*\}\s*writes\.refuse\(error\.message\);/);
   });
 });
 
 describe("Administration from operator routes (#193)", () => {
   it("refuses Members by naming the Workspace Role, never permission denied", () => {
-    const page = composeAdministration(
-      emptyAdmin({
-        workspaceRole: "MEMBER",
-      }),
-    );
-
-    expect(page.kind).toBe("refusal");
-    if (page.kind !== "refusal") return;
-    expect(page.refusal).toBe("Administration is open to the Owner and Administrators. Your Workspace Role is Member. Sam Lee (Owner) can change it.");
-    expect(page.refusal.toLowerCase()).not.toContain("permission denied");
+    const refusal = administrationRefusal({ workspaceRole: "MEMBER", ownerName: "Sam Lee" });
+    expect(refusal).toBe("Administration is open to the Owner and Administrators. Your Workspace Role is Member. Sam Lee (Owner) can change it.");
+    expect(refusal.toLowerCase()).not.toContain("permission denied");
     // No Capability is named, because none exists to grant (#238).
-    expect(page.refusal).not.toContain("Capability");
+    expect(refusal).not.toContain("Capability");
+    // Drawn as Analytics draws its refusal, not a bare line (F110).
+    expect(shellSource).toMatch(/<V2EmptyState\s+icon="access"\s+title="Administration is not open to you"\s+copy=\{administrationRefusal\(\{ workspaceRole, ownerName \}\)\}/);
+    expect(shellSource).not.toContain('className="df-refusal" data-testid="v2-administration-refusal"');
   });
 
   it("never sends the Owner to ask the Owner (#238)", () => {
-    const page = composeAdministration(
-      emptyAdmin({ workspaceRole: "Owner", ownerName: "User Test" }),
-    );
-    // The Owner is not refused at all — that was the whole of D5.
-    expect(page.kind).toBe("ready");
-
+    // The Owner is not refused at all: that was the whole of D5.
+    expect(shellSource).toContain("if (!canManage) {");
     // And where an Owner is refused for some other reason, the copy does not
     // offer them a grant only they could make.
     const refused = analyticsRefusal({ workspaceRole: "Owner", ownerName: "User Test", refused: true });
@@ -532,215 +631,168 @@ describe("Administration from operator routes (#193)", () => {
   });
 
   it("empty operator lists use empty geometry and never show sample names", () => {
-    const page = composeAdministration(emptyAdmin());
-    const blob = JSON.stringify(page);
-
-    expect(page.kind).toBe("ready");
-    if (page.kind !== "ready") return;
-    expect(page.serviceAccounts.empty).toBe(true);
-    expect(page.serviceAccounts.rows).toEqual([]);
-    expect(page.serviceAccounts.emptyCopy.toLowerCase()).toContain("service account");
-    expect(page.webhookEndpoints.empty).toBe(true);
-    expect(page.webhookEndpoints.rows).toEqual([]);
-    expect(page.webhookEndpoints.emptyCopy.toLowerCase()).toContain("webhook");
-    expect(page.secretOnce).toBeNull();
-    expect(page.pagePrimary).toBe("case-ink");
+    const accounts = composeServiceAccounts({ serviceAccounts: [], condition: null, showRevoked: false });
+    const endpoints = composeWebhookEndpoints({ webhookEndpoints: [], condition: null });
+    const blob = JSON.stringify([accounts, endpoints]);
+    expect(accounts.empty).toBe(true);
+    expect(accounts.rows).toEqual([]);
+    expect(accounts.emptyCopy.toLowerCase()).toContain("service account");
+    expect(endpoints.empty).toBe(true);
+    expect(endpoints.emptyCopy.toLowerCase()).toContain("webhook");
+    // No longer promises a delivery that does not exist on main (F105).
+    expect(endpoints.emptyCopy).not.toContain("start receiving");
+    expect(secretOnce(null)).toBeNull();
     for (const name of SAMPLE_NAMES) {
       expect(blob).not.toContain(name);
     }
   });
 
-  it("lists Service Accounts and Webhook Endpoints without plaintext secrets", () => {
-    const page = composeAdministration(
-      emptyAdmin({
-        serviceAccounts: [
-          {
-            id: "sa-1",
-            name: "Invoices",
-            capabilityIds: ["clients_read", "webhook_endpoints_manage"],
-            revokedAt: null,
-          },
-          {
-            id: "sa-2",
-            name: "Retired",
-            capabilityIds: [],
-            revokedAt: "2026-09-01T00:00:00.000Z",
-          },
-        ],
-        webhookEndpoints: [
-          {
-            id: "wh-1",
-            url: "https://hooks.example.test/crm",
-            eventTypes: ["client.created"],
-            disabledAt: null,
-          },
-          {
-            id: "wh-2",
-            url: "https://hooks.example.test/idle",
-            eventTypes: ["time_entry.stopped"],
-            disabledAt: "2026-09-02T00:00:00.000Z",
-          },
-        ],
-      }),
-    );
-
-    expect(page.kind).toBe("ready");
-    if (page.kind !== "ready") return;
-    expect(page.serviceAccounts.rows).toEqual([
+  it("lists Service Accounts without plaintext keys, in sentence case, revoked ones behind a box", () => {
+    const serviceAccounts = [
+      { id: "sa-1", name: "Invoices", capabilityIds: ["clients_read", "webhook_endpoints_manage"], revokedAt: null },
+      { id: "sa-2", name: "Retired", capabilityIds: [], revokedAt: "2026-09-01T00:00:00.000Z" },
+    ];
+    const hidden = composeServiceAccounts({ serviceAccounts, condition: null, showRevoked: false });
+    expect(hidden.rows.map((row) => row.id)).toEqual(["sa-1"]);
+    expect(hidden.revokedCount).toBe(1);
+    const shown = composeServiceAccounts({ serviceAccounts, condition: null, showRevoked: true });
+    expect(shown.rows).toEqual([
       {
         id: "sa-1",
         name: "Invoices",
+        capabilityIds: ["clients_read", "webhook_endpoints_manage"],
         capabilities: "Read Clients · Manage Webhook Endpoints",
-        status: "ACTIVE",
+        status: "Active",
         rotate: true,
         revoke: true,
+        edit: true,
       },
       {
         id: "sa-2",
         name: "Retired",
+        capabilityIds: [],
         capabilities: "-",
-        status: "REVOKED",
+        status: "Revoked",
         rotate: false,
         revoke: false,
+        edit: false,
       },
     ]);
-    expect(page.webhookEndpoints.rows).toEqual([
-      {
-        id: "wh-1",
-        url: "https://hooks.example.test/crm",
-        eventTypes: "client.created",
-        status: "ACTIVE",
-        rotate: true,
-        disable: true,
-        enable: false,
-      },
-      {
-        id: "wh-2",
-        url: "https://hooks.example.test/idle",
-        eventTypes: "time_entry.stopped",
-        status: "DISABLED",
-        rotate: true,
-        disable: false,
-        enable: true,
-      },
+    // Only revoked ones: the empty state stays behind the box.
+    expect(composeServiceAccounts({ serviceAccounts: [serviceAccounts[1]], condition: null, showRevoked: false }).empty).toBe(true);
+    expect(integrationsSource).toContain('label="Show revoked"');
+    expect(integrationsSource).toContain("<FilterCheck");
+
+    const endpoints = composeWebhookEndpoints({
+      webhookEndpoints: [
+        { id: "wh-1", url: "https://hooks.example.test/crm", eventTypes: ["client.created"], disabledAt: null },
+        { id: "wh-2", url: "https://hooks.example.test/idle", eventTypes: ["time_entry.stopped"], disabledAt: "2026-09-02T00:00:00.000Z" },
+      ],
+      condition: null,
+    });
+    expect(endpoints.rows.map((row) => [row.id, row.status, row.disable, row.enable])).toEqual([
+      ["wh-1", "Active", true, false],
+      ["wh-2", "Disabled", false, true],
     ]);
-    expect(JSON.stringify(page.serviceAccounts)).not.toMatch(/plaintext/i);
-    expect(JSON.stringify(page.webhookEndpoints)).not.toMatch(/plaintext/i);
-    expect(JSON.stringify(page.serviceAccounts)).not.toContain("dfsa_");
-    expect(JSON.stringify(page.webhookEndpoints)).not.toContain("dfwh_");
+    // A key the server sent back by mistake never reaches a row.
+    const leaked = composeServiceAccounts({
+      serviceAccounts: serviceAccounts.map((row) => ({ ...row, plaintextKey: "dfsa_should_never_list" })),
+      condition: null,
+      showRevoked: true,
+    });
+    const leakedEndpoints = composeWebhookEndpoints({
+      webhookEndpoints: [{ id: "wh-1", url: "https://hooks.example.test/crm", eventTypes: [], disabledAt: null, plaintextSecret: "dfwh_should_never_list" }],
+      condition: null,
+    });
+    expect(JSON.stringify([shown, leaked])).not.toMatch(/plaintext|dfsa_/i);
+    expect(JSON.stringify([endpoints, leakedEndpoints])).not.toMatch(/plaintext|dfwh_/i);
   });
 
-  it("shows a newly created or rotated secret once, then gone from the list", () => {
-    const listed = composeAdministration(
-      emptyAdmin({
-        serviceAccounts: [
-          {
-            id: "sa-1",
-            name: "Invoices",
-            capabilityIds: [],
-            revokedAt: null,
-            plaintextKey: "dfsa_should_never_list",
-          },
-        ],
-        webhookEndpoints: [
-          {
-            id: "wh-1",
-            url: "https://hooks.example.test/crm",
-            eventTypes: ["client.created"],
-            disabledAt: null,
-            plaintextSecret: "dfwh_should_never_list",
-          },
-        ],
-      }),
-    );
-    expect(listed.kind).toBe("ready");
-    if (listed.kind !== "ready") return;
-    expect(listed.secretOnce).toBeNull();
-    expect(JSON.stringify(listed.serviceAccounts.rows)).not.toContain("dfsa_");
-    expect(JSON.stringify(listed.webhookEndpoints.rows)).not.toContain("dfwh_");
+  it("asks for a name of 100 characters at most and at least one Capability (F109)", () => {
+    expect(serviceAccountIssue("  ", ["clients_read"])).toBe("Name the Service Account.");
+    expect(serviceAccountIssue("x".repeat(101), ["clients_read"])).toBe("Keep the name to 100 characters or fewer.");
+    expect(serviceAccountIssue("Invoices", [])).toBe("Choose at least one Capability, or the Service Account can do nothing.");
+    expect(serviceAccountIssue(" Invoices ", ["clients_read"])).toBeNull();
+    expect(serviceAccountPath("sa-1")).toBe("/api/service-accounts/sa-1");
+    expect(integrationsSource).toContain('apiRequest("PATCH", serviceAccountPath(id), { name: editDraft.name.trim(), capabilityIds: editDraft.capabilityIds })');
+    expect(integrationsSource).toContain('testId="v2-administration-edit-service-account"');
+  });
 
-    const shown = composeAdministration(
-      emptyAdmin({
-        serviceAccounts: [
-          {
-            id: "sa-1",
-            name: "Invoices",
-            capabilityIds: [],
-            revokedAt: null,
-          },
-        ],
-        revealedSecret: {
-          kind: "service-account",
-          id: "sa-1",
-          label: "Invoices",
-          plaintext: "dfsa_shown_once",
-        },
-      }),
-    );
-    expect(shown.kind).toBe("ready");
-    if (shown.kind !== "ready") return;
-    expect(shown.secretOnce).toEqual({
+  it("shows a newly created or rotated key once, in a dialog that closes only by its own button", () => {
+    expect(secretOnce({ kind: "service-account", id: "sa-1", label: "Invoices", plaintext: "dfsa_shown_once" })).toEqual({
       kind: "service-account",
       id: "sa-1",
       label: "Invoices",
       plaintext: "dfsa_shown_once",
       confirmation: "Copy this now. It will not be shown again.",
     });
-    expect(JSON.stringify(shown.serviceAccounts.rows)).not.toContain("dfsa_shown_once");
+    const dialog = integrationsSource.slice(integrationsSource.indexOf("function KeyDialog("));
+    expect(dialog).toContain("I copied it");
+    expect(dialog).toContain("copyToClipboard(shown.plaintext");
+    // Esc, a click outside and the corner cross all ask first; so does leaving the page.
+    expect(dialog).toMatch(/onEscapeKeyDown=\{\(event\) => \{\s*event\.preventDefault\(\);\s*setAsking\(true\);/);
+    expect(dialog).toMatch(/onPointerDownOutside=\{\(event\) => \{\s*event\.preventDefault\(\);\s*setAsking\(true\);/);
+    // Focus leaving is not a way out: it neither closes nor asks.
+    expect(dialog).toContain("onInteractOutside={(event) => event.preventDefault()}");
+    expect(dialog).toMatch(/onOpenChange=\{\(open\) => \{\s*if \(!open\) setAsking\(true\);/);
+    expect(dialog).toContain('window.addEventListener("beforeunload", warn);');
+    expect(dialog).toContain("This key is not shown again. Close without copying it?");
+  });
+
+  it("asks before a rotation ends the key in use, and is pending while it runs", () => {
+    const actions = integrationsSource.slice(integrationsSource.indexOf("function AccountActions("));
+    expect(actions).toMatch(/<DestructiveConfirm\s+icon=\{RotateCw\}\s+label=\{rotating \? "Rotating…" : "Rotate"\}/);
+    expect(actions).toContain("The current key stops working at once.");
+    expect(actions).toContain("pending={rotating}");
+    expect(integrationsSource).not.toMatch(/onClick=\{\(\) => onRotate/);
+  });
+
+  it("keeps the Webhook Endpoints card out of the page until delivery exists (F105)", () => {
+    expect(integrationsSource).toContain("const WEBHOOKS_AVAILABLE = false;");
+    expect(integrationsSource).toContain("{WEBHOOKS_AVAILABLE ? <WebhookEndpointsCard");
+    // Not even read while it is hidden.
+    expect(integrationsSource).toMatch(/useAdministrationRead<WebhookEndpointInput\[\]>\(webhookEndpointsPath\(\), "Webhook Endpoints", "webhooks", \{\s*enabled: WEBHOOKS_AVAILABLE,/);
   });
 
   it("reads billing projection and offers Plan or seat decisions, never a card form", () => {
-    const trial = composeAdministration(
-      emptyAdmin({
-        billing: {
-          planKey: "trial",
-          billingState: "Trialing",
-          purchasedSeatCapacity: 1,
-          consumedSeatCount: 1,
-          trialEndsAt: "2026-09-20T00:00:00.000Z",
-          periodEndsAt: null,
-          cancelAtPeriodEnd: false,
-          stripeCustomerId: null,
-        },
-      }),
-    );
-    expect(trial.kind).toBe("ready");
-    if (trial.kind !== "ready") return;
-    expect(trial.billing.plan).toBe("Trial");
-    expect(trial.billing.condition).toBe("Trial");
-    expect(trial.billing.seats).toBe("1 of 1 Billable Seats consumed.");
-    expect(trial.billing.summary?.writes).toEqual({ allowed: true, label: "Writes allowed" });
-    expect(trial.billing.actions.map((action) => action.id)).toEqual(["checkout"]);
-    expect(trial.billing.checkout).toBe("redirect");
+    const trial = billingOf({
+      planKey: "trial",
+      billingState: "Trialing",
+      purchasedSeatCapacity: 3,
+      consumedSeatCount: 1,
+      trialEndsAt: "2026-09-20T00:00:00.000Z",
+      periodEndsAt: null,
+      cancelAtPeriodEnd: false,
+      stripeCustomerId: null,
+    });
+    expect(trial.plan).toBe("Trial");
+    expect(trial.condition).toBe("Trial");
+    expect(trial.seats).toBe("1 of 3 Billable Seats consumed.");
+    expect(trial.summary?.writes).toEqual({ allowed: true, label: "You can edit" });
+    expect(trial.actions.map((action) => action.id)).toEqual(["checkout"]);
+    // Checkout starts from the Members, not the Trial's three seats (F103).
+    expect(trial.seatFloor).toBe(1);
+    expect(trial.checkout).toBe("redirect");
     expect(pageSource).not.toMatch(/card number|cvc|cardholder/i);
     expect(pageSource).not.toMatch(/password|clerk/i);
 
-    const active = composeAdministration(
-      emptyAdmin({
-        billing: {
-          planKey: "pro",
-          billingState: "Active",
-          purchasedSeatCapacity: 8,
-          consumedSeatCount: 3,
-          trialEndsAt: null,
-          periodEndsAt: "2026-10-01T00:00:00.000Z",
-          cancelAtPeriodEnd: false,
-          stripeCustomerId: "cus_123",
-        },
-      }),
-    );
-    expect(active.kind).toBe("ready");
-    if (active.kind !== "ready") return;
-    expect(active.billing.plan).toBe("Pro");
-    expect(active.billing.condition).toBe("Active");
-    expect(active.billing.seats).toBe("3 of 8 Billable Seats consumed.");
+    const active = billingOf({
+      planKey: "pro",
+      billingState: "Active",
+      purchasedSeatCapacity: 8,
+      consumedSeatCount: 3,
+      trialEndsAt: null,
+      periodEndsAt: "2026-10-01T00:00:00.000Z",
+      cancelAtPeriodEnd: false,
+      stripeCustomerId: "cus_123",
+      canCancel: true,
+      canKeep: false,
+    });
+    expect(active.plan).toBe("Pro");
+    expect(active.condition).toBe("Active");
+    expect(active.seats).toBe("3 of 8 Billable Seats consumed.");
     // #299: a live Subscription moves between Plans from the card.
-    expect(active.billing.actions.map((action) => action.id)).toEqual([
-      "plan",
-      "seats",
-      "payment-method",
-      "cancel",
-    ]);
+    expect(active.actions.map((action) => action.id)).toEqual(["plan", "seats", "payment-method", "cancel"]);
 
     expect(hostedBillingSession({ url: "https://checkout.stripe.com/c/cs_test" })).toEqual({
       kind: "redirect",
@@ -749,53 +801,47 @@ describe("Administration from operator routes (#193)", () => {
   });
 
   it("keeps payment-method recovery in Read-only and names the Workspace condition on writes", () => {
-    const page = composeAdministration(
-      emptyAdmin({
-        condition: "Read-only",
-        billing: {
-          planKey: "pro",
-          billingState: "ReadOnly",
-          purchasedSeatCapacity: 8,
-          consumedSeatCount: 3,
-          trialEndsAt: null,
-          periodEndsAt: null,
-          cancelAtPeriodEnd: true,
-          stripeCustomerId: "cus_123",
-        },
-      }),
+    const page = billingOf(
+      {
+        planKey: "pro",
+        billingState: "ReadOnly",
+        purchasedSeatCapacity: 8,
+        consumedSeatCount: 3,
+        trialEndsAt: null,
+        periodEndsAt: null,
+        cancelAtPeriodEnd: true,
+        stripeCustomerId: "cus_123",
+      },
+      "Read-only",
     );
-    expect(page.kind).toBe("ready");
-    if (page.kind !== "ready") return;
-    expect(page.billing.condition).toBe("Read-only");
-    expect(page.billing.summary?.writes).toEqual({ allowed: false, label: "Writes blocked" });
-    expect(page.billing.summary?.lead).toContain("Writes are blocked");
+    expect(page.condition).toBe("Read-only");
+    expect(page.summary?.writes).toEqual({ allowed: false, label: "Read-only" });
+    expect(page.summary?.lead).toContain("Writes are blocked");
     // #299: a lapsed Subscription comes back through Checkout.
-    expect(page.billing.actions.map((action) => action.id)).toEqual(["checkout", "payment-method"]);
-    expect(page.serviceAccounts.createAllowed).toBe(false);
-    expect(page.webhookEndpoints.createAllowed).toBe(false);
-    expect(page.writeRefusal).toBe(
+    expect(page.actions.map((action) => action.id)).toEqual(["checkout", "payment-method"]);
+    expect(composeServiceAccounts({ serviceAccounts: [], condition: "Read-only", showRevoked: false }).createAllowed).toBe(false);
+    expect(administrationReadOnlyNote("Harbor Co", "Read-only")).toBe(
       "Harbor Co is read-only. Viewing, export, and recovery stay available.",
     );
+    expect(administrationReadOnlyNote("Harbor Co", null)).toBeNull();
+    expect(shellSource).toContain('{readOnlyNote ? <p className="df-refusal">{readOnlyNote}</p> : null}');
+    expect(composeWebhookEndpoints({ webhookEndpoints: [], condition: "Read-only" }).createAllowed).toBe(false);
 
-    const expiredTrial = composeAdministration(
-      emptyAdmin({
-        condition: "Read-only",
-        billing: {
-          planKey: "trial",
-          billingState: "ReadOnly",
-          purchasedSeatCapacity: 1,
-          consumedSeatCount: 1,
-          trialEndsAt: null,
-          periodEndsAt: null,
-          cancelAtPeriodEnd: false,
-          stripeCustomerId: null,
-        },
-      }),
+    const expiredTrial = billingOf(
+      {
+        planKey: "trial",
+        billingState: "ReadOnly",
+        purchasedSeatCapacity: 1,
+        consumedSeatCount: 1,
+        trialEndsAt: null,
+        periodEndsAt: null,
+        cancelAtPeriodEnd: false,
+        stripeCustomerId: null,
+      },
+      "Read-only",
     );
-    expect(expiredTrial.kind).toBe("ready");
-    if (expiredTrial.kind !== "ready") return;
-    expect(expiredTrial.billing.actions.map((action) => action.id)).toEqual(["checkout"]);
-    expect(expiredTrial.billing.checkout).toBe("redirect");
+    expect(expiredTrial.actions.map((action) => action.id)).toEqual(["checkout"]);
+    expect(expiredTrial.checkout).toBe("redirect");
   });
 
   it("asks the BFF for operator routes and does not wire a card form", () => {
@@ -811,6 +857,8 @@ describe("Administration from operator routes (#193)", () => {
     expect(billingSeatsPath()).toBe("/api/billing/seats");
     expect(billingPaymentMethodPath()).toBe("/api/billing/payment-method");
     expect(billingCancelPath()).toBe("/api/billing/cancel-at-period-end");
+    expect(billingKeepPath()).toBe("/api/billing/keep-subscription");
+    expect(billingPricesPath()).toBe("/api/billing/prices");
 
     expect(
       administrationWriteRefusal({
@@ -878,11 +926,14 @@ function editorInput(overrides: Partial<TrackingPolicyInput> = {}): TrackingPoli
     ownerName: "Sam Lee",
     condition: null,
     saved: policyDraft(),
-    draft: policyDraft(),
-    savedTimezones: [],
-    draftTimezones: [],
+    edits: {},
     ...overrides,
   };
+}
+
+/** What the save would refuse for these edits over the defaults. */
+function issueOf(edits: PolicyEdits, saved: ScreenshotPolicy = policyDraft()): string | null {
+  return policyPatch(saved, edits).issue;
 }
 
 describe("Administration analytics (#212)", () => {
@@ -916,6 +967,17 @@ describe("Administration analytics (#212)", () => {
     expect(analyticsSource).toContain("<V2LoadFailed");
     expect(analyticsSource).not.toContain("df-refusal");
     expect(analyticsSource).toContain("onRetry={read.retry}");
+    // F107: so does every Administration card.
+    for (const [name, source] of [
+      ["Billing", billingSource],
+      ["Tracking Policy", policySource],
+      ["Pipeline and lists", pipelineSource],
+      ["Integrations", integrationsSource],
+      ["Workspace", workspaceSource],
+    ]) {
+      expect(source, name).toContain("<V2LoadFailed");
+      expect(source, name).toContain("useAdministrationRead<");
+    }
   });
 
   it("refuses to edit an unread Tracking Policy so a save cannot overwrite it with defaults", () => {
@@ -949,26 +1011,24 @@ describe("Low-activity threshold and Workspace time zone (#341)", () => {
   it("keeps the threshold in the normalised policy, defaulting to 10, and refuses what the server refuses", () => {
     expect(normalizeScreenshotPolicy(null).lowActivityThresholdPercent).toBe(10);
     expect(normalizeScreenshotPolicy({ lowActivityThresholdPercent: 25 }).lowActivityThresholdPercent).toBe(25);
-    expect(trackingPolicyIssue(policyDraft({ lowActivityThresholdPercent: 0 }))).toBeNull();
-    expect(trackingPolicyIssue(policyDraft({ lowActivityThresholdPercent: 100 }))).toBeNull();
+    expect(issueOf({ lowActivityThresholdPercent: "0" })).toBeNull();
+    expect(issueOf({ lowActivityThresholdPercent: "100" })).toBeNull();
     const refusal = "Low-activity threshold must be a whole number from 0 to 100.";
-    expect(trackingPolicyIssue(policyDraft({ lowActivityThresholdPercent: 101 }))).toBe(refusal);
-    expect(trackingPolicyIssue(policyDraft({ lowActivityThresholdPercent: -1 }))).toBe(refusal);
-    expect(trackingPolicyIssue(policyDraft({ lowActivityThresholdPercent: 7.5 }))).toBe(refusal);
+    expect(issueOf({ lowActivityThresholdPercent: "101" })).toBe(refusal);
+    expect(issueOf({ lowActivityThresholdPercent: "-1" })).toBe(refusal);
+    expect(issueOf({ lowActivityThresholdPercent: "7.5" })).toBe(refusal);
     expect(trackingPolicyHints(policyDraft({ lowActivityThresholdPercent: 15 })).lowActivity).toContain("below 15 %");
   });
 
   it("saves a changed threshold only", () => {
-    const changed = composeTrackingPolicyEditor(
-      editorInput({ draft: policyDraft({ lowActivityThresholdPercent: 20 }) }),
-    );
-    expect(changed).toMatchObject({ kind: "ready", dirty: true, canSave: true });
+    const changed = composeTrackingPolicyEditor(editorInput({ edits: { lowActivityThresholdPercent: "20" } }));
+    expect(changed).toMatchObject({ kind: "ready", dirty: true, canSave: true, patch: { lowActivityThresholdPercent: 20 } });
   });
 
   it("composes the Workspace time zone card", () => {
     const saved = composeWorkspaceTimeZone({ saved: "Europe/Paris", draft: "Europe/Paris", editable: true });
     expect(saved).toMatchObject({ current: "Europe/Paris", dirty: false, canSave: false, issue: null });
-    expect(saved.copy).toContain("18:00");
+    expect(saved.copy).toBe("Workday Daily Update reminders go out at 18:00 in this time zone.");
 
     const changed = composeWorkspaceTimeZone({ saved: "Europe/Paris", draft: "Asia/Tokyo", editable: true });
     expect(changed).toMatchObject({ dirty: true, canSave: true });
@@ -976,45 +1036,89 @@ describe("Low-activity threshold and Workspace time zone (#341)", () => {
 
     const invalid = composeWorkspaceTimeZone({ saved: "Europe/Paris", draft: "Mars/Olympus", editable: true });
     expect(invalid.canSave).toBe(false);
-    expect(invalid.issue).toContain("not a valid IANA timezone");
+    expect(invalid.issue).toBe('"Mars/Olympus" is not a time zone DocuFlow knows.');
 
     expect(composeWorkspaceTimeZone({ saved: null, draft: "", editable: true }).current).toBe("Not set");
   });
+
+  it("chooses the zone from the IANA list alone, the saved one included even when the runtime lists it otherwise", () => {
+    expect(workspaceTimeZoneChoices(null)).toContain("Africa/Porto-Novo");
+    expect(workspaceTimeZoneChoices("Etc/Unknown-Saved")[0]).toBe("Etc/Unknown-Saved");
+    expect(workspaceTimeZoneChoices("Europe/Paris").filter((zone) => zone === "Europe/Paris")).toHaveLength(1);
+    // The combobox is the only control: no free-text field, no button beside it.
+    const card = workspaceSource.slice(workspaceSource.indexOf("function WorkspaceTimeZoneCard("));
+    expect(card).toContain("<TimeZoneCombobox");
+    expect(card).toContain('<span id="df-workspace-zone-label">Time zone</span>');
+    expect(card).not.toContain('placeholder="Europe/Paris"');
+    expect(pageSource).not.toContain("Choose from list");
+    expect(pageSource).not.toContain("IANA timezone");
+  });
 });
 
-describe("Tracking Policy editing (#212)", () => {
-  it("mirrors the server bounds before a save is attempted", () => {
-    expect(trackingPolicyIssue(policyDraft())).toBeNull();
-    expect(trackingPolicyIssue(policyDraft({ captureIntervalMinMin: 1 }))).toBe(
-      "Minimum capture interval must be at least 3 minutes.",
+describe("Tracking Policy editing (#212, F108)", () => {
+  it("mirrors the server bounds before a save is attempted, naming the field", () => {
+    expect(issueOf({})).toBeNull();
+    expect(issueOf({ captureIntervalMinMin: "1" })).toBe("Minimum interval must be a whole number from 3 to 15.");
+    expect(issueOf({ captureIntervalMaxMin: "20" })).toBe("Maximum interval must be a whole number from 3 to 15.");
+    expect(issueOf({ captureIntervalMinMin: "10", captureIntervalMaxMin: "5" })).toBe(
+      "The minimum interval cannot exceed the maximum.",
     );
-    expect(
-      trackingPolicyIssue(policyDraft({ captureIntervalMinMin: 3, captureIntervalMaxMin: 20 })),
-    ).toBe("Maximum capture interval cannot exceed 15 minutes.");
-    expect(
-      trackingPolicyIssue(policyDraft({ captureIntervalMinMin: 10, captureIntervalMaxMin: 5 })),
-    ).toBe("Minimum capture interval cannot exceed the maximum.");
-    expect(trackingPolicyIssue(policyDraft({ idleTimeoutMinutes: 90 }))).toBe(
-      "Idle timeout must be between 1 and 60 minutes.",
-    );
-    expect(trackingPolicyIssue(policyDraft({ idleCountdownSeconds: 5 }))).toBe(
-      "Idle countdown must be between 15 and 120 seconds.",
-    );
+    expect(issueOf({ idleTimeoutMinutes: "90" })).toBe("Idle timeout must be a whole number from 1 to 60.");
+    expect(issueOf({ idleCountdownSeconds: "5" })).toBe("Prompt countdown must be a whole number from 15 to 120.");
+    // An empty field stays empty, and the issue says which one (F108).
+    expect(issueOf({ idleTimeoutMinutes: "" })).toBe("Enter the idle timeout.");
+    expect(composeTrackingPolicyEditor(editorInput({ edits: { idleTimeoutMinutes: "" } }))).toMatchObject({
+      kind: "ready",
+      form: { idleTimeoutMinutes: "" },
+      canSave: false,
+    });
+  });
+
+  it("sends only what changed, so a stored value out of bounds blocks nothing else", () => {
+    // A policy read back with a value the bounds refuse today (seen on the dev Workspace).
+    const stored = policyDraft({ captureIntervalMaxMin: 0, idleTimeoutMinutes: 10 });
+    expect(policyPatch(stored, { idleTimeoutMinutes: "12" })).toEqual({ patch: { idleTimeoutMinutes: 12 }, issue: null });
+    // The pair is checked on the merged policy as soon as one of it is sent.
+    expect(policyPatch(stored, { captureIntervalMinMin: "4" }).issue).toBe("The minimum interval cannot exceed the maximum.");
+    expect(policyPatch(stored, { captureIntervalMinMin: "4", captureIntervalMaxMin: "9" })).toEqual({
+      patch: { captureIntervalMinMin: 4, captureIntervalMaxMin: 9 },
+      issue: null,
+    });
+    // Typed back to what was read, an edit is no edit.
+    expect(pruneEdits(stored, { idleTimeoutMinutes: "10", screenshotsEnabled: stored.screenshotsEnabled })).toEqual({});
+    expect(policySource).toContain("save.mutate(policy.patch)");
+    expect(policySource).toContain('apiRequest("PATCH", workspaceSettingsPath(), { screenshotPolicy: patch })');
+  });
+
+  it("holds each number as the text typed, so clearing a field never types 0", () => {
+    const ready = composeTrackingPolicyEditor(editorInput({ edits: { captureIntervalMinMin: "" } }));
+    expect(ready.kind === "ready" && ready.form.captureIntervalMinMin).toBe("");
+    const typing = composeTrackingPolicyEditor(editorInput({ edits: { captureIntervalMinMin: "4" } }));
+    expect(typing.kind === "ready" && typing.form.captureIntervalMinMin).toBe("4");
+    expect(policySource).toContain('inputMode="numeric"');
+    expect(policySource).toContain("onChange={(event) => edit({ [key]: event.target.value })}");
+    expect(policySource).not.toContain("policyNumber(");
+  });
+
+  it("keeps unsaved edits through another card's save, a refetch and a tab switch, and warns on leaving", () => {
+    // The page holds the drafts; a tab's panel unmounts when another opens.
+    expect(shellSource).toContain("const [policyEdits, setPolicyEdits] = useState<PolicyEdits>({});");
+    expect(shellSource).toContain("edits={policyEdits} onEdits={setPolicyEdits}");
+    expect(shellSource).toContain('window.addEventListener("beforeunload", warn);');
+    // A switch of Workspace drops them.
+    expect(shellSource).toMatch(/editedFor\.current = activeWorkspaceId;\s*setPolicyEdits\(\{\}\);\s*setZoneDraft\(null\);\s*setNameDraft\(null\);/);
+    // No read resets the draft any more.
+    expect(pageSource).not.toMatch(/useEffect\(\(\) => \{\s*if \(!workspaceSettings\) return;\s*setPolicyDraft/);
+    expect(policySource).not.toContain("setPolicyDraft");
   });
 
   it("refuses active hours that are not HH:mm and accepts an overnight window (#293)", () => {
-    expect(
-      trackingPolicyIssue(policyDraft({ activeHoursStart: "22:00", activeHoursEnd: "06:00" })),
-    ).toBeNull();
+    expect(issueOf({ activeHoursStart: "22:00", activeHoursEnd: "06:00" })).toBeNull();
     for (const bad of ["", "8:00", "24:00", "07:60"]) {
-      expect(trackingPolicyIssue(policyDraft({ activeHoursEnd: bad }))).toBe(
-        "Active hours must be 24-hour times such as 08:00.",
-      );
+      expect(issueOf({ activeHoursEnd: bad })).toBe("Active hours must be 24-hour times such as 08:00.");
     }
     // The form refuses before the PATCH, so a cleared time input never reaches the server.
-    const cleared = composeTrackingPolicyEditor(
-      editorInput({ draft: policyDraft({ activeHoursEnabled: true, activeHoursStart: "" }) }),
-    );
+    const cleared = composeTrackingPolicyEditor(editorInput({ edits: { activeHoursEnabled: true, activeHoursStart: "" } }));
     expect(cleared.kind).toBe("ready");
     if (cleared.kind !== "ready") return;
     expect(cleared.canSave).toBe(false);
@@ -1026,18 +1130,15 @@ describe("Tracking Policy editing (#212)", () => {
     expect(day.idleTimeout).toBe(
       "After 10 min without keyboard or mouse input, the Timer pauses and the idle time is not counted.",
     );
-    expect(day.prompt).toBe(
-      "The Member is asked first and has 60 s to answer before the Timer pauses.",
-    );
-    expect(day.countdown).toBe(
-      "Shown on the idle prompt. When it reaches zero with no answer, the Timer pauses.",
-    );
+    expect(day.prompt).toBe("The Member is asked first and has 60 s to answer before the Timer pauses.");
+    expect(day.countdown).toBe("Shown on the idle prompt. When it reaches zero with no answer, the Timer pauses.");
 
     const night = trackingPolicyHints(
       policyDraft({ activeHoursStart: "22:00", activeHoursEnd: "06:00", idlePromptEnabled: false }),
     );
+    // No en dash in what the app shows (F110).
     expect(night.activeHours).toBe(
-      "Uses each Member's computer clock, not a Workspace time zone. 22:00–06:00 runs overnight, into the next morning.",
+      "Uses each Member's computer clock, not a Workspace time zone. From 22:00 to 06:00 runs overnight, into the next morning.",
     );
     expect(night.prompt).toBe("The Timer pauses at the timeout without asking. The Member resumes it.");
 
@@ -1047,14 +1148,11 @@ describe("Tracking Policy editing (#212)", () => {
     expect(page.hints).toEqual(day);
 
     // The idle timeout stays editable with the prompt off; only the countdown hides.
-    const promptBlock = pageSource.slice(
-      pageSource.indexOf('id="df-policy-idle"'),
-      pageSource.indexOf("Save Tracking Policy"),
-    );
+    const promptBlock = policySource.slice(policySource.indexOf('id="df-policy-idle"'), policySource.indexOf("Save Tracking Policy"));
     expect(promptBlock).toContain("Prompt countdown (seconds)");
-    expect(promptBlock).not.toContain('aria-label="Idle timeout"');
-    expect(pageSource).not.toContain("Auto-stop countdown");
-    expect(pageSource).toContain("trackingPolicy.hints.activeHours");
+    expect(promptBlock).not.toContain('"Idle timeout"');
+    expect(policySource).not.toContain("Auto-stop countdown");
+    expect(policySource).toContain("policy.hints.activeHours");
   });
 
   it("refuses a Member and names the Workspace condition for a read-only Workspace", () => {
@@ -1067,9 +1165,7 @@ describe("Tracking Policy editing (#212)", () => {
     expect(readOnly.kind).toBe("ready");
     if (readOnly.kind !== "ready") return;
     expect(readOnly.editable).toBe(false);
-    expect(readOnly.writeRefusal).toBe(
-      "Harbor Co is read-only. Viewing, export, and recovery stay available.",
-    );
+    expect(readOnly.writeRefusal).toBe("Harbor Co is read-only. Viewing, export, and recovery stay available.");
     expect(readOnly.canSave).toBe(false);
   });
 
@@ -1081,70 +1177,33 @@ describe("Tracking Policy editing (#212)", () => {
     expect(clean.canSave).toBe(false);
     expect(clean.issue).toBeNull();
 
-    const dirty = composeTrackingPolicyEditor(
-      editorInput({ draft: policyDraft({ captureIntervalMaxMin: 9 }) }),
-    );
-    expect(dirty.kind).toBe("ready");
-    if (dirty.kind !== "ready") return;
-    expect(dirty.dirty).toBe(true);
-    expect(dirty.canSave).toBe(true);
+    const dirty = composeTrackingPolicyEditor(editorInput({ edits: { captureIntervalMaxMin: "9" } }));
+    expect(dirty).toMatchObject({ kind: "ready", dirty: true, canSave: true, patch: { captureIntervalMaxMin: 9 } });
 
-    const invalid = composeTrackingPolicyEditor(
-      editorInput({ draft: policyDraft({ idleTimeoutMinutes: 0 }) }),
-    );
+    const invalid = composeTrackingPolicyEditor(editorInput({ edits: { idleTimeoutMinutes: "0" } }));
     expect(invalid.kind).toBe("ready");
     if (invalid.kind !== "ready") return;
     expect(invalid.dirty).toBe(true);
     expect(invalid.canSave).toBe(false);
-    expect(invalid.issue).toBe("Idle timeout must be between 1 and 60 minutes.");
+    expect(invalid.issue).toBe("Idle timeout must be a whole number from 1 to 60.");
   });
 
-  it("signs off a saved policy in a toast without celebrating it", () => {
-    expect(TRACKING_POLICY_SAVED).toBe("Policy saved. Devices apply it on their next heartbeat.");
-    expect(TRACKING_POLICY_SAVED.toLowerCase()).not.toMatch(/congratulations|nice work|🎉/);
-    expect(pageSource).toContain("notify.success(TRACKING_POLICY_SAVED)");
+  it("signs off a saved policy in a toast without celebrating it, in plain words", () => {
+    // The desktop agent's heartbeat carries the policy every 60 s (HeartbeatWorker).
+    expect(TRACKING_POLICY_SAVED).toBe("Policy saved. Devices apply it within a minute.");
+    expect(TRACKING_POLICY_SAVED.toLowerCase()).not.toMatch(/congratulations|nice work|🎉|heartbeat/);
+    const page = composeTrackingPolicyEditor(editorInput());
+    expect(page.kind === "ready" && page.footnote).toBe("Activity shows this policy to every Member. Devices apply it within a minute.");
+    expect(policySource).toContain("notify.success(TRACKING_POLICY_SAVED)");
     expect(pageSource).not.toContain("df-policy-saved");
   });
 
-  it("owns the Screencasts timezone list and validates every entry", () => {
-    expect(addAllowedTimezone([], "Europe/Paris")).toEqual({
-      ok: true,
-      timezones: ["Europe/Paris"],
-    });
-    expect(addAllowedTimezone(["Europe/Paris"], "  America/New_York  ")).toEqual({
-      ok: true,
-      timezones: ["Europe/Paris", "America/New_York"],
-    });
-    expect(addAllowedTimezone(["Europe/Paris"], "Europe/Paris")).toEqual({
-      ok: false,
-      reason: '"Europe/Paris" is already in the list.',
-    });
-    expect(addAllowedTimezone([], "Nowhere/Nothing")).toEqual({
-      ok: false,
-      reason: '"Nowhere/Nothing" is not a valid IANA timezone.',
-    });
-    expect(addAllowedTimezone([], "   ")).toEqual({
-      ok: false,
-      reason: "Enter an IANA timezone, for example Europe/Paris.",
-    });
-    expect(removeAllowedTimezone(["Europe/Paris", "America/New_York"], "Europe/Paris")).toEqual([
-      "America/New_York",
-    ]);
-
-    const page = composeTrackingPolicyEditor(
-      editorInput({ savedTimezones: [], draftTimezones: ["Europe/Paris"] }),
-    );
-    expect(page.kind).toBe("ready");
-    if (page.kind !== "ready") return;
-    expect(page.timezones.rows).toEqual(["Europe/Paris"]);
-    expect(page.timezones.empty).toBe(false);
-    expect(page.timezones.dirty).toBe(true);
-
-    const none = composeTrackingPolicyEditor(editorInput());
-    expect(none.kind).toBe("ready");
-    if (none.kind !== "ready") return;
-    expect(none.timezones.empty).toBe(true);
-    expect(none.timezones.emptyCopy.toLowerCase()).toContain("browser timezone");
+  it("leaves the Screencasts timezone list to v1, which alone reads it (F110)", () => {
+    expect(pageSource).not.toContain("Screencasts timezones");
+    expect(pageSource).not.toContain("allowedTimezones");
+    expect(adminModuleSource).not.toMatch(/addAllowedTimezone|removeAllowedTimezone/);
+    const page = composeTrackingPolicyEditor(editorInput());
+    expect(page).not.toHaveProperty("timezones");
   });
 
   it("leaves Activity displaying the policy rather than rebuilding it", () => {
@@ -1197,7 +1256,7 @@ describe("Administration controls (#212)", () => {
     }
 
     // Every v2 shadcn Checkbox wears the class the rule targets.
-    for (const file of ["V2Administration.tsx", "V2Clients.tsx", "V2People.tsx"]) {
+    for (const file of ["V2AdministrationParts.tsx", "V2Clients.tsx", "V2People.tsx"]) {
       const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../../client/src/v2", file), "utf8");
       const boxes = source.match(/<Checkbox\b[\s\S]*?\/>/g) ?? [];
       expect(boxes.length, file).toBeGreaterThan(0);
@@ -1216,7 +1275,12 @@ describe("Administration controls (#212)", () => {
     // The old placeholder was a bare card with a hardcoded height.
     expect(pageSource).not.toContain("minHeight: 280");
     // Section titles are known before any fetch, so the wait states them.
-    expect(pageSource).toContain('<SkeletonSection title="Workspace"');
+    expect(shellSource).toContain('<SkeletonSection title="Workspace"');
+    // Each card waits with its own title (F107); the shell draws the head and the tabs at once.
+    expect(billingSource).toContain('<SkeletonSection title="Billing"');
+    expect(policySource).toContain('<SkeletonSection title="Tracking Policy"');
+    expect(integrationsSource).toContain('<SkeletonSection title="Service Accounts"');
+    expect(shellSource).toMatch(/if \(!memberships\) return <AdministrationSkeleton \/>;/);
     // Analytics draws the head at once and gives each card its own skeleton lines.
     expect(analyticsSource).toContain('from "./V2Skeleton"');
     expect(analyticsSource).toContain("<FigureSkeleton");
@@ -1298,29 +1362,26 @@ describe("Tracking Policy save motion (#212)", () => {
 });
 
 describe("The Billing card reads as one card (#245, F1)", () => {
-  function activeBilling(overrides: Partial<BillingInput> = {}): AdministrationInput {
-    return emptyAdmin({
-      billing: {
-        planKey: "pro",
-        billingState: "Active",
-        purchasedSeatCapacity: 8,
-        consumedSeatCount: 3,
-        trialEndsAt: null,
-        periodEndsAt: "2026-10-01T00:00:00.000Z",
-        cancelAtPeriodEnd: false,
-        stripeCustomerId: "cus_123",
-        ...overrides,
-      },
+  function activeBilling(overrides: Partial<BillingInput> = {}) {
+    return billingOf({
+      planKey: "pro",
+      billingState: "Active",
+      purchasedSeatCapacity: 8,
+      consumedSeatCount: 3,
+      trialEndsAt: null,
+      periodEndsAt: "2026-10-01T00:00:00.000Z",
+      cancelAtPeriodEnd: false,
+      stripeCustomerId: "cus_123",
+      canCancel: true,
+      canKeep: false,
+      ...overrides,
     });
   }
 
   it("sets Cancel at period end apart from the routine actions and states what it costs", () => {
-    const page = composeAdministration(activeBilling());
-    expect(page.kind).toBe("ready");
-    if (page.kind !== "ready") return;
-
-    const cancel = page.billing.actions.find((action) => action.id === "cancel");
-    const paymentMethod = page.billing.actions.find((action) => action.id === "payment-method");
+    const page = activeBilling();
+    const cancel = page.actions.find((action) => action.id === "cancel");
+    const paymentMethod = page.actions.find((action) => action.id === "payment-method");
     expect(cancel).toBeDefined();
     expect(paymentMethod).toBeDefined();
     if (!cancel || !paymentMethod) return;
@@ -1338,103 +1399,116 @@ describe("The Billing card reads as one card (#245, F1)", () => {
   });
 
   it("still names the day when the subscription has no period end to name", () => {
-    const page = composeAdministration(activeBilling({ periodEndsAt: null }));
-    expect(page.kind).toBe("ready");
-    if (page.kind !== "ready") return;
-
-    const cancel = page.billing.actions.find((action) => action.id === "cancel");
+    const cancel = activeBilling({ periodEndsAt: null }).actions.find((action) => action.id === "cancel");
     expect(cancel?.consequence).toBe(
       "Writes stop at the end of the current period and the Workspace becomes " +
         "read-only. Viewing, export, and recovery stay available.",
     );
   });
 
-  it("gives the seat control the figure it edits, rather than a blank field", () => {
-    const page = composeAdministration(activeBilling());
-    expect(page.kind).toBe("ready");
-    if (page.kind !== "ready") return;
+  it("offers Cancel only on a live Subscription, Past due included, and the undo while it is cancelling (F102)", () => {
+    expect(activeBilling({ billingState: "PastDue" }).actions.map((action) => action.id)).toContain("cancel");
+    // No live Subscription behind the Plan: nothing to cancel.
+    expect(activeBilling({ canCancel: false }).actions.map((action) => action.id)).not.toContain("cancel");
+    const cancelling = activeBilling({ cancelAtPeriodEnd: true, canCancel: false, canKeep: true });
+    expect(cancelling.actions.map((action) => action.id)).toEqual(["plan", "seats", "payment-method", "keep"]);
+    expect(cancelling.actions.find((action) => action.id === "keep")).toEqual({
+      id: "keep",
+      label: "Keep the Subscription",
+      tone: "neutral",
+      consequence: "Access ends 1 Oct 2026",
+    });
+    expect(billingSource).toContain('apiRequest("POST", billingKeepPath(), {})');
+    expect(billingSource).toContain('data-testid="v2-administration-billing-keep"');
+  });
 
+  it("gives the seat control the figure it edits, its floor beside it, and asks before any change (F104)", () => {
+    const page = activeBilling();
     // The field starts from what the Workspace already bought, so it never
     // contradicts the figure above it.
-    expect(page.billing.seatQuantityDefault).toBe("8");
+    expect(page.seatQuantityDefault).toBe("8");
+    expect(page.seatFloor).toBe(3);
+    expect(seatFloorNote(3)).toBe("At least 3: one per Member");
+    expect(seatQuantityIssue("2", 3)).toBe("Choose at least 3 seats: one per Member.");
+    expect(seatQuantityIssue("", 3)).toBe("Enter a number of seats.");
+    expect(seatQuantityIssue("4.5", 3)).toBe("Enter a whole number of seats.");
+    expect(seatQuantityIssue("5", 3)).toBeNull();
+
+    expect(seatChangeConfirmation({
+      from: 3,
+      to: 5,
+      periodEndsAt: "2027-01-01T00:00:00.000Z",
+      unitAmountMinor: 1200,
+      currency: "eur",
+      interval: "monthly",
+    })).toEqual({
+      title: "From 3 to 5 seats",
+      consequence:
+        "The 2 new seats are charged now, in proportion to the time left until 1 Jan 2027. Then the Subscription costs EUR 60 per month, before tax.",
+      confirmLabel: "Add 2 seats",
+    });
+    expect(seatChangeConfirmation({ from: 5, to: 3, periodEndsAt: "2027-01-01T00:00:00.000Z" })).toEqual({
+      title: "From 5 to 3 seats",
+      consequence: "The change applies on 1 Jan 2027. Until then the Workspace keeps 5 seats.",
+      confirmLabel: "Change to 3 seats",
+    });
+    // The confirmation is the shared one; nothing is sent on the first click.
+    expect(billingSource).toMatch(/<DestructiveConfirm\s+tone="neutral"\s+label=\{changeSeats\.isPending \? "Changing…" : "Change seats"\}/);
+    expect(billingSource).not.toMatch(/<form[^>]*onSubmit=\{\(event\) => \{\s*event\.preventDefault\(\);\s*if \(!guardWrite/);
+  });
+
+  it("shows a planned decrease with the button that keeps today's seats", () => {
+    const planned = activeBilling({ purchasedSeatCapacity: 5, pendingSeatQuantity: 3, periodEndsAt: "2027-01-01T00:00:00.000Z" });
+    expect(planned.pendingSeats).toEqual({ label: "3 seats from 1 Jan 2027", keepLabel: "Keep 5 seats", quantity: 5 });
+    expect(activeBilling({ pendingSeatQuantity: null }).pendingSeats).toBeNull();
+    expect(billingSource).toContain("changeSeats.mutate(billing.pendingSeats!.quantity)");
+    // The answer is the subscription itself: it replaces the cached one.
+    expect(billingSource).toContain("queryClient.setQueryData([billingSubscriptionPath()], next);");
   });
 
   it("never lets one press end the subscription", () => {
-    const pageSource = readFileSync(
-      join(dirname(fileURLToPath(import.meta.url)), "../../client/src/v2/V2Administration.tsx"),
-      "utf8",
-    );
-
     // Opening the dialog is not the press that mutates.
-    expect(pageSource).toContain("Keep subscription");
-    expect(pageSource).toContain('data-testid="v2-administration-billing-cancel-confirm"');
-    expect(pageSource).toContain('from "@/components/ui/alert-dialog"');
-    expect(pageSource).not.toMatch(/onClick=\{\(\) => cancelAtPeriodEnd\.mutate\(\)\}/);
+    const row = billingSource.slice(billingSource.indexOf('data-testid="v2-administration-billing-cancel-row"'));
+    expect(row).toContain('keepLabel="Keep subscription"');
+    expect(row).toContain('testId="v2-administration-billing-cancel"');
+    expect(v2("V2DestructiveConfirm.tsx")).toContain("data-testid={`${testId}-confirm`}");
+    expect(v2("V2DestructiveConfirm.tsx")).toContain('from "@/components/ui/alert-dialog"');
+    expect(billingSource).not.toMatch(/onClick=\{\(\) => cancelAtPeriodEnd\.mutate\(\)\}/);
 
     // The write gate still runs on the press that actually cancels.
-    const confirmBody = pageSource.slice(pageSource.indexOf("<CancelControl"));
-    expect(confirmBody.slice(0, 320)).toContain("if (!guardWrite()) return;");
-    expect(confirmBody.slice(0, 320)).toContain("cancelAtPeriodEnd.mutate()");
+    const confirmBody = row.slice(row.indexOf("onConfirm={"));
+    expect(confirmBody.slice(0, 160)).toContain("if (!writes.guard()) return;");
+    expect(confirmBody.slice(0, 160)).toContain("cancelAtPeriodEnd.mutate()");
   });
 
   it("summarises the subscription: Plan, seats meter, writes and term", () => {
-    const page = composeAdministration(activeBilling());
-    expect(page.kind).toBe("ready");
-    if (page.kind !== "ready") return;
-
-    expect(page.billing.summary).toEqual({
+    expect(activeBilling().summary).toEqual({
       plan: "Pro",
       lead: "Billed for each Billable Seat.",
       seats: { label: "3 of 8", percent: 38, over: false },
-      writes: { allowed: true, label: "Writes allowed" },
+      writes: { allowed: true, label: "You can edit" },
       term: { label: "Renews", value: "1 Oct 2026" },
     });
   });
 
   it("makes the read-only sentence the lead", () => {
-    const page = composeAdministration(activeBilling({ billingState: "ReadOnly" }));
-    expect(page.kind).toBe("ready");
-    if (page.kind !== "ready") return;
-
-    expect(page.billing.summary?.writes).toEqual({ allowed: false, label: "Writes blocked" });
-    expect(page.billing.summary?.lead).toBe("Writes are blocked. Viewing, export, and recovery stay available.");
+    const page = activeBilling({ billingState: "ReadOnly" });
+    expect(page.summary?.writes).toEqual({ allowed: false, label: "Read-only" });
+    expect(page.summary?.lead).toBe("Writes are blocked. Viewing, export, and recovery stay available.");
   });
 
   it("clamps the seats meter and flags an overrun", () => {
-    const over = composeAdministration(activeBilling({ consumedSeatCount: 12 }));
-    expect(over.kind).toBe("ready");
-    if (over.kind !== "ready") return;
-    expect(over.billing.summary?.seats).toEqual({ label: "12 of 8", percent: 100, over: true });
-
-    const full = composeAdministration(activeBilling({ consumedSeatCount: 8 }));
-    expect(full.kind).toBe("ready");
-    if (full.kind !== "ready") return;
-    expect(full.billing.summary?.seats).toEqual({ label: "8 of 8", percent: 100, over: false });
-
-    const none = composeAdministration(activeBilling({ purchasedSeatCapacity: 0, consumedSeatCount: 0 }));
-    expect(none.kind).toBe("ready");
-    if (none.kind !== "ready") return;
-    expect(none.billing.summary?.seats.percent).toBe(0);
+    expect(activeBilling({ consumedSeatCount: 12 }).summary?.seats).toEqual({ label: "12 of 8", percent: 100, over: true });
+    expect(activeBilling({ consumedSeatCount: 8 }).summary?.seats).toEqual({ label: "8 of 8", percent: 100, over: false });
+    expect(activeBilling({ purchasedSeatCapacity: 0, consumedSeatCount: 0 }).summary?.seats.percent).toBe(0);
   });
 
   it("words the lead for each state, first match winning", () => {
-    const lead = (overrides: Partial<BillingInput>) => {
-      const page = composeAdministration(activeBilling(overrides));
-      if (page.kind !== "ready") throw new Error("expected ready");
-      return page.billing.summary?.lead;
-    };
-    expect(lead({ billingState: "PastDue" })).toBe(
-      "The last payment failed. Update the payment method to keep this Plan.",
-    );
-    expect(lead({ cancelAtPeriodEnd: true, periodEndsAt: "2026-10-01T00:00:00.000Z" })).toBe(
-      "Cancelled. Pro stays until 1 Oct 2026.",
-    );
-    expect(lead({ planKey: "trial", billingState: "Trialing" })).toBe(
-      "Every Business feature, free, until the Trial ends.",
-    );
-    expect(lead({ planKey: "pro", billingState: "Trialing" })).toBe(
-      "Offered by DocuFlow. Nothing is charged until it ends.",
-    );
+    const lead = (overrides: Partial<BillingInput>) => activeBilling(overrides).summary?.lead;
+    expect(lead({ billingState: "PastDue" })).toBe("The last payment failed. Update the payment method to keep this Plan.");
+    expect(lead({ cancelAtPeriodEnd: true, periodEndsAt: "2026-10-01T00:00:00.000Z" })).toBe("Cancelled. Pro stays until 1 Oct 2026.");
+    expect(lead({ planKey: "trial", billingState: "Trialing" })).toBe("Every Business feature, free, until the Trial ends.");
+    expect(lead({ planKey: "pro", billingState: "Trialing" })).toBe("Offered by DocuFlow. Nothing is charged until it ends.");
     expect(lead({ planKey: "legacy" })).toBe("Kept from before self-service billing. Nothing renews.");
     expect(lead({ planKey: "enterprise" })).toBe("Agreed with sales.");
     expect(lead({ planKey: "pro" })).toBe("Billed for each Billable Seat.");
@@ -1443,96 +1517,59 @@ describe("The Billing card reads as one card (#245, F1)", () => {
 });
 
 describe("Administration billing remainder (#212)", () => {
-  it("keeps a seeded or legacy Workspace out of Checkout", () => {
-    const legacy = composeAdministration(
-      emptyAdmin({
-        billing: {
-          planKey: "legacy",
-          billingState: "Active",
-          purchasedSeatCapacity: 25,
-          consumedSeatCount: 4,
-          trialEndsAt: null,
-          periodEndsAt: null,
-          cancelAtPeriodEnd: false,
-          stripeCustomerId: null,
-        },
-      }),
-    );
-
-    expect(legacy.kind).toBe("ready");
-    if (legacy.kind !== "ready") return;
-    expect(legacy.billing.plan).toBe("Legacy");
-    expect(legacy.billing.actions.map((action) => action.id)).toEqual(["cancel"]);
-    expect(legacy.billing.actions.map((action) => action.id)).not.toContain("checkout");
-    expect(legacy.billing.actions.map((action) => action.id)).not.toContain("seats");
+  it("keeps a seeded or legacy Workspace out of Checkout, and offers it no Cancel (F102)", () => {
+    const legacy = billingOf({
+      planKey: "legacy",
+      billingState: "Active",
+      purchasedSeatCapacity: 25,
+      consumedSeatCount: 4,
+      trialEndsAt: null,
+      periodEndsAt: null,
+      cancelAtPeriodEnd: false,
+      stripeCustomerId: null,
+      canCancel: false,
+      canKeep: false,
+    });
+    expect(legacy.plan).toBe("Legacy");
+    expect(legacy.actions.map((action) => action.id)).toEqual([]);
+    // Nothing renews, so no term row says "Renews -".
+    expect(legacy.summary?.term).toEqual({ label: "Subscription", value: "Nothing renews" });
   });
 
   it("reads the subscription as discrete facts, including the term the BFF already returns", () => {
-    const trial = composeAdministration(
-      emptyAdmin({
-        billing: {
-          planKey: "trial",
-          billingState: "Trialing",
-          purchasedSeatCapacity: 1,
-          consumedSeatCount: 1,
-          trialEndsAt: "2026-09-20T00:00:00.000Z",
-          periodEndsAt: null,
-          cancelAtPeriodEnd: false,
-          stripeCustomerId: null,
-        },
-      }),
-    );
-    expect(trial.kind).toBe("ready");
-    if (trial.kind !== "ready") return;
-    expect(trial.billing.summary).toEqual({
+    const trial = billingOf({
+      planKey: "trial",
+      billingState: "Trialing",
+      purchasedSeatCapacity: 1,
+      consumedSeatCount: 1,
+      trialEndsAt: "2026-09-20T00:00:00.000Z",
+      periodEndsAt: null,
+      cancelAtPeriodEnd: false,
+      stripeCustomerId: null,
+    });
+    expect(trial.summary).toEqual({
       plan: "Trial",
       lead: "Every Business feature, free, until the Trial ends.",
       seats: { label: "1 of 1", percent: 100, over: false },
-      writes: { allowed: true, label: "Writes allowed" },
+      writes: { allowed: true, label: "You can edit" },
       term: { label: "Trial ends", value: "20 Sep 2026" },
     });
 
-    const cancelling = composeAdministration(
-      emptyAdmin({
-        billing: {
-          planKey: "pro",
-          billingState: "Active",
-          purchasedSeatCapacity: 8,
-          consumedSeatCount: 3,
-          trialEndsAt: null,
-          periodEndsAt: "2026-10-01T00:00:00.000Z",
-          cancelAtPeriodEnd: true,
-          stripeCustomerId: "cus_123",
-        },
-      }),
-    );
-    expect(cancelling.kind).toBe("ready");
-    if (cancelling.kind !== "ready") return;
-    expect(cancelling.billing.summary?.term).toEqual({ label: "Access ends", value: "1 Oct 2026" });
+    const base = {
+      planKey: "pro",
+      billingState: "Active",
+      purchasedSeatCapacity: 8,
+      consumedSeatCount: 3,
+      trialEndsAt: null,
+      periodEndsAt: "2026-10-01T00:00:00.000Z",
+      stripeCustomerId: "cus_123",
+    };
+    expect(billingOf({ ...base, cancelAtPeriodEnd: true }).summary?.term).toEqual({ label: "Access ends", value: "1 Oct 2026" });
+    expect(billingOf({ ...base, cancelAtPeriodEnd: false }).summary?.term).toEqual({ label: "Renews", value: "1 Oct 2026" });
 
-    const renewing = composeAdministration(
-      emptyAdmin({
-        billing: {
-          planKey: "pro",
-          billingState: "Active",
-          purchasedSeatCapacity: 8,
-          consumedSeatCount: 3,
-          trialEndsAt: null,
-          periodEndsAt: "2026-10-01T00:00:00.000Z",
-          cancelAtPeriodEnd: false,
-          stripeCustomerId: "cus_123",
-        },
-      }),
-    );
-    expect(renewing.kind).toBe("ready");
-    if (renewing.kind !== "ready") return;
-    expect(renewing.billing.summary?.term).toEqual({ label: "Renews", value: "1 Oct 2026" });
-
-    const none = composeAdministration(emptyAdmin());
-    expect(none.kind).toBe("ready");
-    if (none.kind !== "ready") return;
-    expect(none.billing.available).toBe(false);
-    expect(none.billing.summary).toBeNull();
+    const none = billingOf(null);
+    expect(none.available).toBe(false);
+    expect(none.summary).toBeNull();
   });
 
   it("names the refusal when Checkout is refused for a seeded Workspace", () => {
@@ -1542,39 +1579,35 @@ describe("Administration billing remainder (#212)", () => {
         workspaceName: "Harbor Co",
         ownerName: "Sam Lee",
         errorMessage: "Checkout is not available for this Workspace",
-      }),
+      } as Parameters<typeof administrationWriteRefusal>[0]),
     ).toBe("Checkout is not available for this Workspace");
   });
 });
 
 describe("A Read-only Workspace recovers through Checkout (#299)", () => {
-  const ended = composeAdministration(
-    emptyAdmin({
-      condition: "Read-only",
-      billing: {
-        planKey: "pro",
-        billingState: "ReadOnly",
-        purchasedSeatCapacity: 3,
-        consumedSeatCount: 2,
-        trialEndsAt: null,
-        periodEndsAt: "2026-10-18T09:51:36.000Z",
-        cancelAtPeriodEnd: false,
-        stripeCustomerId: "cus_cad",
-      },
-    }),
+  const ended = billingOf(
+    {
+      planKey: "pro",
+      billingState: "ReadOnly",
+      purchasedSeatCapacity: 3,
+      consumedSeatCount: 2,
+      trialEndsAt: null,
+      periodEndsAt: "2026-10-18T09:51:36.000Z",
+      cancelAtPeriodEnd: false,
+      stripeCustomerId: "cus_cad",
+    },
+    "Read-only",
   );
 
   it("offers Checkout and says the Subscription ended instead of a renewal date", () => {
-    expect(ended.kind).toBe("ready");
-    if (ended.kind !== "ready") return;
-    expect(ended.billing.actions.map((action) => action.id)).toEqual(["checkout", "payment-method"]);
-    expect(ended.billing.summary?.term).toEqual({ label: "Subscription", value: "Ended" });
+    expect(ended.actions.map((action) => action.id)).toEqual(["checkout", "payment-method"]);
+    expect(ended.summary?.term).toEqual({ label: "Subscription", value: "Ended" });
   });
 
   it("does not let the Read-only guard stop Checkout", () => {
-    const checkout = pageSource.slice(pageSource.indexOf("onCheckout={"), pageSource.indexOf("onChange={() =>"));
+    const checkout = billingSource.slice(billingSource.indexOf("onCheckout={"), billingSource.indexOf("onChange={() =>"));
     expect(checkout).toContain("startCheckout.mutate()");
-    expect(checkout).not.toContain("guardWrite");
+    expect(checkout).not.toContain("guard");
   });
 
   it("names the current Plan apart from the card that is only selected", () => {
@@ -1582,8 +1615,30 @@ describe("A Read-only Workspace recovers through Checkout (#299)", () => {
       "Current Plan: Pro. Select a Plan, then continue to Checkout. The Workspace changes Plan once Checkout completes.",
     );
     expect(planPickerNote("change", "Growth")).toMatch(/^Current Plan: Growth\. .*until you confirm\.$/);
-    expect(pageSource).toContain('"Selected"');
-    expect(pageSource).not.toContain('"Chosen"');
-    expect(pageSource).toContain("CURRENT PLAN");
+    expect(billingSource).toContain('"Selected"');
+    expect(billingSource).not.toContain('"Chosen"');
+    expect(billingSource).toContain('<span className="df-status-word" data-tone="active">Current Plan</span>');
+    expect(billingSource).not.toContain("CURRENT PLAN");
+  });
+});
+
+describe("Checkout asks for the seats and shows the price (F103)", () => {
+  const price = { planKey: "growth", interval: "monthly", unitAmountMinor: 1200, currency: "eur" };
+
+  it("prices a seat per interval, and the total before tax", () => {
+    expect(seatPriceLine(price)).toBe("EUR 12 per seat, per month");
+    expect(seatPriceLine({ ...price, interval: "annual", unitAmountMinor: 12950 })).toBe("EUR 129.50 per seat, per year");
+    expect(checkoutTotalLine(price, 3)).toBe("3 seats x EUR 12 = EUR 36 per month, before tax");
+    // A currency without minor units is not divided by 100.
+    expect(formatMoney(1500, "jpy")).toBe("JPY 1,500");
+  });
+
+  it("starts the seats from the Members, never from the Trial's three, and sends the number chosen", () => {
+    expect(billingSource).toContain("const checkoutSeatText = checkoutSeats ?? String(billing.seatFloor);");
+    expect(billingSource).toContain("seatQuantity: Number(checkoutSeatText),");
+    expect(billingSource).not.toContain("billing?.purchasedSeatCapacity ?? 1");
+    expect(billingSource).toContain('{pending ? "Opening Checkout…" : "Continue to Checkout"}');
+    // No price shown is better than a wrong one: the line waits for Stripe's.
+    expect(billingSource).toContain("{chosenPrice && seatIssue === null ? (");
   });
 });

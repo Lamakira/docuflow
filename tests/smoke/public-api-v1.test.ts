@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
+import { PROJECTS_READ_CAPABILITY_ID } from "../../shared/schema";
 import { loginDevice } from "../helpers/agent";
 import { makeApp } from "../helpers/app";
 import { newAgent, registerUser, setWorkspaceRole } from "../helpers/auth";
@@ -56,7 +57,7 @@ describe("public /api/v1 kernel", () => {
     const app = await makeApp();
     const admin = await registerUser(app);
     await setWorkspaceRole(admin.id, "owner");
-    const created = await admin.agent.post("/api/service-accounts").send({ name: "CRM" });
+    const created = await admin.agent.post("/api/service-accounts").send({ name: "CRM", capabilityIds: [PROJECTS_READ_CAPABILITY_ID] });
 
     const withHeader = await newAgent(app)
       .get("/api/v1")
@@ -72,7 +73,7 @@ describe("public /api/v1 kernel", () => {
     const app = await makeApp();
     const admin = await registerUser(app);
     await setWorkspaceRole(admin.id, "owner");
-    const created = await admin.agent.post("/api/service-accounts").send({ name: "CRM" });
+    const created = await admin.agent.post("/api/service-accounts").send({ name: "CRM", capabilityIds: [PROJECTS_READ_CAPABILITY_ID] });
     expect(created.status).toBe(201);
 
     const res = await newAgent(app)
@@ -89,7 +90,7 @@ describe("public /api/v1 kernel", () => {
     const app = await makeApp();
     const admin = await registerUser(app);
     await setWorkspaceRole(admin.id, "owner");
-    const created = await admin.agent.post("/api/service-accounts").send({ name: "CRM" });
+    const created = await admin.agent.post("/api/service-accounts").send({ name: "CRM", capabilityIds: [PROJECTS_READ_CAPABILITY_ID] });
 
     const res = await newAgent(app)
       .get("/api/v1/does-not-exist")
@@ -111,7 +112,7 @@ describe("public /api/v1 kernel", () => {
     const app = await makeApp();
     const admin = await registerUser(app);
     await setWorkspaceRole(admin.id, "owner");
-    const created = await admin.agent.post("/api/service-accounts").send({ name: "CRM" });
+    const created = await admin.agent.post("/api/service-accounts").send({ name: "CRM", capabilityIds: [PROJECTS_READ_CAPABILITY_ID] });
     const agent = newAgent(app).set("Authorization", `Bearer ${created.body.plaintextKey}`);
 
     const first = await agent
@@ -136,7 +137,7 @@ describe("public /api/v1 kernel", () => {
     const app = await makeApp();
     const admin = await registerUser(app);
     await setWorkspaceRole(admin.id, "owner");
-    const created = await admin.agent.post("/api/service-accounts").send({ name: "CRM" });
+    const created = await admin.agent.post("/api/service-accounts").send({ name: "CRM", capabilityIds: [PROJECTS_READ_CAPABILITY_ID] });
     const agent = newAgent(app).set("Authorization", `Bearer ${created.body.plaintextKey}`);
 
     const first = await agent
@@ -165,7 +166,7 @@ describe("public /api/v1 kernel", () => {
     const app = await makeApp();
     const admin = await registerUser(app);
     await setWorkspaceRole(admin.id, "owner");
-    const created = await admin.agent.post("/api/service-accounts").send({ name: "CRM" });
+    const created = await admin.agent.post("/api/service-accounts").send({ name: "CRM", capabilityIds: [PROJECTS_READ_CAPABILITY_ID] });
     const agent = newAgent(app).set("Authorization", `Bearer ${created.body.plaintextKey}`);
 
     let lastAllowed: Awaited<ReturnType<typeof agent.get>> | undefined;
@@ -190,9 +191,9 @@ describe("public /api/v1 kernel", () => {
     const app = await makeApp();
     const admin = await registerUser(app);
     await setWorkspaceRole(admin.id, "owner");
-    const first = await admin.agent.post("/api/service-accounts").send({ name: "A" });
-    const second = await admin.agent.post("/api/service-accounts").send({ name: "B" });
-    const third = await admin.agent.post("/api/service-accounts").send({ name: "C" });
+    const first = await admin.agent.post("/api/service-accounts").send({ name: "A", capabilityIds: [PROJECTS_READ_CAPABILITY_ID] });
+    const second = await admin.agent.post("/api/service-accounts").send({ name: "B", capabilityIds: [PROJECTS_READ_CAPABILITY_ID] });
+    const third = await admin.agent.post("/api/service-accounts").send({ name: "C", capabilityIds: [PROJECTS_READ_CAPABILITY_ID] });
 
     const agentA = newAgent(app).set("Authorization", `Bearer ${first.body.plaintextKey}`);
     const agentB = newAgent(app).set("Authorization", `Bearer ${second.body.plaintextKey}`);

@@ -2162,3 +2162,203 @@ another. Nothing links to the Member, the Project or their captures.
   in one card each; the Range in the address; plain words.
 
 - **Fixed:** 2026-11-25. Range and Export in the head, Range and tab in the address, five figures, one bar chart of hours (weeks past 45 days) with its table, one Recorded time card with tabs, one Captures card, plain words, right-aligned numbers under their heads. Seen in light and dark, at 375 px, with 101 Tasks and 71 Devices. A shared rule drew every tab and chart toggle at 16 px instead of 14 (Administration, the console): fixed at the source.
+
+## F101 - One request stops the server for everyone
+
+- **Status:** closed - fixed 2026-11-26
+- **Found:** 2026-11-25, the Administration review (reproduced on the dev server)
+- **Where:** `server/modules/identity/http.ts`, `server/modules/workspace/http.ts`, `server/modules/identity/operatorHttp.ts`
+- **Severity:** the app goes down
+
+A Service Account named with 300 characters: the database refuses it, the handler throws,
+nothing catches it and Node ends the process (`exited with code 1`). Express 4 does not
+catch an async handler; billing and the console wrap theirs for this reason. 28
+rethrows in these three files are not, invitation and account deletion included: any
+database hiccup there has the same end.
+
+- **Proposal:** one wrapper for every async route, a test that refuses a route without it,
+  the error handler's 500 for the unexpected, and a length limit on the name (255).
+
+- **Fixed:** 2026-11-26. Every async route and middleware hands a rejection to the error handler (one mechanism, installed before any route, tests that refuse a route left out); a 5xx says nothing of its cause. Reproduced fixed on the dev server: the 300-character name answers 400 and the next request 200. Names are 1 to 100 characters.
+
+## F102 - A customer who cancels goes on paying
+
+- **Status:** closed - fixed 2026-11-26
+- **Found:** 2026-11-25, the Administration review (reproduced with the provider fake)
+- **Where:** `cancelAtPeriodEnd` in `server/modules/billing/stateMachine.ts`, `composeBilling`
+- **Severity:** money
+
+`Cancel at period end` writes the flag here and never tells Stripe, which renews and
+charges. The next event from Stripe says it is not cancelled and the flag goes back to
+false, without a word (after the click: true; after the event: false). The console's own
+cancel asks Stripe first. Nothing undoes a cancellation in the app. A Past due
+Workspace has no Cancel.
+
+The Legacy Workspace, the company's own, is offered it too, with no Subscription and no
+period: the flag stays true for good, the page still says `Renews -` (the dev
+Workspace is in that state).
+
+- **Proposal:** Stripe first, then the flag, through the console's function; `Keep the
+  Subscription` to undo it until the date; offered only with a live Subscription, Past
+  due included; a one-off script to clear the flag where there is no Subscription.
+
+- **Fixed:** 2026-11-26. Cancel and Keep the Subscription ask Stripe first, then write the flag, through the back office's own path; a repeat asks Stripe again, so a flag the old code never sent is sent by clicking once more. Offered only with a live Subscription, Past due included. `npm run billing:clear-orphan-cancellations` clears the flag where there is no Subscription (dry run by default; run on the dev Workspace, which was in that state: cleared, then 0) and lists, without changing, live Subscriptions whose cancellation was lost or not yet sent to Stripe (`--check-stripe`). On the copy of the real data it finds nothing.
+
+## F103 - Checkout charges a Trial for three seats
+
+- **Status:** closed - fixed 2026-11-26
+- **Found:** 2026-11-25, the Administration review (from code)
+- **Where:** `startCheckout` in `V2Administration.tsx`, `startTrial`
+- **Severity:** money
+
+A Trial holds 3 seats, and Checkout is opened for the larger of the seats held and the
+Members: one person alone is taken to Stripe for 3, without having read a number of seats.
+No price is shown anywhere before Stripe, nor the total.
+
+- **Proposal:** ask for the number of seats beside the Plan, starting from the Members, and
+  show the price per seat and the total when the prices can be read from Stripe.
+
+- **Fixed:** 2026-11-26. Checkout asks for the seats, starting from the Members, with the floor beside the field, the price per seat on each Plan and the total before tax (seen with the Stripe test prices: `USD 22 per seat, per month`, `1 seat x USD 22 = USD 22 per month, before tax`). A Trial's 3 seats are no longer sent.
+
+## F104 - Seat changes say less than they do
+
+- **Status:** closed - fixed 2026-11-26
+- **Found:** 2026-11-25, the Administration review (from code)
+- **Where:** `changeSeats`, `billingProjectionOf`, `V2Administration.tsx`
+- **Severity:** misleads, money
+
+An increase is charged on one click, without a word on it. If Stripe refuses it, the seats
+are granted all the same. A decrease waits for the period's end but the toast says
+`Seats updated`, the field goes back to the old number and nothing shows what is
+planned. A number under the Members is refused only after the click.
+
+- **Proposal:** Stripe first on an increase; confirm it with its cost; show `3 from 1 Jan`
+  for a planned decrease with a way to cancel it; the floor beside the field.
+
+- **Fixed:** 2026-11-26. An increase is asked of Stripe first, under the Billing lock, and confirmed with its cost; a refusal leaves the seats as they were. A planned decrease shows its date and can be kept. Tested with the provider fake, not against Stripe.
+
+## F105 - A Webhook Endpoint never receives anything
+
+- **Status:** closed - fixed 2026-11-26
+- **Found:** 2026-11-25, the Administration review (seen, and from code)
+- **Where:** `V2Administration.tsx`, `server/modules/workspace/webhookEndpoints.ts`, `feat/129-webhook-endpoints`
+- **Severity:** promises what does not exist
+
+`Add one to start receiving them`: no code on `main` sends one. The delivery (`aecbe38`,
+22 August, #130 closed as done) was merged into another branch and never into `main`; today it
+conflicts with it in seven files, its migration's number included. An Endpoint
+takes any address (`javascript:`, `ftp:`, `http://localhost`, the cloud's metadata address, all
+accepted), and can be neither edited nor deleted.
+
+- **Proposal:** hide the Webhook Endpoints card until delivery exists, and bring the
+  delivery back in its own PR (retries, a log of deliveries, a test button, public https
+  addresses only). The owner's call. The address check at creation can only read the
+  name: the sender must resolve it, refuse a private, loopback, link-local or shared
+  address (IPv4 and IPv6, mapped forms included), connect to the address it checked, and
+  follow no redirect.
+
+- **Fixed:** 2026-11-26. The Webhook Endpoints card is hidden and so is the Capability that manages them; the server takes only public https addresses (seen: `http://169.254.169.254/x` answers 400), on the BFF and the public API. Delivery stays to be brought back in its own PR, with the address checked again when sending.
+
+## F106 - A list that failed to load can be overwritten
+
+- **Status:** closed - fixed 2026-11-26
+- **Found:** 2026-11-25, the Administration review (reproduced with the real options)
+- **Where:** `V2Administration.tsx`, `composePipelineLists`, `PATCH /api/admin/fields/:id`
+- **Severity:** loses data
+
+When the lists cannot be read the tab shows the defaults as the Workspace's, and one
+edit saves them over the real ones: `In Negociation`, `In Review (PM)` and `In Review
+(Client)` would go, 18 records on them. Two Administrators editing at once: the
+second save drops the stage the first one added. Both answer 200.
+
+Names lose their accents in the stored value (`Évaluation` is `valuation`, `Café` and
+`Caf` collide) and `評価` is refused with `Use at least one letter or number`.
+
+- **Proposal:** no list and no edit without a successful read; the save carries the version
+  it was read at and a stale one is refused (409) and read again; accents folded, not
+  dropped, with the values already stored left alone.
+
+- **Fixed:** 2026-11-26. Nothing is editable before the lists are read; each save carries the version it was read at and a stale one answers 409 and reloads (seen on the dev server); an unsaved list stops if the server already holds others. The messages say what is refused. The stored value still drops accents: v1 and every stored record derive it the same way, so it is left as it is.
+
+## F107 - Reads that fail look empty
+
+- **Status:** closed - fixed 2026-11-26
+- **Found:** 2026-11-25, the Administration review (seen)
+- **Where:** `V2Administration.tsx`, `V2SupportAccess.tsx`
+- **Severity:** misleads
+
+With every read refused: `Add your first Service Account`, `No active Support Access
+Grant` (someone may have access), `Seat counts are not available.` without Try again, and
+`Not saved for this Workspace yet` over the lists. The Tracking Policy says it could not be
+read, without Try again. The whole page waits for six reads, whatever the tab.
+
+- **Proposal:** each card reads, fails and loads alone (`V2LoadFailed`), as Analytics now does,
+  and a tab reads only what it shows.
+
+- **Fixed:** 2026-11-26. Each tab reads only what it shows; each card fails alone with Try again (seen on all six tabs with every read refused).
+
+## F108 - Settings saved by halves, or to nonsense
+
+- **Status:** closed - fixed 2026-11-26
+- **Found:** 2026-11-25, the Administration review (reproduced)
+- **Where:** `PATCH /api/admin/org-settings`, `V2Administration.tsx`
+- **Severity:** loses data
+
+A refused save keeps its first half: a good time zone with a bad policy answers 400 and
+the zone is changed. `captureIntervalMaxMin: 0`, `screenshotsEnabled: "yes"` and the zone
+`Mars/Phobos` in the list are saved; Devices and Analytics read them. On screen, saving the
+time zone throws away the Tracking Policy being edited (seen), and clearing a number
+types `0` in it, so `4` reads `04` (seen). Leaving the page loses the edits without a word.
+
+- **Proposal:** one schema for the whole body, checked before anything is written, in one
+  transaction; each form keeps its own draft; an empty number stays empty; a warning on
+  leaving.
+
+- **Fixed:** 2026-11-26. One schema checks the whole body before anything is written, in one transaction (seen: a good zone with a bad timeout answers 400 and the zone is unchanged); booleans, whole numbers and IANA names only. Each form keeps its own draft, an emptied number stays empty and says which field (seen), and leaving with unsaved edits warns.
+
+## F109 - Keys and access change on one click
+
+- **Status:** closed - fixed 2026-11-26
+- **Found:** 2026-11-25, the Administration review (seen)
+- **Where:** `V2Administration.tsx`, `V2SupportAccess.tsx`
+- **Severity:** a dangerous action with the weight of a safe one
+
+`Rotate` ends the key in use at once, without asking; a second click ends the key just
+shown. The new key goes with the page: a visit to People and it is gone. A Service Account
+can be created with no Capability, so it can do nothing, and can never be given one. Revoked
+ones stay listed for good. `Require a second factor` closes the Workspace at once to everyone
+who has none, on one click, with no count of them. The support picker gives
+every customer the addresses of all DocuFlow staff.
+
+- **Proposal:** ask before rotating and before requiring (with how many Members have no
+  second factor); the key stays until dismissed, with a warning on leaving; at least one
+  Capability, editable; revoked ones behind a box; `DocuFlow support` by name, without
+  addresses.
+
+- **Fixed:** 2026-11-26. Rotate, Revoke and Require a second factor ask first (seen); the new key stays in a dialog that only its own button closes, and asks before closing without copying (seen). At least one Capability, editable; revoked ones behind Show revoked. Support is named, without addresses (seen). The second-factor dialog gives the count of Members, not of those without a second factor: Clerk would have to be asked for each.
+
+## F110 - Administration polish
+
+- **Status:** closed - fixed 2026-11-26
+- **Found:** 2026-11-25, the Administration review (seen unless marked)
+
+- `Screencasts timezones` sets a list only a v1 screen reads (from code).
+- The Workspace time zone sits under Tracking Policy; the Workspace tab says the name, the
+  role and the count, and changes nothing (no rename, no transfer, no deletion in v2).
+- `Members & Roles` is People's list again, without its actions.
+- Stored names show raw on the dev Workspace (`discovering_call_completed`). Up and Down
+  buttons for an order that is dragged elsewhere.
+- `ACTIVE`, `REVOKED`, `DISABLED` in boxes as wide as the column; `BUILT IN`, `FIXED
+  OUTCOME`, `DEFAULTS`, `CURRENT PLAN` in capitals; `client.created · …` as the code
+  writes it.
+- Column heads stay over an empty list, and its card has the same button twice.
+- On a phone the tabs scroll under a bar with arrows, and the open tab is off screen.
+- `Writes allowed`, `IANA timezone`, `Platform Staff`, `heartbeat` are the code's words;
+  `Renews -` for what does not renew. Curly quotes and `–` in two notes.
+- A Member's refusal is a bare line, where Analytics now draws one.
+
+- **Proposal:** the Workspace tab holds the name (editable), the time zone and the Owner;
+  Members & Roles goes; Screencasts timezones goes from v2; plain words, sentence case,
+  the shared refusal; tabs that scroll without a bar and bring the open one into view.
+
+- **Fixed:** 2026-11-26. All but the raw stored names of the dev Workspace. The Workspace tab holds the name (editable by the Owner), the Owner and the time zone; Members and Roles goes to People; Screencasts timezones leaves v2; plain words and sentence case; the shared refusal; tabs that scroll without a bar on a phone and bring the open one into view (seen in light and dark, at 375 px).
