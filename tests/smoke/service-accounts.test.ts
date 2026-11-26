@@ -265,7 +265,9 @@ describe("Service Account web BFF", () => {
     const admin = await registerUser(app);
     await setWorkspaceRole(admin.id, "owner");
 
-    const created = await admin.agent.post("/api/service-accounts").send({ name: "Key" });
+    const created = await admin.agent
+      .post("/api/service-accounts")
+      .send({ name: "Key", capabilityIds: [VIEW_DAILY_UPDATES_CAPABILITY_ID] });
     expect(created.status).toBe(201);
 
     const withKey = await admin.agent

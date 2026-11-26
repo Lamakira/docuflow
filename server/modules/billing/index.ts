@@ -1,9 +1,9 @@
 import type { BillingPersistence } from "./persistence";
 import { config } from "../../config";
 import { billingProviderFromAppConfig } from "./createBillingProvider";
+import { cancelAtPeriodEnd } from "./cancellation";
 import {
   applyPeriodEnd,
-  cancelAtPeriodEnd,
   exhaustDunning,
   expireTrial,
   markPastDue,
@@ -91,10 +91,10 @@ export {
   featureIncluded,
   projectWriteFeature,
 } from "./featureGate";
+export { cancelAtPeriodEnd, keepSubscription } from "./cancellation";
 export {
   InvalidBillingTransitionError,
   applyPeriodEnd,
-  cancelAtPeriodEnd,
   exhaustDunning,
   expireTrial,
   markPastDue,
@@ -129,6 +129,7 @@ export type {
   SeatProration,
   SubscriptionPlanChange,
   PaymentMethodUpdateRequest,
+  PlanPrice,
   WebhookEvent,
 } from "./billingProvider";
 export {
@@ -189,6 +190,7 @@ export {
   PaymentMethodUpdateUnavailableError,
   changePlan,
   getSubscriptionStatus,
+  readPrices,
   startCheckout,
   startPaymentMethodUpdate,
 } from "./checkout";

@@ -7,7 +7,10 @@ import { Button } from "@/components/ui/button";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { composeSessionTask, SESSION_TASK_COMPLETE_PATH } from "@/lib/sessionTask";
 import { notify } from "./notify";
-import { V2EmptyState } from "./V2EmptyState";
+import { useRefreshFailure } from "./useRefreshFailure";
+import { DestructiveConfirm } from "./V2DestructiveConfirm";
+import { V2EmptyState, V2LoadFailed } from "./V2EmptyState";
+import { SkeletonLines } from "./V2Skeleton";
 import { V2FilterSelect, V2_SELECT_NONE } from "./V2Select";
 import {
   composeTwoFactorSetting,
@@ -19,6 +22,7 @@ import {
   supportGrantRevokePath,
   TWO_FACTOR_PATH,
   TWO_FACTOR_REQUIRE_PATH,
+  requireSecondFactorConsequence,
   type PlatformStaffOption,
   type SupportGrantView,
   type WorkspaceAssurance,
@@ -26,15 +30,14 @@ import {
 import { V2PageHead } from "./V2PageHead";
 
 export function V2SupportAccess({ workspaceRole }: { workspaceRole: string }) {
-  const { data: grants = [], isLoading: grantsLoading } = useQuery<SupportGrantView[]>({
-    queryKey: [SUPPORT_GRANTS_PATH],
-  });
-  const { data: staff = [] } = useQuery<PlatformStaffOption[]>({
-    queryKey: [PLATFORM_STAFF_PATH],
-  });
-  const { data: assurance } = useQuery<WorkspaceAssurance>({
-    queryKey: [TWO_FACTOR_PATH],
-  });
+  const grantsRead = useQuery<SupportGrantView[]>({ queryKey: [SUPPORT_GRANTS_PATH] });
+  const staffRead = useQuery<PlatformStaffOption[]>({ queryKey: [PLATFORM_STAFF_PATH] });
+  const assuranceRead = useQuery<WorkspaceAssurance>({ queryKey: [TWO_FACTOR_PATH] });
+  const { data: members } = useQuery<{ memberships: unknown[] }>({ queryKey: ["/api/workspace/memberships"] });
+  const grants = grantsRead.data ?? [];
+  const staff = staffRead.data ?? [];
+  const assurance = assuranceRead.data;
+  useRefreshFailure(grantsRead.isError && grantsRead.data !== undefined, "Support access could not be refreshed.", "v2-support-access-refresh-failed");
   const [staffId, setStaffId] = useState(V2_SELECT_NONE);
   const [span, setSpan] = useState<"24" | "168">("24");
   const setting = composeTwoFactorSetting({
@@ -67,7 +70,7 @@ export function V2SupportAccess({ workspaceRole }: { workspaceRole: string }) {
   });
 
   const requireFactor = useMutation({
-    mutationFn: () => apiRequest("PATCH", TWO_FACTOR_REQUIRE_PATH, { required: !setting.required }),
+    mutationFn: (required: boolean) => apiRequest("PATCH", TWO_FACTOR_REQUIRE_PATH, { required }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: [TWO_FACTOR_PATH] });
     },
@@ -81,12 +84,19 @@ export function V2SupportAccess({ workspaceRole }: { workspaceRole: string }) {
           <div className="df-card-head-text">
             <h2 className="df-card-title">Support access</h2>
             <p className="df-card-sub">
-              A grant lets Platform Staff read this Workspace. It expires on its own. Nothing they do here can change it.
+              A grant lets DocuFlow support read this Workspace. It expires on its own. Nothing they do here can change it.
             </p>
           </div>
         </div>
-        {grantsLoading ? (
-          <p className="df-support-note">Reading active grants…</p>
+        {grantsRead.isLoading ? (
+          <SkeletonLines count={2} />
+        ) : grantsRead.isError && grantsRead.data === undefined ? (
+          // Someone may have access: a failed read is never drawn as none (F107).
+          <V2LoadFailed
+            title="Support access could not be loaded"
+            onRetry={() => void grantsRead.refetch()}
+            testId="v2-support-access-failed"
+          />
         ) : grants.length === 0 ? (
           <V2EmptyState
             icon="access"
@@ -99,7 +109,7 @@ export function V2SupportAccess({ workspaceRole }: { workspaceRole: string }) {
             {grants.map((row) => (
               <li key={row.id}>
                 <span>
-                  {row.email ?? "Platform Staff"}
+                  {row.email ?? "DocuFlow support"}
                   {grantExpiryLabel(row.expiresAt) ? ` until ${grantExpiryLabel(row.expiresAt)}` : ""}
                 </span>
                 <Button
@@ -117,61 +127,94 @@ export function V2SupportAccess({ workspaceRole }: { workspaceRole: string }) {
             ))}
           </ul>
         )}
-        <div className="df-form-actions">
-          <V2FilterSelect
-            label=""
-            ariaLabel="Platform Staff"
-            value={staffId}
-            testId="v2-support-access-staff"
-            options={[
-              { value: V2_SELECT_NONE, label: "Choose Platform Staff" },
-              ...staff.map((row) => ({ value: row.id, label: row.email ?? row.id })),
-            ]}
-            onChange={setStaffId}
+        {staffRead.isError ? (
+          <V2LoadFailed
+            title="DocuFlow support could not be loaded"
+            onRetry={() => void staffRead.refetch()}
+            testId="v2-support-access-staff-failed"
           />
-          <V2FilterSelect
-            label=""
-            ariaLabel="How long the grant lasts"
-            value={span}
-            testId="v2-support-access-hours"
-            options={[
-              { value: "24", label: "24 hours" },
-              { value: "168", label: "7 days" },
-            ]}
-            onChange={(value) => setSpan(value === "168" ? "168" : "24")}
-          />
-          <Button
-            type="button"
-            className="df-btn"
-            disabled={staffId === V2_SELECT_NONE || grant.isPending}
-            onClick={() => grant.mutate()}
-            data-testid="v2-support-access-grant"
-          >
-            {grant.isPending ? "Granting…" : "Grant read-only access"}
-          </Button>
-        </div>
+        ) : (
+          <div className="df-form-actions">
+            <V2FilterSelect
+              label=""
+              ariaLabel="DocuFlow support"
+              value={staffId}
+              disabled={staffRead.isLoading}
+              testId="v2-support-access-staff"
+              options={[
+                { value: V2_SELECT_NONE, label: "Choose someone from DocuFlow support" },
+                ...staff.map((row) => ({ value: row.id, label: row.label })),
+              ]}
+              onChange={setStaffId}
+            />
+            <V2FilterSelect
+              label=""
+              ariaLabel="How long the grant lasts"
+              value={span}
+              testId="v2-support-access-hours"
+              options={[
+                { value: "24", label: "24 hours" },
+                { value: "168", label: "7 days" },
+              ]}
+              onChange={(value) => setSpan(value === "168" ? "168" : "24")}
+            />
+            <Button
+              type="button"
+              className="df-btn"
+              disabled={staffId === V2_SELECT_NONE || grant.isPending}
+              onClick={() => grant.mutate()}
+              data-testid="v2-support-access-grant"
+            >
+              {grant.isPending ? "Granting…" : "Grant read-only access"}
+            </Button>
+          </div>
+        )}
       </section>
 
       <section className="df-card" data-testid="v2-administration-two-factor">
         <div className="df-card-head">
           <div className="df-card-head-text">
             <h2 className="df-card-title">Second factor</h2>
-            <p className="df-card-sub">{setting.note}</p>
+            {assurance ? <p className="df-card-sub">{setting.note}</p> : null}
           </div>
-          {setting.canChange ? (
-            <Button
-              type="button"
-              variant={setting.required ? "outline" : "default"}
-              className="df-btn"
-              disabled={requireFactor.isPending || setting.blocked !== null}
-              onClick={() => requireFactor.mutate()}
-              data-testid="v2-two-factor-toggle"
-            >
-              {setting.action}
-            </Button>
+          {/* The button shows once the requirement in force is read, never from a guess. */}
+          {assurance && setting.canChange ? (
+            setting.required ? (
+              <Button
+                type="button"
+                variant="outline"
+                className="df-btn"
+                disabled={requireFactor.isPending}
+                onClick={() => requireFactor.mutate(false)}
+                data-testid="v2-two-factor-toggle"
+              >
+                {setting.action}
+              </Button>
+            ) : (
+              <DestructiveConfirm
+                tone="neutral"
+                label={requireFactor.isPending ? "Requiring…" : setting.action}
+                title="Require a second factor"
+                consequence={requireSecondFactorConsequence(members?.memberships.length ?? null)}
+                confirmLabel="Require a second factor"
+                keepLabel="Keep it optional"
+                pending={requireFactor.isPending}
+                disabled={setting.blocked !== null}
+                testId="v2-two-factor-toggle"
+                onConfirm={() => requireFactor.mutate(true)}
+              />
+            )
           ) : null}
         </div>
-        {setting.canChange ? (
+        {assuranceRead.isLoading ? (
+          <SkeletonLines count={1} />
+        ) : assuranceRead.isError && !assurance ? (
+          <V2LoadFailed
+            title="The second-factor setting could not be loaded"
+            onRetry={() => void assuranceRead.refetch()}
+            testId="v2-two-factor-failed"
+          />
+        ) : setting.canChange ? (
           setting.blocked ? (
             <p className="df-support-note" data-testid="v2-two-factor-blocked">
               {setting.blocked}

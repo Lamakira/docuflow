@@ -126,7 +126,6 @@ const ACTIVITY_TAB_SET = new Set<string>(ACTIVITY_TAB_IDS);
 export const ADMINISTRATION_TAB_IDS = [
   "workspace",
   "billing",
-  "members",
   "tracking-policy",
   "pipeline-lists",
   "integrations",
@@ -140,9 +139,8 @@ const ADMINISTRATION_TAB_SET = new Set<string>(ADMINISTRATION_TAB_IDS);
 export const ADMINISTRATION_TAB_LABEL: Record<AdministrationTabId, string> = {
   workspace: "Workspace",
   billing: "Billing",
-  members: "Members & Roles",
   "tracking-policy": "Tracking Policy",
-  "pipeline-lists": "Pipeline & lists",
+  "pipeline-lists": "Pipeline and lists",
   integrations: "Integrations",
   "support-access": "Support access",
 };
@@ -542,6 +540,11 @@ export function matchV2Route(path: string): V2Match {
   // v1 Analytics lived under /admin; it is its own destination now (#281).
   if (pathname === "/analytics" || pathname === "/admin/analytics") {
     return { kind: "analytics", title: "Analytics", href: "/analytics" };
+  }
+
+  // Members & Roles went: People holds the Members and their Workspace Roles.
+  if (pathname.replace(/\/+$/, "") === "/administration/members") {
+    return { kind: "people", title: "People", href: "/people" };
   }
 
   const administrationTab = parseAdministrationPath(pathname);

@@ -7,14 +7,30 @@ import {
   revokeServiceAccount,
   rotateServiceAccountSecret,
   ServiceAccountNotFoundError,
+  ServiceAccountRevokedError,
   UnknownCapabilityError,
+  updateServiceAccount,
 } from "./serviceAccounts";
 import { requireAdministration } from "../../workspaceRole";
 
-const createBody = z.object({
-  name: z.string().min(1),
-  capabilityIds: z.array(z.string()).optional(),
-});
+const name = z
+  .string({ required_error: "Give the Service Account a name" })
+  .trim()
+  .min(1, "Give the Service Account a name")
+  .max(100, "A Service Account name is at most 100 characters");
+
+// A Service Account without a Capability can do nothing (F109).
+const capabilityIds = z
+  .array(z.string(), { required_error: "Choose at least one Capability" })
+  .min(1, "Choose at least one Capability");
+
+const createBody = z.object({ name, capabilityIds });
+
+const updateBody = z
+  .object({ name: name.optional(), capabilityIds: capabilityIds.optional() })
+  .refine((body) => body.name !== undefined || body.capabilityIds !== undefined, {
+    message: "Nothing to change",
+  });
 
 function notFound(res: { status: (code: number) => { json: (body: unknown) => void } }, error: unknown) {
   if (error instanceof ServiceAccountNotFoundError) {
@@ -47,6 +63,25 @@ export function registerServiceAccountRoutes(app: Express): void {
 
   app.get("/api/service-accounts", isAuthenticated, requireAdministration, async (_req, res) => {
     res.json(await listServiceAccounts());
+  });
+
+  app.patch("/api/service-accounts/:id", isAuthenticated, requireAdministration, async (req, res) => {
+    const parsed = updateBody.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ message: parsed.error.errors[0]?.message ?? "Invalid request" });
+    }
+    try {
+      res.json(await updateServiceAccount(req.params.id, parsed.data));
+    } catch (error) {
+      if (notFound(res, error)) return;
+      if (error instanceof ServiceAccountRevokedError) {
+        return res.status(409).json({ message: error.message });
+      }
+      if (error instanceof UnknownCapabilityError) {
+        return res.status(400).json({ message: error.message });
+      }
+      throw error;
+    }
   });
 
   app.post("/api/service-accounts/:id/revoke", isAuthenticated, requireAdministration, async (req, res) => {

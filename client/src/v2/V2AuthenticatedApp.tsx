@@ -111,6 +111,9 @@ function V2WorkspaceApp() {
           <Route path="/administration/crm-fields">
             <Redirect to="/administration/pipeline-lists" />
           </Route>
+          <Route path="/administration/members">
+            <Redirect to="/people" />
+          </Route>
           <Route path="/administration/:tab?" component={V2AdministrationPage} />
           <Route path="/analytics" component={V2AnalyticsPage} />
           <Route path="/devices" component={V2DevicesPage} />

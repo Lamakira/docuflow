@@ -143,14 +143,14 @@ describe("notifications and org settings (characterization)", () => {
     expect(countdown.status).toBe(400);
     expect(countdown.body).toEqual({ message: "Idle countdown must be between 15 and 120 seconds" });
 
-    // Quirk: the max-interval bound is nested under the min-interval check, so
-    // sending only an out-of-range max is accepted.
-    const unguardedMax = await admin.agent
+    // An out-of-range max sent alone is refused too (F108); it used to be saved.
+    const loneMax = await admin.agent
       .patch("/api/admin/org-settings")
       .send({ screenshotPolicy: { captureIntervalMaxMin: 99 } });
-    expect(unguardedMax.status).toBe(200);
+    expect(loneMax.status).toBe(400);
+    expect(loneMax.body).toEqual({ message: "Maximum capture interval cannot exceed 15 minutes" });
     expect((await admin.agent.get("/api/admin/org-settings")).body.screenshotPolicy
-      .captureIntervalMaxMin).toBe(99);
+      .captureIntervalMaxMin).toBe(12);
 
     const nothing = await admin.agent.patch("/api/admin/org-settings").send({});
     expect(nothing.status).toBe(400);
@@ -208,8 +208,9 @@ describe("notifications and org settings (characterization)", () => {
       .patch("/api/admin/org-settings")
       .send({ allowedTimezones: ["America/Toronto", ""] });
     expect(invalid.status).toBe(400);
+    // IANA names since F108, not any non-empty string.
     expect(invalid.body).toEqual({
-      message: "allowedTimezones must be an array of non-empty strings",
+      message: "Each time zone in the list must be an IANA time zone, for example Europe/Paris",
     });
   });
 

@@ -195,7 +195,7 @@ describe("Billing preselection", () => {
   });
 
   it("feeds the Plan cards and the interval from the choice", () => {
-    const page = source("v2/V2Administration.tsx");
+    const page = source("v2/V2AdministrationBilling.tsx");
     expect(page).toContain("chosenPlan ?? currentPriced ?? intendedPricedPlan(entitlements) ?? \"business\"");
     expect(page).toContain("entitlements?.billingInterval ?? entitlements?.intendedInterval ?? \"monthly\"");
     expect(page).toContain('data-testid="v2-administration-plan-intent"');

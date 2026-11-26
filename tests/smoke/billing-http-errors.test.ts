@@ -233,7 +233,7 @@ describe("billing routes answer provider failures (#299)", () => {
     const res = await admin.agent.post("/api/billing/plan").send({ planKey: "growth", interval: "monthly" });
 
     expect(res.status).toBe(500);
-    expect(res.body).toEqual({ message: "socket hang up" });
+    expect(res.body).toEqual({ message: "Internal Server Error" });
     expect((await admin.agent.get("/api/billing/entitlements")).status).toBe(200);
   });
 });

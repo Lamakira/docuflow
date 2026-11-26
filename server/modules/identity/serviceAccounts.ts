@@ -31,6 +31,13 @@ export class ServiceAccountNotFoundError extends Error {
   }
 }
 
+export class ServiceAccountRevokedError extends Error {
+  constructor() {
+    super("This Service Account is revoked");
+    this.name = "ServiceAccountRevokedError";
+  }
+}
+
 export type PrincipalContext = {
   principal: { kind: "service_account"; serviceAccountId: string };
   workspaceId: string;
@@ -166,6 +173,53 @@ export async function revokeServiceAccount(id: string): Promise<void> {
     .where(and(eq(serviceAccounts.id, id), inWorkspace(serviceAccounts)))
     .returning({ id: serviceAccounts.id });
   if (!row) throw new ServiceAccountNotFoundError();
+}
+
+/** Renames and/or replaces the Capabilities of a Service Account that is not revoked. */
+export async function updateServiceAccount(
+  id: string,
+  input: { name?: string; capabilityIds?: string[] }
+): Promise<ServiceAccountView> {
+  const capabilityIds = input.capabilityIds ? uniqueIds(input.capabilityIds) : undefined;
+  if (capabilityIds) await assertKnownCapabilities(capabilityIds);
+
+  return db.transaction(async (tx) => {
+    const [existing] = await tx
+      .select()
+      .from(serviceAccounts)
+      .where(and(eq(serviceAccounts.id, id), inWorkspace(serviceAccounts)))
+      .for("update");
+    if (!existing) throw new ServiceAccountNotFoundError();
+    if (existing.revokedAt) throw new ServiceAccountRevokedError();
+
+    let row = existing;
+    if (input.name !== undefined) {
+      [row] = await tx
+        .update(serviceAccounts)
+        .set({ name: input.name })
+        .where(and(eq(serviceAccounts.id, id), inWorkspace(serviceAccounts)))
+        .returning();
+    }
+    if (capabilityIds) {
+      await tx
+        .delete(serviceAccountCapabilities)
+        .where(
+          and(
+            eq(serviceAccountCapabilities.serviceAccountId, id),
+            inWorkspace(serviceAccountCapabilities)
+          )
+        );
+      if (capabilityIds.length > 0) {
+        await tx.insert(serviceAccountCapabilities).values(
+          capabilityIds.map((capabilityId) =>
+            stampWorkspace({ serviceAccountId: id, capabilityId })
+          )
+        );
+      }
+      return toView(row, capabilityIds);
+    }
+    return toView(row, (await grantsFor([id])).get(id) ?? []);
+  });
 }
 
 export async function rotateServiceAccountSecret(

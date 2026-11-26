@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
+import { CLIENTS_READ_CAPABILITY_ID, PROJECTS_READ_CAPABILITY_ID } from "../../shared/schema";
 import { makeApp } from "../helpers/app";
 import { newAgent, registerUser, setWorkspaceRole } from "../helpers/auth";
 import { resetDb, ownerDb } from "../helpers/db";
@@ -42,7 +43,7 @@ describe("public /api/v1 (characterization)", () => {
     const app = await makeApp();
     const admin = await registerUser(app);
     await setWorkspaceRole(admin.id, "owner");
-    const created = await admin.agent.post("/api/service-accounts").send({ name: "CRM" });
+    const created = await admin.agent.post("/api/service-accounts").send({ name: "CRM", capabilityIds: [PROJECTS_READ_CAPABILITY_ID] });
     expect(created.status).toBe(201);
 
     const asSession = await admin.agent.get("/api/v1");
@@ -73,7 +74,9 @@ describe("public /api/v1 catalogue (characterization)", () => {
       name: "CRM",
       capabilityIds: [CLIENTS_READ_CAPABILITY_ID],
     });
-    const denied = await admin.agent.post("/api/service-accounts").send({ name: "No caps" });
+    const denied = await admin.agent
+      .post("/api/service-accounts")
+      .send({ name: "Projects only", capabilityIds: [PROJECTS_READ_CAPABILITY_ID] });
 
     const asGranted = await newAgent(app)
       .get("/api/v1/clients")
@@ -152,7 +155,7 @@ describe("public /api/v1 catalogue (characterization)", () => {
     const app = await makeApp();
     const admin = await registerUser(app);
     await setWorkspaceRole(admin.id, "owner");
-    const created = await admin.agent.post("/api/service-accounts").send({ name: "CRM" });
+    const created = await admin.agent.post("/api/service-accounts").send({ name: "CRM", capabilityIds: [PROJECTS_READ_CAPABILITY_ID] });
     const agent = newAgent(app).set("Authorization", `Bearer ${created.body.plaintextKey}`);
 
     for (const path of [
@@ -229,7 +232,9 @@ describe("public /api/v1 webhook endpoints (characterization)", () => {
     const app = await makeApp();
     const admin = await registerUser(app);
     await setWorkspaceRole(admin.id, "owner");
-    const denied = await admin.agent.post("/api/service-accounts").send({ name: "No caps" });
+    const denied = await admin.agent
+      .post("/api/service-accounts")
+      .send({ name: "Clients only", capabilityIds: [CLIENTS_READ_CAPABILITY_ID] });
     const granted = await admin.agent.post("/api/service-accounts").send({
       name: "Hooks only",
       capabilityIds: [WEBHOOK_ENDPOINTS_MANAGE_CAPABILITY_ID],

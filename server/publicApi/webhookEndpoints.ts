@@ -9,12 +9,13 @@ import {
   listWebhookEndpoints,
   rotateWebhookEndpointSecret,
   UnknownWebhookEventTypeError,
+  WebhookAddressError,
   WebhookEndpointNotFoundError,
   type WebhookEndpointView,
 } from "../modules/workspace";
 import { requireCapability } from "./capabilities";
 import { cursorPage, decodeCursor, rfc3339Utc } from "./cursor";
-import { sendProblem, BAD_REQUEST, NOT_FOUND } from "./problem";
+import { sendProblem, BAD_REQUEST, NOT_FOUND, type Problem } from "./problem";
 import { requestIdOf } from "./trace";
 import type { PublicApiRequest } from "./types";
 
@@ -22,9 +23,15 @@ const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
 
 const createBody = z.object({
-  url: z.string().url(),
+  url: z.string(),
   eventTypes: z.array(z.string()).min(1),
 });
+
+// problem+json keeps its shape; `detail` (RFC 9457) says what to change.
+const ADDRESS_REFUSED: Problem & { detail: string } = {
+  ...BAD_REQUEST,
+  detail: new WebhookAddressError().message,
+};
 
 function requestId(req: PublicApiRequest): string {
   return req.publicApiRequestId ?? requestIdOf(req);
@@ -79,6 +86,10 @@ export function registerPublicApiV1WebhookEndpoints(router: Router): void {
       } catch (error) {
         if (error instanceof UnknownWebhookEventTypeError) {
           sendProblem(res, BAD_REQUEST, requestId(req));
+          return;
+        }
+        if (error instanceof WebhookAddressError) {
+          sendProblem(res, ADDRESS_REFUSED, requestId(req));
           return;
         }
         throw error;

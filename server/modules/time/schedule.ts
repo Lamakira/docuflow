@@ -19,9 +19,12 @@ export async function getAllowedTimezones(): Promise<string[]> {
   return row?.allowedTimezones ?? DEFAULT_ALLOWED_TIMEZONES;
 }
 
-export async function upsertAllowedTimezones(timezones: string[]): Promise<void> {
+type Executor = Pick<typeof db, "insert">;
+
+/** Pass a transaction to save the list with other settings at once (F108). */
+export async function upsertAllowedTimezones(timezones: string[], executor: Executor = db): Promise<void> {
   requireWorkspaceContext();
-  await db
+  await executor
     .insert(orgSettings)
     .values(stampWorkspace({ id: "default", allowedTimezones: timezones, updatedAt: new Date() }))
     .onConflictDoUpdate({
@@ -41,9 +44,9 @@ export async function getWorkspaceTimeZone(): Promise<string> {
 }
 
 /** Callers validate the name first (`isIanaTimeZone`). */
-export async function upsertWorkspaceTimeZone(timeZone: string): Promise<void> {
+export async function upsertWorkspaceTimeZone(timeZone: string, executor: Executor = db): Promise<void> {
   requireWorkspaceContext();
-  await db
+  await executor
     .insert(orgSettings)
     .values(stampWorkspace({ id: "default", timeZone, updatedAt: new Date() }))
     .onConflictDoUpdate({

@@ -136,6 +136,14 @@ export type SubscriptionPlanChange = {
   interval: BillingInterval;
 };
 
+/** What one seat of a priced Plan costs, in minor units of `currency`. */
+export type PlanPrice = {
+  planKey: PlanKey;
+  interval: BillingInterval;
+  unitAmountMinor: number;
+  currency: string;
+};
+
 export type PaymentMethodUpdateRequest = {
   providerCustomerId: string;
   returnUrl: string;
@@ -160,6 +168,11 @@ export interface BillingProvider {
   /** Back-office command: ends or keeps the Subscription at its period end. */
   setCancelAtPeriodEnd(update: CancelAtPeriodEndUpdate): Promise<void>;
   createPaymentMethodUpdate(request: PaymentMethodUpdateRequest): Promise<HostedBillingSession>;
+  /**
+   * The current Price of each priced Plan and interval, found by lookup key: in
+   * `currency` where the Price carries it, else in the Price's own.
+   */
+  listPrices(currency: string | null): Promise<PlanPrice[]>;
   verifyWebhook(payload: string, signature: string): Promise<WebhookEvent>;
   /** A link to the provider's own dashboard for staff, or null when none is known. Never an API call. */
   dashboardUrl(kind: ProviderResourceKind, id: string): string | null;
@@ -204,6 +217,11 @@ export class UnconfiguredBillingProvider implements BillingProvider {
 
   async verifyWebhook(): Promise<WebhookEvent> {
     this.closed();
+  }
+
+  /** Prices are shown, never charged: with no provider there are none to show. */
+  async listPrices(): Promise<PlanPrice[]> {
+    return [];
   }
 
   dashboardUrl(): string | null {

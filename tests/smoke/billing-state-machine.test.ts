@@ -203,6 +203,9 @@ describe("cancel-at-period-end", () => {
 
   it("becomes ReadOnly when cancel-at-period-end reaches period end", async () => {
     const { inSeededWorkspace } = await import("../helpers/workspace");
+    const { FakeBillingProvider } = await import("../fakes/billingProvider");
+    const { eq } = await import("drizzle-orm");
+    const { SEEDED_WORKSPACE_ID, workspaceBilling } = await import("../../shared/schema");
     const PERIOD_END = new Date("2026-02-01T00:00:00.000Z");
     const {
       cancelAtPeriodEnd,
@@ -210,10 +213,14 @@ describe("cancel-at-period-end", () => {
       getBillingProjection,
       effectiveEntitlements,
     } = await import("../../server/modules/billing");
+    await ownerDb
+      .update(workspaceBilling)
+      .set({ stripeCustomerId: "cus_state", stripeSubscriptionId: "sub_state", periodEndsAt: PERIOD_END })
+      .where(eq(workspaceBilling.workspaceId, SEEDED_WORKSPACE_ID));
+    const provider = new FakeBillingProvider();
 
-    const flagged = await inSeededWorkspace(() =>
-      cancelAtPeriodEnd(SYSTEM, { periodEndsAt: PERIOD_END })
-    );
+    const flagged = await inSeededWorkspace(() => cancelAtPeriodEnd(SYSTEM, provider));
+    expect(provider.cancelAtPeriodEndUpdates).toEqual([{ providerSubscriptionId: "sub_state", cancel: true }]);
     expect(flagged.billingState).toBe("Active");
     expect(flagged.cancelAtPeriodEnd).toBe(true);
     expect(flagged.periodEndsAt).toEqual(PERIOD_END);
@@ -234,6 +241,8 @@ describe("cancel-at-period-end", () => {
     const { startTrial, cancelAtPeriodEnd, InvalidBillingTransitionError } = await import(
       "../../server/modules/billing"
     );
+    const { FakeBillingProvider } = await import("../fakes/billingProvider");
+    const provider = new FakeBillingProvider();
 
     await plantUnpinnedWorkspace();
     await runWithWorkspaceContext({ workspaceId: TRIAL_WORKSPACE_ID }, () =>
@@ -241,8 +250,9 @@ describe("cancel-at-period-end", () => {
     );
 
     await expect(
-      runWithWorkspaceContext({ workspaceId: TRIAL_WORKSPACE_ID }, () => cancelAtPeriodEnd(SYSTEM))
+      runWithWorkspaceContext({ workspaceId: TRIAL_WORKSPACE_ID }, () => cancelAtPeriodEnd(SYSTEM, provider))
     ).rejects.toBeInstanceOf(InvalidBillingTransitionError);
+    expect(provider.cancelAtPeriodEndUpdates).toEqual([]);
   });
 });
 
@@ -332,15 +342,14 @@ describe("Read-only Workspace HTTP", () => {
       await exhaustDunning(SYSTEM);
     });
 
+    // The gate lets it through: the answer is the handler's (no Subscription to
+    // cancel once the Workspace is read-only, F102), not "Workspace is read-only".
     const recovered = await admin.agent.post("/api/billing/cancel-at-period-end").send({});
-    expect(recovered.status).toBe(200);
-    expect(recovered.body).toMatchObject({
-      billingState: "ReadOnly",
-      cancelAtPeriodEnd: true,
-    });
+    expect(recovered.status).toBe(400);
+    expect(recovered.body).toEqual({ message: "There is no Subscription to cancel" });
 
     const pin = await inSeededWorkspace(() => getBillingProjection());
-    expect(pin.cancelAtPeriodEnd).toBe(true);
+    expect(pin).toMatchObject({ billingState: "ReadOnly", cancelAtPeriodEnd: false });
 
     const mutation = await admin.agent.post("/api/crm/clients").send({ name: "Acme" });
     expect(mutation.status).toBe(403);

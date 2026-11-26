@@ -24,6 +24,7 @@ export {
   listWebhookEndpoints,
   rotateWebhookEndpointSecret,
   UnknownWebhookEventTypeError,
+  WebhookAddressError,
   WebhookEndpointNotFoundError,
 } from "./webhookEndpoints";
 

@@ -16,6 +16,7 @@ import { auditEvents, outboxEvents, workspaceBilling } from "@shared/schema";
 import { db } from "../../db";
 import { inWorkspace, requireWorkspaceContext, stampWorkspace } from "../../workspaceContext";
 import type { BillingProvider } from "./billingProvider";
+import { setCancelAtPeriodEnd } from "./cancellation";
 import {
   BillingPinMissingError,
   billingProjectionOf,
@@ -178,57 +179,11 @@ export async function offerPlan(
   });
 }
 
-/**
- * Stripe is asked first, outside the transaction, so a refused call leaves the
- * pin and the Audit Log untouched. The webhook projection later agrees with it.
- */
+/** The same path as the Billing page, except that staff get a repeat refused rather than answered. */
 export async function setOperatorCancelAtPeriodEnd(
   actor: AuditActor,
   input: { cancel: boolean },
   provider: BillingProvider
 ): Promise<BillingProjection> {
-  const [current] = await db
-    .select()
-    .from(workspaceBilling)
-    .where(inWorkspace(workspaceBilling))
-    .limit(1);
-  if (!current) throw new BillingPinMissingError();
-  assertCancellable(current, input.cancel);
-  await provider.setCancelAtPeriodEnd({
-    providerSubscriptionId: current.stripeSubscriptionId!,
-    cancel: input.cancel,
-  });
-
-  return db.transaction(async (tx) => {
-    const pin = await lockPin(tx);
-    assertCancellable(pin, input.cancel);
-    const [updated] = await tx
-      .update(workspaceBilling)
-      .set({
-        cancelAtPeriodEnd: input.cancel,
-        authorizationVersion: pin.authorizationVersion + 1,
-        updatedAt: new Date(),
-      })
-      .where(inWorkspace(workspaceBilling))
-      .returning();
-    await recordOperatorAudit(
-      tx,
-      actor,
-      input.cancel ? "billing.cancel_at_period_end" : "billing.cancel_at_period_end_undone",
-      { periodEndsAt: pin.periodEndsAt ? pin.periodEndsAt.toISOString() : null }
-    );
-    return billingProjectionOf(updated);
-  });
-}
-
-function assertCancellable(pin: PinRow, cancel: boolean): void {
-  if (!hasPaidSubscription(pin)) {
-    throw new InvalidBillingTransitionError("Only a paid Subscription can be set to end at its period end");
-  }
-  if (cancel && pin.cancelAtPeriodEnd) {
-    throw new InvalidBillingTransitionError("The Subscription already ends at its period end");
-  }
-  if (!cancel && !pin.cancelAtPeriodEnd) {
-    throw new InvalidBillingTransitionError("The Subscription is not set to end at its period end");
-  }
+  return setCancelAtPeriodEnd(actor, input, provider, "operator");
 }

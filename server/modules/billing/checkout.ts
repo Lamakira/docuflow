@@ -7,8 +7,9 @@
 import { SEEDED_WORKSPACE_ID, auditEvents, outboxEvents, workspaceBilling } from "@shared/schema";
 import { db } from "../../db";
 import { inWorkspace, requireWorkspaceContext, stampWorkspace } from "../../workspaceContext";
-import type { BillingProvider, HostedBillingSession } from "./billingProvider";
+import type { BillingProvider, HostedBillingSession, PlanPrice } from "./billingProvider";
 import {
+  BillingPinMissingError,
   billingProjectionOf,
   getBillingProjection,
   type AuditActor,
@@ -49,12 +50,50 @@ export class PaymentMethodUpdateUnavailableError extends Error {
   }
 }
 
-export type SubscriptionStatus = BillingProjection & { consumedSeatCount: number };
+export type SubscriptionStatus = BillingProjection & {
+  consumedSeatCount: number;
+  /** A decrease planned for the period end. */
+  pendingSeatQuantity: number | null;
+  unitAmountMinor: number | null;
+  currency: string | null;
+  canCancel: boolean;
+  canKeep: boolean;
+};
+
+async function loadPinRow() {
+  const [row] = await db.select().from(workspaceBilling).where(inWorkspace(workspaceBilling)).limit(1);
+  if (!row) throw new BillingPinMissingError();
+  return row;
+}
 
 export async function getSubscriptionStatus(): Promise<SubscriptionStatus> {
-  const pin = await getBillingProjection();
+  const row = await loadPinRow();
+  const pin = billingProjectionOf(row);
   const consumedSeatCount = await countConsumedSeats();
-  return { ...pin, consumedSeatCount };
+  const live = hasLiveSubscription(pin);
+  return {
+    ...pin,
+    consumedSeatCount,
+    pendingSeatQuantity: row.pendingSeatQuantity ?? null,
+    unitAmountMinor: row.unitAmountMinor ?? null,
+    currency: row.currency ?? null,
+    canCancel: live && !pin.cancelAtPeriodEnd,
+    canKeep: live && pin.cancelAtPeriodEnd,
+  };
+}
+
+/**
+ * Prices for the Billing page, in the live Subscription's currency when there
+ * is one. Only shown, never charged: a provider that cannot answer means none.
+ */
+export async function readPrices(provider: BillingProvider): Promise<PlanPrice[]> {
+  const row = await loadPinRow();
+  try {
+    return await provider.listPrices(hasLiveSubscription(billingProjectionOf(row)) ? (row.currency ?? null) : null);
+  } catch (error) {
+    console.warn(`[billing] Prices could not be read: ${error instanceof Error ? error.message : String(error)}`);
+    return [];
+  }
 }
 
 export type StartCheckoutInput = {

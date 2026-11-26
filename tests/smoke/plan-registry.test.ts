@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { SEEDED_WORKSPACE_ID } from "../../shared/schema";
+import { CLIENTS_READ_CAPABILITY_ID, SEEDED_WORKSPACE_ID } from "../../shared/schema";
 import { makeApp } from "../helpers/app";
 import { newAgent, registerUser, setWorkspaceRole } from "../helpers/auth";
 import { resetDb, ownerDb } from "../helpers/db";
@@ -368,7 +368,7 @@ describe("public /api/v1 rate-limit substitution", () => {
     const app = await makeApp();
     const admin = await registerUser(app);
     await setWorkspaceRole(admin.id, "owner");
-    const created = await admin.agent.post("/api/service-accounts").send({ name: "CRM" });
+    const created = await admin.agent.post("/api/service-accounts").send({ name: "CRM", capabilityIds: [CLIENTS_READ_CAPABILITY_ID] });
     const agent = newAgent(app).set("Authorization", `Bearer ${created.body.plaintextKey}`);
 
     await inSeededWorkspace(() =>

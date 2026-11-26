@@ -127,7 +127,8 @@ export interface ClientsSalesPersistence {
     id: string,
     data: Partial<InsertCrmModuleField>,
     renames: OptionRename[],
-    columns: OptionRenameColumn[]
+    columns: OptionRenameColumn[],
+    expectedUpdatedAt?: Date
   ): Promise<CrmModuleField | undefined>;
   /** Creates or marks as system the built-in modules and lists; safe to repeat. */
   ensureCrmSystemLists(): Promise<CrmModuleWithFields[]>;

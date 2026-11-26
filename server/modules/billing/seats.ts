@@ -1,8 +1,8 @@
 /**
  * Billable Seats (#141, #144, ADR-0008). A seat is an accepted, active Membership.
  * No ledger. Invitation UX is not here; `assertSeatAvailable` is the check
- * Invitation will call. Increases apply immediately and the provider is told
- * afterwards. Decreases apply at period end, floored at consumption.
+ * Invitation will call. Increases are asked of the provider first, then apply
+ * at once. Decreases apply at period end, floored at consumption.
  */
 
 import { and, count, isNull } from "drizzle-orm";
@@ -114,42 +114,64 @@ export async function setPurchasedSeatCapacity(
   });
 }
 
+/**
+ * An increase is charged now, so Stripe is asked first and under the pin's lock:
+ * two increases at once reach Stripe in the order they are written, and its
+ * quantity ends on the pin's. A refusal rolls everything back. Should the commit
+ * fail once Stripe has agreed, the next Subscription event raises the pin to
+ * Stripe's quantity; a pin is never left above it.
+ */
 export async function changeSeats(
   next: number,
   actor: AuditActor,
   provider: BillingProvider
 ): Promise<BillingProjection> {
-  const pin = await getCurrentPin();
-  if (!isPlanKey(pin.planKey) || !purchasesSeats(pin.planKey, pin.registryVersion) || !pin.stripeSubscriptionId) {
-    throw new SeatChangeUnavailableError();
-  }
-  if (next > pin.purchasedSeatCapacity) {
-    const updated = await setPurchasedSeatCapacity(next, actor);
-    await clearPendingSeatQuantity();
-    if (pin.stripeSubscriptionId) {
-      await provider.updateSeatQuantity({
-        providerSubscriptionId: pin.stripeSubscriptionId,
-        seatQuantity: next,
-        proration: "create_prorations",
-      });
-    }
-    return updated;
-  }
-
-  const consumed = await countConsumedSeats();
-  if (next < consumed) throw new SeatCapacityFloorError(consumed);
-
   const { workspaceId } = requireWorkspaceContext();
   return db.transaction(async (tx) => {
-    const [locked] = await tx
+    const [pin] = await tx
       .select()
       .from(workspaceBilling)
       .where(inWorkspace(workspaceBilling))
       .for("update")
       .limit(1);
-    if (!locked) throw new BillingPinMissingError();
-    if (locked.purchasedSeatCapacity === next) {
-      if (locked.pendingSeatQuantity == null) return billingProjectionOf(locked);
+    if (!pin) throw new BillingPinMissingError();
+    if (!isPlanKey(pin.planKey) || !purchasesSeats(pin.planKey, pin.registryVersion) || !pin.stripeSubscriptionId) {
+      throw new SeatChangeUnavailableError();
+    }
+    const consumed = await countConsumedSeats(tx);
+    if (next < consumed) throw new SeatCapacityFloorError(consumed);
+
+    if (next > pin.purchasedSeatCapacity) {
+      await provider.updateSeatQuantity({
+        providerSubscriptionId: pin.stripeSubscriptionId,
+        seatQuantity: next,
+        proration: "create_prorations",
+      });
+      const [raised] = await tx
+        .update(workspaceBilling)
+        .set({
+          purchasedSeatCapacity: next,
+          pendingSeatQuantity: null,
+          authorizationVersion: pin.authorizationVersion + 1,
+          updatedAt: new Date(),
+        })
+        .where(inWorkspace(workspaceBilling))
+        .returning();
+      await tx.insert(auditEvents).values(
+        stampWorkspace({
+          actorKind: actor.kind,
+          actorId: actor.id ?? null,
+          action: "billing.seats_change",
+          resourceType: "workspace_billing",
+          resourceId: workspaceId,
+          payload: { from: pin.purchasedSeatCapacity, to: next },
+        })
+      );
+      return billingProjectionOf(raised);
+    }
+
+    if (pin.purchasedSeatCapacity === next) {
+      if (pin.pendingSeatQuantity == null) return billingProjectionOf(pin);
       const [cleared] = await tx
         .update(workspaceBilling)
         .set({ pendingSeatQuantity: null, updatedAt: new Date() })
@@ -171,7 +193,7 @@ export async function changeSeats(
         action: "billing.seats_change_scheduled",
         resourceType: "workspace_billing",
         resourceId: workspaceId,
-        payload: { from: locked.purchasedSeatCapacity, to: next },
+        payload: { from: pin.purchasedSeatCapacity, to: next },
       })
     );
     return billingProjectionOf(updated);
@@ -277,17 +299,4 @@ export function resolveProjectedSeatCapacity(
     pendingSeatQuantity: pin.pendingSeatQuantity,
     tellProvider: false,
   };
-}
-
-async function getCurrentPin() {
-  const [pin] = await db.select().from(workspaceBilling).where(inWorkspace(workspaceBilling)).limit(1);
-  if (!pin) throw new BillingPinMissingError();
-  return pin;
-}
-
-async function clearPendingSeatQuantity(): Promise<void> {
-  await db
-    .update(workspaceBilling)
-    .set({ pendingSeatQuantity: null, updatedAt: new Date() })
-    .where(inWorkspace(workspaceBilling));
 }

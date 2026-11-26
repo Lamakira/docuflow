@@ -59,7 +59,7 @@ describe("public /api/v1 catalogue — Clients", () => {
 
   it("returns 403 when the Service Account lacks clients_read", async () => {
     const app = await makeApp();
-    const { agent } = await serviceAccountAgent(app, []);
+    const { agent } = await serviceAccountAgent(app, [PROJECTS_READ_CAPABILITY_ID]);
 
     const res = await agent.get("/api/v1/clients").set("traceparent", TRACEPARENT);
 

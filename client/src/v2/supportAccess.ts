@@ -26,9 +26,10 @@ export type SupportGrantView = {
   expiresAt: string | Date;
 };
 
+/** A DocuFlow support person the Workspace can grant access to: a name, never an address (F109). */
 export type PlatformStaffOption = {
   id: string;
-  email: string | null;
+  label: string;
 };
 
 export type WorkspaceAssurance = {
@@ -46,13 +47,13 @@ export function grantExpiryLabel(expiresAt: string | Date): string {
 export function supportAccessNotice(grants: SupportGrantView[]): string | null {
   if (grants.length === 0) return null;
   if (grants.length === 1) {
-    const who = grants[0].email ?? "Platform Staff";
+    const who = grants[0].email ?? "DocuFlow support";
     const until = grantExpiryLabel(grants[0].expiresAt);
     return until
       ? `${who} has read-only access to this Workspace until ${until}.`
       : `${who} has read-only access to this Workspace.`;
   }
-  return `${grants.length} Platform Staff have read-only access to this Workspace.`;
+  return `${grants.length} people from DocuFlow support have read-only access to this Workspace.`;
 }
 
 /** The Workspace stays closed until the session has a verified second factor. */
@@ -67,6 +68,12 @@ export function workspaceNeedsSecondFactor(assurance: WorkspaceAssurance | null 
 export function secondFactorBlocksPage(assurance: WorkspaceAssurance | null | undefined, location: string): boolean {
   if (location === "/account" || location.startsWith("/account/")) return false;
   return workspaceNeedsSecondFactor(assurance);
+}
+
+/** What requiring a second factor does, asked before it runs (F109). */
+export function requireSecondFactorConsequence(memberCount: number | null): string {
+  const base = "Everyone here without a second factor is sent to set one up before they can open the Workspace";
+  return memberCount == null ? `${base}.` : `${base} (${memberCount} ${memberCount === 1 ? "Member" : "Members"}).`;
 }
 
 export type TwoFactorSetting = {

@@ -323,7 +323,7 @@ describe("A folder can be tidied, not only created (#260, E)", () => {
   });
 });
 
-describe("an allowed timezone is chosen from a list, not only typed (#260, F)", () => {
+describe("a time zone is chosen from a list, not typed (#260, F110)", () => {
   it("suggests the runtime's IANA zones the Workspace does not allow yet", () => {
     const suggestions = timezoneSuggestions(["Europe/Paris"]);
     expect(suggestions).toContain("America/New_York");
@@ -331,11 +331,13 @@ describe("an allowed timezone is chosen from a list, not only typed (#260, F)", 
     expect([...suggestions].sort()).toEqual(suggestions);
   });
 
-  it("offers the list beside the free-text input it keeps, as the shadcn combobox", () => {
-    const page = read("client/src/v2/V2Administration.tsx");
+  it("offers the Workspace time zone as the shadcn combobox alone, with no free-text field beside it", () => {
+    const page = read("client/src/v2/V2AdministrationWorkspace.tsx");
     expect(page).toContain('from "@/components/ui/command"');
-    expect(page).toContain("<TimezonePicker");
-    expect(page).toContain("timezoneSuggestions(");
+    expect(page).toContain("<TimeZoneCombobox");
+    expect(page).toContain("workspaceTimeZoneChoices(saved)");
+    expect(page).not.toContain('aria-label="Workspace time zone"');
+    expect(page).not.toContain("Choose from list");
   });
 });
 

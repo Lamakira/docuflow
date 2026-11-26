@@ -138,6 +138,8 @@ export type PipelineListModel = {
   entries: StoredOption[];
   rows: PipelineOptionRow[];
   fieldId: string | null;
+  /** The field's `updatedAt` as read: a save carries it, and a stale one is refused (F106). */
+  updatedAt: string | null;
   spec: PipelineListSpec;
 };
 
@@ -222,6 +224,7 @@ export function composePipelineLists(modules: CrmModuleWithFields[]): PipelineLi
       entries,
       rows: listRows(spec, entries),
       fieldId: field?.id ?? null,
+      updatedAt: field?.updatedAt ? new Date(field.updatedAt).toISOString() : null,
       spec,
     };
   });
@@ -236,13 +239,16 @@ function stored(entries: StoredOption[]): string[] {
 function labelIssue(list: PipelineListModel, label: string, exceptIndex: number | null): string | null {
   const value = optionValue(label);
   if (!label) return `Name the ${list.noun}.`;
-  if (!value) return "Use at least one letter or number.";
+  if (!value) return "Use at least one letter from a to z or a number.";
   if (value.length > OPTION_VALUE_MAX) return `Keep the name under ${OPTION_VALUE_MAX} characters.`;
   if (list.id === "opportunity-stages" && stageRole(value) !== "open") {
     return "Won and Lost are fixed outcomes. Name an open stage.";
   }
-  const taken = list.entries.some((entry, index) => index !== exceptIndex && entry.value === value);
-  if (taken) return `“${label}” is already in this list.`;
+  const taken = list.entries.find((entry, index) => index !== exceptIndex && entry.value === value);
+  if (taken) {
+    // Two names can store the same value ("Café" and "Caf"): name the one it collides with.
+    return taken.label === label ? `“${label}” is already in this list.` : `Too close to “${taken.label}”, already in this list.`;
+  }
   return null;
 }
 
@@ -363,18 +369,43 @@ export const PIPELINE_LIST_QUERY_KEYS = [
 
 export type PipelineSend = (method: "POST" | "PATCH", path: string, body: Record<string, unknown>) => Promise<unknown>;
 
+/** The server's answer to a save read against a version someone has since changed (F106). */
+export const PIPELINE_STALE_MESSAGE =
+  "Someone changed this list since you opened it. It has been reloaded; make your change again.";
+
+/** A save refused because the list changed under it: by its 409, or by the words the server sends with it. */
+export function isPipelineStale(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return (error as Error & { status?: number }).status === 409 || error.message === PIPELINE_STALE_MESSAGE;
+}
+
+function sameEntries(a: StoredOption[], b: StoredOption[]): boolean {
+  return (
+    a.length === b.length &&
+    a.every((entry, index) => entry.value === b[index].value && entry.label === b[index].label)
+  );
+}
+
 /**
- * Stores one edit. A list the Workspace never saved is created first by the
- * server, with the same defaults and ids this tab showed, so the edit reads
- * against exactly what the Administrator saw.
+ * Stores one edit, against the version the Administrator read. A list the
+ * Workspace never saved is created first by the server, with the same defaults
+ * and ids this tab showed; if what comes back is not those defaults, someone
+ * saved the list meanwhile and nothing is written.
  */
 export async function savePipelineList(list: PipelineListModel, edit: { options: string[] }, send: PipelineSend): Promise<void> {
   let fieldId = list.saved ? list.fieldId : null;
+  let updatedAt = list.saved ? list.updatedAt : null;
   if (!fieldId) {
     const modules = (await send("POST", ENSURE_SYSTEM_LISTS_PATH, {})) as CrmModuleWithFields[] | null;
     const mod = modules?.find((row) => row.slug === list.spec.builtIn.module.slug);
-    fieldId = mod?.fields?.find((row) => row.slug === list.spec.builtIn.field.slug)?.id ?? null;
-    if (!fieldId) throw new Error("The list could not be created.");
+    const field = mod?.fields?.find((row) => row.slug === list.spec.builtIn.field.slug) ?? null;
+    if (!field) throw new Error("The list could not be created.");
+    const stored = field.options ?? [];
+    if (stored.length > 0 && !sameEntries(parseFieldOptions(stored), list.entries)) {
+      throw Object.assign(new Error(PIPELINE_STALE_MESSAGE), { status: 409 });
+    }
+    fieldId = field.id;
+    updatedAt = field.updatedAt ? new Date(field.updatedAt).toISOString() : null;
   }
-  await send("PATCH", adminFieldPath(fieldId), { options: edit.options });
+  await send("PATCH", adminFieldPath(fieldId), updatedAt ? { options: edit.options, expectedUpdatedAt: updatedAt } : { options: edit.options });
 }

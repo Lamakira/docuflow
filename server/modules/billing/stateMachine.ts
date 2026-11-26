@@ -1,6 +1,7 @@
 /**
  * DocuFlow-owned billing state machine (#140, ADR-0010). Trialing, Active,
- * PastDue, ReadOnly, and cancel-at-period-end. Stripe webhooks are not here.
+ * PastDue, ReadOnly, and the end of a cancelled period. Stripe webhooks are not
+ * here; setting cancel-at-period-end asks Stripe first (`cancellation.ts`).
  */
 
 import { auditEvents, workspaceBilling } from "@shared/schema";
@@ -213,51 +214,6 @@ export async function exhaustDunning(actor: AuditActor): Promise<BillingProjecti
       throw new InvalidBillingTransitionError("Workspace is not PastDue");
     }
     return applyState(tx, pin, "ReadOnly", actor, "dunning_exhausted");
-  });
-}
-
-/**
- * Billing-recovery command: flag cancel-at-period-end. Active, PastDue, and
- * ReadOnly recovery. Trialing has no paid period to cancel.
- */
-export async function cancelAtPeriodEnd(
-  actor: AuditActor,
-  options: { periodEndsAt?: Date } = {}
-): Promise<BillingProjection> {
-  const { workspaceId } = requireWorkspaceContext();
-  return db.transaction(async (tx) => {
-    const pin = await loadPin(tx);
-    if (pin.billingState === "Trialing") {
-      throw new InvalidBillingTransitionError("Trialing Workspaces have no period to cancel");
-    }
-    const periodEndsAt = options.periodEndsAt ?? pin.periodEndsAt ?? null;
-    if (pin.cancelAtPeriodEnd && (options.periodEndsAt == null || pin.periodEndsAt?.getTime() === periodEndsAt?.getTime())) {
-      return billingProjectionOf(pin);
-    }
-
-    const [updated] = await tx
-      .update(workspaceBilling)
-      .set({
-        cancelAtPeriodEnd: true,
-        periodEndsAt,
-        authorizationVersion: pin.authorizationVersion + 1,
-        updatedAt: new Date(),
-      })
-      .where(inWorkspace(workspaceBilling))
-      .returning();
-
-    await tx.insert(auditEvents).values(
-      stampWorkspace({
-        actorKind: actor.kind,
-        actorId: actor.id ?? null,
-        action: "billing.cancel_at_period_end",
-        resourceType: "workspace_billing",
-        resourceId: workspaceId,
-        payload: { periodEndsAt: periodEndsAt ? periodEndsAt.toISOString() : null },
-      })
-    );
-
-    return billingProjectionOf(updated);
   });
 }
 

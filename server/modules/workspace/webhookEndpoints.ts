@@ -34,6 +34,34 @@ export class UnknownWebhookEventTypeError extends Error {
   }
 }
 
+export class WebhookAddressError extends Error {
+  constructor() {
+    super("Use a public https address");
+    this.name = "WebhookAddressError";
+  }
+}
+
+/**
+ * An https address on a public host name. The URL parser has already turned
+ * every IPv4 spelling (decimal, hex, short) into dotted form and bracketed
+ * IPv6, so a literal of any form is caught here; a name without a dot cannot
+ * be public.
+ */
+export function isPublicHttpsUrl(raw: unknown): boolean {
+  if (typeof raw !== "string") return false;
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return false;
+  }
+  if (url.protocol !== "https:" || url.username || url.password) return false;
+  const host = url.hostname.replace(/\.$/, "");
+  if (host.startsWith("[") || /^\d+(\.\d+){3}$/.test(host)) return false;
+  if (!host.includes(".")) return false;
+  return !/(^|\.)(localhost|local|internal)$/.test(host);
+}
+
 export type WebhookEndpointView = {
   id: string;
   url: string;
@@ -93,6 +121,7 @@ export async function createWebhookEndpoint(input: {
   url: string;
   eventTypes: string[];
 }): Promise<CreatedWebhookEndpoint> {
+  if (!isPublicHttpsUrl(input.url)) throw new WebhookAddressError();
   const eventTypes = uniqueEventTypes(input.eventTypes);
   const plaintextSecret = mintSecret();
   const [row] = await db
