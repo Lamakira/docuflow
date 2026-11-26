@@ -3152,11 +3152,96 @@ button.df-activity-row {
   max-width: 100%;
 }
 
-/* A column that scrolls inside keeps scrolling during a drag; the dragged card
-   is a clone outside the board, so nothing needs to spill out of it. */
+/* The draggable element: the card's link and its "⋯" menu side by side, since
+   a button cannot sit inside a link. The link fills it, as it filled the column. */
+.df-opportunity-card-shell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-self: stretch;
+  flex-shrink: 0;
+}
+
+/* The card keeps its hover while the pointer is on its menu button. */
+.df-opportunity-card-shell:hover > .df-opportunity-card:not([data-dragging="true"]) {
+  background: var(--df-cold-stock);
+}
+
+/* The title keeps clear of the menu button, on the dragged clone too, so it
+   never rewraps when the card lifts. */
+.df-opportunity-card-shell .df-row-title {
+  /* The button reaches 36px (top/right offset plus its 28px) into the card,
+     past the card's 16px padding: 20px, plus a 4px gap. */
+  padding-right: var(--df-space-6);
+  box-sizing: border-box;
+}
+
+.df-v2 .df-opportunity-card-shell button.df-btn.df-opportunity-card-menu {
+  position: absolute;
+  top: var(--df-space-2);
+  right: var(--df-space-2);
+  width: calc(var(--df-space-6) + var(--df-space-1));
+  height: calc(var(--df-space-6) + var(--df-space-1));
+  min-height: calc(var(--df-space-6) + var(--df-space-1));
+  padding: 0;
+  color: var(--df-archive-slate);
+}
+
+.df-v2 .df-opportunity-card-shell button.df-btn.df-opportunity-card-menu:hover,
+.df-v2 .df-opportunity-card-shell button.df-btn.df-opportunity-card-menu[data-state="open"] {
+  background: var(--df-hover);
+  color: var(--df-case-ink);
+}
+
+/* At rest the button is hidden on a fine pointer, still focusable; hover, focus
+   or its open menu shows it. */
+@media (hover: hover) and (pointer: fine) {
+  .df-v2 .df-opportunity-card-shell button.df-btn.df-opportunity-card-menu {
+    opacity: 0;
+  }
+
+  .df-v2 .df-opportunity-card-shell:hover button.df-btn.df-opportunity-card-menu,
+  .df-v2 .df-opportunity-card-shell:focus-within button.df-btn.df-opportunity-card-menu,
+  .df-v2 .df-opportunity-card-shell button.df-btn.df-opportunity-card-menu:focus-visible,
+  .df-v2 .df-opportunity-card-shell button.df-btn.df-opportunity-card-menu[data-state="open"] {
+    opacity: 1;
+  }
+}
+
+/* A touch screen has no hover to reveal it, and a finger needs 44px: the
+   button keeps its size and its touch area reaches 8px past each side. */
+@media (pointer: coarse) {
+  .df-v2 .df-opportunity-card-shell button.df-btn.df-opportunity-card-menu {
+    opacity: 1;
+  }
+
+  .df-v2 .df-opportunity-card-shell button.df-btn.df-opportunity-card-menu::after {
+    content: "";
+    position: absolute;
+    inset: calc(-1 * var(--df-space-2));
+  }
+}
+
+/* Nothing to reach for while a card is being dragged. */
+.df-v2 .df-opportunity-pipeline[data-dragging="true"] .df-opportunity-card-shell button.df-btn.df-opportunity-card-menu {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* The dragged card is a clone outside the board, so nothing needs to spill out
+   of a column during a drag. */
 .df-opportunity-pipeline[data-dragging="true"] .df-opportunity-column,
 .df-opportunity-pipeline[data-dragging="true"][data-stacked="true"] .df-opportunity-drop {
   overflow: visible;
+}
+
+/* During a drag a column stops scrolling on its own: the drag library follows
+   one scroll container, and it must be the board, which it then scrolls when
+   the card nears an edge. A column keeps its place; only the Stage counts on
+   a drop, never the card's position in the column. The gutter stays, so no
+   card changes width when the drag starts. */
+.df-opportunity-pipeline[data-stacked="false"][data-dragging="true"] .df-opportunity-drop {
+  overflow-y: hidden;
 }
 
 .df-client-identity {
@@ -3967,8 +4052,15 @@ button.df-activity-row {
   padding-left: var(--df-space-7);
 }
 
-.df-v2 .df-menu-item[data-highlighted] {
+.df-v2 .df-menu-item[data-highlighted],
+.df-v2 .df-menu-item[data-state="open"] {
   background: var(--df-hover);
+}
+
+/* A menu clips its items, so the keyboard ring is drawn inside the item, as on
+   register rows; outside it, the panel cut it to a dark line. */
+.df-v2 .df-menu-item:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--df-case-ink);
 }
 
 .df-v2 .df-menu-item[data-danger="true"] {
@@ -4022,6 +4114,8 @@ button.df-activity-row {
   font-weight: 700;
   font-size: var(--df-text-5);
   margin: 0;
+  /* A title can carry a record's name, however long. */
+  overflow-wrap: anywhere;
 }
 
 .df-form-dialog-copy {

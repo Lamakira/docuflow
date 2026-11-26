@@ -17,6 +17,7 @@ import {
   reopenStageOf,
   TERMINAL_PREVIEW,
   composeOpportunityRecord,
+  opportunityCardActions,
   type OpportunityPipelineInput,
   type OpportunityPipelineRowInput,
 } from "../../client/src/v2/opportunities";
@@ -639,5 +640,59 @@ describe("Opportunities pipeline polish (F25, F27, F28, F30, F31)", () => {
     const pipelineRule = css.slice(css.indexOf(".df-opportunity-pipeline {"), css.indexOf("}", css.indexOf(".df-opportunity-pipeline {")));
     expect(pipelineRule).not.toContain("scrollbar-width");
     expect(css).not.toMatch(/\.df-opportunity-pipeline::-webkit-scrollbar\s*\{\s*display:\s*none/);
+  });
+});
+
+describe("Actions menu on a pipeline card", () => {
+  const stages = composeOpportunityStages(FALLBACK_OPEN_STAGES);
+  const openIds = stages.filter((stage) => !stage.terminal).map((stage) => stage.id);
+
+  it("offers an open card every action, and moves it to any other open stage", () => {
+    const actions = opportunityCardActions({ canChangeStage: true, readOnly: false, currentStage: "lead", stages });
+    expect(actions).toMatchObject({ rename: true, owner: true, note: true, outcomes: true });
+    expect(actions?.moveTo?.map((stage) => stage.id)).toEqual(openIds.filter((id) => id !== "lead"));
+    expect(actions?.moveTo?.some((stage) => stage.id === "won" || stage.id === "lost")).toBe(false);
+  });
+
+  it("lets a Won or Lost card be renamed, given an Owner and a note, never moved", () => {
+    for (const currentStage of ["won", "lost"]) {
+      expect(opportunityCardActions({ canChangeStage: false, readOnly: false, currentStage, stages }), currentStage).toEqual({
+        rename: true,
+        owner: true,
+        note: true,
+        moveTo: null,
+        outcomes: false,
+      });
+    }
+  });
+
+  it("offers nothing in a Read-only Workspace", () => {
+    expect(opportunityCardActions({ canChangeStage: true, readOnly: true, currentStage: "lead", stages })).toBeNull();
+    expect(opportunityCardActions({ canChangeStage: false, readOnly: true, currentStage: "won", stages })).toBeNull();
+  });
+
+  it("puts the menu beside the card's link, never inside it, and leaves it off the dragged clone", () => {
+    expect(pageSource).toMatch(
+      /<div ref=\{provided\.innerRef\} \{\.\.\.provided\.draggableProps\} className="df-opportunity-card-shell">\s*<a\s+ref=\{cardRef\}[\s\S]*?<\/a>\s*\{menu\}\s*<\/div>/,
+    );
+    expect(pageSource).toContain("{...provided.dragHandleProps}");
+    expect(pageSource).toMatch(/return <OpportunityCardView card=\{card\} provided=\{provided\} dragging locked=\{false\} onOpen=\{\(\) => \{\}\} \/>;/);
+    expect(pageSource).toContain("menu={cardMenu(card, column.id)}");
+    expect(pageSource).toContain("ariaLabel={`Actions on ${card.name}`}");
+    expect(rule(".df-opportunity-card-shell")).toMatch(/position:\s*relative/);
+    expect(css).toMatch(/\.df-opportunity-pipeline\[data-dragging="true"\] \.df-opportunity-card-shell button\.df-btn\.df-opportunity-card-menu\s*\{[^}]*opacity:\s*0/);
+  });
+
+  it("opens a menu item's dialog only once the menu has closed, and hands focus back to the card's button", () => {
+    // A dialog opened while the menu was closing left the page unclickable
+    // after it closed (seen 2026-11-26 with Mark as won, then Escape).
+    const rowMenu = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../../client/src/v2/V2RowMenu.tsx"), "utf8");
+    expect(rowMenu).toContain("onCloseAutoFocus={onCloseAutoFocus}");
+    expect(rowMenu).toMatch(/onSelect=\{\(\) => choose\(item\)\}/);
+    expect(rowMenu).not.toMatch(/onSelect=\{item\.onSelect\}/);
+    for (const testId of ["v2-opportunity-rename", "v2-opportunity-owner", "v2-opportunity-add-note"]) {
+      expect(pageSource).toMatch(new RegExp(`testId="${testId}"\\s*onCloseAutoFocus=\\{focusCardMenu\\(row\\.id\\)\\}`));
+    }
+    expect(pageSource).toContain("onCloseAutoFocus={outcome.fromMenu ? focusCardMenu(row.id) : undefined}");
   });
 });

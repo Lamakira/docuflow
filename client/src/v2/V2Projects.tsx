@@ -9,6 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import type { CrmClient, CrmProjectWithDetails, CrmTag } from "@shared/schema";
 import { useAuth } from "@/hooks/useAuth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useBoardDragScroll } from "./boardEdgeScroll";
 import { chromeRefusal } from "./chrome";
 import { isStandingRefusal, notify } from "./notify";
 import { tagsPath } from "./dossier";
@@ -432,6 +433,7 @@ export function V2ProjectsPage() {
   const boardView = new URLSearchParams(search).get("view") === "board";
   const filters = readProjectFilters(search);
   const boardRef = useRef<HTMLDivElement>(null);
+  const boardDrag = useBoardDragScroll(boardRef, layout.stackedRegister);
   const [filterQuery, setFilterQuery] = useState(filters.q);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [changingId, setChangingId] = useState<string | null>(null);
@@ -653,7 +655,7 @@ export function V2ProjectsPage() {
   }
 
   function onDragEnd(result: DropResult) {
-    boardRef.current?.setAttribute("data-dragging", "false");
+    boardDrag.end();
     const { destination, source, draggableId } = result;
     if (!destination) return;
     if (destination.droppableId === source.droppableId) return;
@@ -953,7 +955,8 @@ export function V2ProjectsPage() {
           {/* The empty Workspace and an emptying filter each show their empty line alone. */}
           {board.emptyState ? null : (
           <DragDropContext
-            onDragStart={() => boardRef.current?.setAttribute("data-dragging", "true")}
+            // Before the library measures: see useBoardDragScroll.
+            onBeforeCapture={boardDrag.beforeCapture}
             onDragEnd={onDragEnd}
           >
             <div
