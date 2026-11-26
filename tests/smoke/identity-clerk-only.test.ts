@@ -132,7 +132,6 @@ describe("Device Enrollment is untouched (#111)", () => {
     expect(devices.body.data).toHaveLength(1);
     expect(devices.body.data[0]).toMatchObject({
       id: complete.body.deviceId,
-      userId: user.id,
       name: "Workstation",
     });
   });

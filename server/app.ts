@@ -99,6 +99,19 @@ export async function createApp(): Promise<{
   });
   app.use("/api/agent/screenshots/", agentScreenshotLimiter);
 
+  // Pairing complete needs no session, and a code is 6 characters valid for 10
+  // minutes (F114): failed attempts are held per address in every environment,
+  // development included. A code that enrolls does not count.
+  const pairingCompleteLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 10,
+    skipSuccessfulRequests: true,
+    standardHeaders: "draft-7",
+    legacyHeaders: false,
+    message: { message: "Too many pairing attempts. Wait a few minutes, then try a new code." },
+  });
+  app.post("/api/agent/pairing/complete", pairingCompleteLimiter);
+
   // ─── Health check (before auth, unauthenticated) ───
   // Carries the build and the process start alongside liveness (#229): a stale
   // server is otherwise indistinguishable from a current one here, and that is

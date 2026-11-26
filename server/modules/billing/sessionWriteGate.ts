@@ -23,6 +23,12 @@ export function isBillingRecoveryPath(path: string): boolean {
 const SUPPORT_PATHS = new Set(["/api/support-requests"]);
 
 /**
+ * Revoking a Device is how a lost or stolen computer is cut off (F118); a
+ * Read-only Workspace must not leave it signed in. These calls only end access.
+ */
+const DEVICE_REVOKE_PATHS = new Set(["/api/agent/device/revoke", "/api/agent/devices/revoke-machine"]);
+
+/**
  * Session/agent adapter for the central write-classification check.
  * The Plan's feature Entitlements come first: an area the Plan leaves out is
  * refused with the Plan that includes it, reads of kept data excepted.
@@ -32,7 +38,12 @@ export async function gateSessionWrite(req: Request, res: Response, next: NextFu
   const path = (req.path || req.originalUrl.split("?")[0]) as string;
   try {
     await assertRequestEntitled(req.method, path);
-    if (MUTATING.has(req.method) && !isBillingRecoveryPath(path) && !SUPPORT_PATHS.has(path)) {
+    if (
+      MUTATING.has(req.method) &&
+      !isBillingRecoveryPath(path) &&
+      !SUPPORT_PATHS.has(path) &&
+      !DEVICE_REVOKE_PATHS.has(path)
+    ) {
       await assertOperationalWrite();
     }
     next();

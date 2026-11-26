@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { makeApp } from "../helpers/app";
 import { resetDb } from "../helpers/db";
 import { newAgent, registerAdmin, registerUser } from "../helpers/auth";
-import { bearer, decodeJwtPayload, expirePairingCode, loginDevice, mintAccessToken, sha256Hex } from "../helpers/agent";
+import { bearer, decodeJwtPayload, expirePairingCode, loginDevice, mintAccessToken } from "../helpers/agent";
 
 /**
  * Characterization: the desktop agent v1 handshake — how a device gets a token,
@@ -29,7 +29,6 @@ import { bearer, decodeJwtPayload, expirePairingCode, loginDevice, mintAccessTok
  * Behavior quirks frozen here:
  *  - Every pairing complete creates another device row; nothing reuses a
  *    machine's device.
- *  - The devices listing hands the browser each device's `deviceTokenHash`.
  *  - Revocation is reported as 403 by the bearer middleware but 401 by refresh.
  *  - `revoke-machine` matches on name *and* os, so the same laptop reporting a
  *    new OS version keeps its old tokens alive.
@@ -81,13 +80,14 @@ describe("desktop agent auth and devices (characterization)", () => {
     const paired = devices.body.data.find((d: { id: string }) => d.id === complete.body.deviceId);
     expect(paired).toMatchObject({
       id: complete.body.deviceId,
-      userId: user.id,
       name: "Paired Workstation",
       os: "linux-6.0",
       clientVersion: "0.1.0",
       revokedAt: null,
-      deviceTokenHash: sha256Hex(complete.body.deviceToken),
     });
+    // The listing carries only what the screen shows (F113).
+    expect(paired).not.toHaveProperty("deviceTokenHash");
+    expect(paired).not.toHaveProperty("userId");
 
     // Enrollment is what agent routes actually check — a Device without one is 401.
     expect((await bearer(app, complete.body.accessToken).get("/api/agent/capabilities")).status).toBe(

@@ -183,7 +183,7 @@ import type {
 import { assertSeatAvailable } from "./billing/seats";
 import { setDailyUpdatesGrant } from "./workspace/membershipManagement";
 import type { ImportableUser } from "./identity/userImport";
-import { eq, ne, and, desc, like, or, isNull, isNotNull, sql, gte, lt, lte, asc, count, max, notExists, inArray, ilike, getTableColumns, type AnyColumn, type SQL } from "drizzle-orm";
+import { eq, ne, and, desc, like, or, isNull, isNotNull, sql, gt, gte, lt, lte, asc, count, max, notExists, inArray, ilike, getTableColumns, type AnyColumn, type SQL } from "drizzle-orm";
 import type {
   CrmProjectListOptions,
   ProjectDocumentScope,
@@ -3315,6 +3315,21 @@ export class DatabaseStorage implements IStorage {
   async createAgentPairingCode(data: { userId: string; code: string; expiresAt: Date }): Promise<AgentPairingCode> {
     const [result] = await db.insert(agentPairingCodes).values(stampWorkspace(data)).returning();
     return result;
+  }
+
+  async retireUnusedPairingCodes(userId: string): Promise<void> {
+    const now = new Date();
+    await db
+      .update(agentPairingCodes)
+      .set({ expiresAt: now })
+      .where(
+        and(
+          eq(agentPairingCodes.userId, userId),
+          isNull(agentPairingCodes.usedAt),
+          gt(agentPairingCodes.expiresAt, now),
+          inWorkspace(agentPairingCodes),
+        ),
+      );
   }
 
   async getAgentPairingCode(code: string): Promise<AgentPairingCode | undefined> {

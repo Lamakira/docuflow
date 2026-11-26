@@ -255,6 +255,10 @@ export function registerAgentRoutes(app: Express): void {
       const code = generatePairingCode();
       const expiresAt = new Date(Date.now() + PAIRING_CODE_TTL_MS);
 
+      // A new code replaces the person's unused ones (F114): every code left
+      // valid is one more to guess. Expired rather than marked used, so `usedAt`
+      // still means a Device enrolled with it.
+      await storage.retireUnusedPairingCodes(userId);
       await storage.createAgentPairingCode({ userId, code, expiresAt });
 
       logInfo("agent.pairing.start", { userId });
@@ -414,7 +418,17 @@ export function registerAgentRoutes(app: Express): void {
     try {
       const userId = getUserId(req)!;
       const devicesList = await storage.getUserDevices(userId);
-      res.json({ data: devicesList });
+      // Only what the screen shows: the row also holds `deviceTokenHash` (F113).
+      res.json({
+        data: devicesList.map(({ id, name, os, clientVersion, lastSeenAt, revokedAt }) => ({
+          id,
+          name,
+          os,
+          clientVersion,
+          lastSeenAt,
+          revokedAt,
+        })),
+      });
     } catch (error) {
       logError("agent.devices.list.failed", error);
       res.status(500).json({ message: "Failed to list devices" });
