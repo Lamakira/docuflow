@@ -2314,6 +2314,11 @@ button.df-activity-row {
   grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
 }
 
+/* Three figures share the band's width rather than leave a fourth column empty. */
+.df-figure-band[data-figures="3"] {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 /* On a phone the fifth tile takes the whole last row. */
 .df-v2[data-chrome="mobile"] .df-figure-band[data-figures="5"] > :last-child {
   grid-column: 1 / -1;

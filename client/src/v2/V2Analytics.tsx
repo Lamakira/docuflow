@@ -570,7 +570,7 @@ function CapturesCard({
           <V2LoadFailed title="Captures could not be loaded" onRetry={read.retry} testId="v2-analytics-captures-failed" />
         ) : (
           <>
-            <FigureSkeleton tiles={4} />
+            <FigureSkeleton tiles={3} />
             <SkeletonRows columns={4} rows={3} dataColumns />
           </>
         )}

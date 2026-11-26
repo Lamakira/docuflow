@@ -509,7 +509,6 @@ export function composeCaptures(coverage: AnalyticsCoverageInput, range: Analyti
       { label: "Taken", value: formatCount(summary.totalScreenshots) },
       { label: "Expected", value: formatCount(summary.expectedScreenshots) },
       { label: "Time Entries without any", value: formatCount(summary.entriesWithoutScreenshots) },
-      { label: "Deleted", value: formatCount(summary.deletedScreenshots) },
     ],
     line: captureLine(summary.captureEveryMinutes),
     rows: coverage.byUser.map((row) => ({
