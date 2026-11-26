@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
-import { createFromTimerPanel } from "../../desktop-agent/src/lib/createFromTimerPanel";
+import { createFromTimerPanel, mergeTaskRead } from "../../desktop-agent/src/lib/createFromTimerPanel";
 
 /**
  * #397: in the agent's v2 Timer panel, creating a Task (or a Project, when the
@@ -99,6 +99,37 @@ describe("creating from the agent's Timer panel does not start the Timer (#397)"
   });
 });
 
+describe("a task read that crosses a create (#397)", () => {
+  // Creating used to start the Timer, and the new entry re-read the Task list
+  // afterwards; now nothing does, so a read already in flight must not drop the
+  // Task it never saw.
+  const task = (id: string) => ({ id, name: id, crmProjectId: "project-1" });
+  const createdAt = { "task-new": 1_000 };
+
+  it("keeps a Task created after the read was issued", () => {
+    expect(mergeTaskRead([task("task-new"), task("a")], [task("a"), task("b")], createdAt, 900)).toEqual([
+      task("task-new"),
+      task("a"),
+      task("b"),
+    ]);
+  });
+
+  it("takes the server's word for a read issued after the create", () => {
+    expect(mergeTaskRead([task("task-new"), task("a")], [task("a")], createdAt, 1_100)).toEqual([task("a")]);
+  });
+
+  it("does not repeat a created Task the read already carries, and keeps the server's order", () => {
+    expect(mergeTaskRead([task("task-new"), task("a")], [task("a"), task("task-new")], createdAt, 900)).toEqual([
+      task("a"),
+      task("task-new"),
+    ]);
+  });
+
+  it("drops a cached Task not created here when the read leaves it out", () => {
+    expect(mergeTaskRead([task("gone"), task("a")], [task("a")], createdAt, 900)).toEqual([task("a")]);
+  });
+});
+
 describe("the v2 Timer panel's create form (#397)", () => {
   const panel = readFileSync("desktop-agent/src/renderer/app-v2/panels/TimerPanel.tsx", "utf8");
   const submitCreate = panel.match(/async function submitCreate[\s\S]*?\n  }\n/)?.[0] ?? "";
@@ -118,6 +149,7 @@ describe("the v2 Timer panel's create form (#397)", () => {
   it("does not open a Project created in a project-only Workspace", () => {
     // An opened Project shows a Task list and a `+` that creates a Task, which a
     // Workspace without Tasks has no use for.
-    expect(submitCreate).toMatch(/if \(!projectOnly\) setOpenProjectId\(/);
+    expect(submitCreate).toMatch(/if \(!projectOnly\) \{[\s\S]*?setOpenProjectId\(/);
+    expect(submitCreate.match(/setOpenProjectId\(/g)).toHaveLength(1);
   });
 });
