@@ -23,7 +23,6 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 import { auditEvents, workspaceBilling } from "../shared/schema";
 import { maskDatabaseUrl, requireMigrateDatabaseUrl } from "../shared/databaseUrl";
 import type { BillingProvider } from "../server/modules/billing/billingProvider";
-import { createBillingProvider } from "../server/modules/billing/createBillingProvider";
 import { openDb, type Report, type ScriptDb } from "./lib/db";
 import { isEntryPoint } from "./lib/entrypoint";
 
@@ -143,8 +142,15 @@ if (isEntryPoint(import.meta.url)) {
   const url = requireMigrateDatabaseUrl();
   console.log(`database: ${maskDatabaseUrl(url)}${apply ? "" : " (dry run)"}`);
   const { db, close } = openDb(url);
-  const provider = checkStripe ? createBillingProvider({ secretKey: process.env.STRIPE_SECRET_KEY }) : undefined;
-  clearOrphanCancellations(db, { apply, checkStripe: provider }, (message) => console.log(message))
+  // Stripe's SDK is loaded only to read Stripe: a workspace whose install
+  // lacks it can still clear the flags.
+  const provider = checkStripe
+    ? import("../server/modules/billing/createBillingProvider").then(({ createBillingProvider }) =>
+        createBillingProvider({ secretKey: process.env.STRIPE_SECRET_KEY }),
+      )
+    : Promise.resolve(undefined);
+  provider
+    .then((checkStripeWith) => clearOrphanCancellations(db, { apply, checkStripe: checkStripeWith }, (message) => console.log(message)))
     .then(({ orphans, cleared, lost, cancelling }) => {
       const disagree = cancelling.filter((row) => row.stripe === "disagrees").length;
       const tail =
