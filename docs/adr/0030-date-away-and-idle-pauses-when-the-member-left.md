@@ -1,5 +1,7 @@
 # Date away and idle pauses when the Member left
 
+Amended by [ADR-0031](0031-let-up-to-three-timers-run-at-once-and-count-worked-time-once.md): a pause for leaving applies to every running Timer; moving the floor to the Timer's latest Timer Command is proposed there, to settle at implementation.
+
 Amends ADR-0009 (#333) and reverses the earlier desktop decision, taken while matching Time Doctor 2 ("TD2", problem 2 of the 2026-06-25 idle-tracking brief), that a sleep or screen lock pauses the Timer on the device only. That decision assumed the server would stop counting once the device did. It does not: the server's Time Entry stayed `running`, heartbeats kept adding to it, a stop after a night's sleep counted the night, and an idle pause (#293) counted the idle minutes because the agent routes dated every command at receipt.
 
 ## Decision
