@@ -41,7 +41,7 @@ A top-level place in the product a member navigates to, such as Today, People, o
 _Avoid_: Page, tab, section
 
 **Active Workspace**:
-The workspace currently selected by a user and therefore the scope for navigation, search, permissions, and newly created records. Notifications remain global to the user, and an active timer retains its own explicit workspace scope.
+The workspace currently selected by a user and therefore the scope for navigation, search, permissions, and newly created records. Notifications remain global to the user, and active Timers retain their own explicit workspace scope.
 _Avoid_: Current organization, global workspace
 
 **Notification**:
@@ -157,15 +157,27 @@ Screenshots, activity levels, and idle periods recorded for a member while track
 _Avoid_: Monitoring feed, productivity score
 
 **Tracking Policy**:
-The workspace rules governing activity capture, frequency, retention, idle behavior, and who may review captured evidence. A member can always inspect the policy currently applied to them.
+The workspace rules governing activity capture, frequency, retention, idle behavior, whether Simultaneous Timers are allowed, and who may review captured evidence. A member can always inspect the policy currently applied to them.
 _Avoid_: Hidden monitoring settings, agent settings
 
 **Timer**:
-A user's single globally active work tracker, always scoped to one workspace and one project. Its active scope remains visible while the user browses another workspace.
+A user's work tracker on one project and at most one of its tasks, always scoped to one workspace. A user runs one Timer at a time unless the Tracking Policy allows Simultaneous Timers. Its scope remains visible while the user browses another workspace.
 _Avoid_: Workspace timer, parallel timer
 
+**Simultaneous Timers**:
+Up to three Timers one user runs at the same moment, all in the same workspace and never two on the same task, allowed only when the workspace's Tracking Policy permits it. Time they share counts in full on each of their tasks, once on each of their projects, and once in the user's Workday.
+_Avoid_: Parallel timer, double tracking
+
+**Worked Time**:
+The part of a member's Workday during which at least one of their Timers ran, counted once however many ran at the same moment. Timesheets, payroll exports, and attendance count Worked Time; a task counts its own Time Entries in full, and a project counts once the time during which any of its Timers ran.
+_Avoid_: Total tracked time, sum of entries
+
+**Simultaneous Time**:
+The part of Worked Time during which two or more of a member's Timers ran at once. It counts in full on each task involved and once on each project involved.
+_Avoid_: Overlap, double time
+
 **Timer Command**:
-A single start, pause, resume, or stop instruction issued against a user's Timer from one identified web session or enrolled device, applied at its claimed effective time even when it arrives late.
+A single start, pause, resume, or stop instruction issued against one of a user's Timers from one identified web session or enrolled device, applied at its claimed effective time even when it arrives late.
 _Avoid_: Timer event, sync message
 
 **Timer Session**:
@@ -185,7 +197,7 @@ A business day determined by a member's effective Work Schedule and used to grou
 _Avoid_: Local calendar day, UTC day
 
 **Timesheet**:
-A member's Time Entries grouped into one configured reporting period and moved through Open, Submitted, Approved, or Rejected states. Approval locks its entries until an authorized, audited reopening.
+A member's Time Entries grouped into one configured reporting period and moved through Open, Submitted, Approved, or Rejected states. Its total is Worked Time, which Simultaneous Time can make smaller than the sum of its entries. Approval locks its entries until an authorized, audited reopening.
 _Avoid_: Time report, payroll record
 
 **Timesheet Approver**:
