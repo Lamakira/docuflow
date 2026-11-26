@@ -45,6 +45,11 @@ export interface IdentityPersistence extends UserImportPersistence, WebSessionPe
     code: string;
     expiresAt: Date;
   }): Promise<AgentPairingCode>;
+  /**
+   * Expire the person's unused, unexpired codes in the current Workspace, so
+   * the code minted next is the only one that enrolls (F114).
+   */
+  retireUnusedPairingCodes(userId: string): Promise<void>;
   getAgentPairingCode(code: string): Promise<AgentPairingCode | undefined>;
   /** Returns true only when this call was the one that stamped `usedAt`. */
   markPairingCodeUsed(id: string): Promise<boolean>;

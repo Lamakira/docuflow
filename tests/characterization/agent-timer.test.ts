@@ -81,9 +81,8 @@ describe("desktop agent timer (characterization)", () => {
     const devices = await user.agent.get("/api/agent/devices");
     expect(devices.status).toBe(200);
     expect(devices.body.data).toHaveLength(2);
-    // Quirk: the listing hands the SPA each device's `deviceTokenHash`, which
-    // nothing in the browser needs.
-    expect(typeof devices.body.data[0].deviceTokenHash).toBe("string");
+    // The listing no longer hands the SPA each device's token hash (F113).
+    expect(devices.body.data[0]).not.toHaveProperty("deviceTokenHash");
   });
 
   it("guards every timer route on the bearer token and the device behind it", async () => {
