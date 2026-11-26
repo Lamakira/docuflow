@@ -47,7 +47,6 @@ export function TimerPanel() {
   const [newName, setNewName] = useState('');
   const [busy, setBusy] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
-  const [revealTaskId, setRevealTaskId] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const [listRef, perPage] = useFitCount<HTMLDivElement>(ROW_H, { min: 2, max: 14, item: '.v2-row' });
@@ -138,14 +137,6 @@ export function TimerPanel() {
   const current = Math.min(page, pages - 1);
   const visible = rows.slice(current * perPage, current * perPage + perPage);
 
-  // A created Task is appended, so it can land past the first page; show the page it is on.
-  useEffect(() => {
-    if (!revealTaskId) return;
-    const index = (rows as Task[]).findIndex((t) => t.id === revealTaskId);
-    if (index >= 0) setPage(Math.floor(index / perPage));
-    setRevealTaskId(null);
-  }, [revealTaskId, rows, perPage]);
-
   // Only the projects on screen pay for a task fetch. Keyed on the ids rather
   // than the array so paging triggers it and re-rendering does not.
   const visibleIds = openProject ? '' : (visible as Project[]).map((p) => p.id).join(',');
@@ -184,18 +175,19 @@ export function TimerPanel() {
     if (!name || busy) return;
     setBusy(true);
     setCreateError(null);
-    const parentId = openProject?.id;
     const outcome = await createFromTimerPanel(name, openProject, bridge);
     setBusy(false);
     if (!outcome.ok) { setCreateError(outcome.error); return; }
     setCreating(false);
     setNewName('');
     setSearch('');
-    if (outcome.kind === 'task' && parentId) {
+    if (outcome.kind === 'task') {
+      // First, not last: closing the form puts the list back on its first page,
+      // where the new Task is then in view. The next read of the project's tasks
+      // returns the server's order (oldest first) and moves it to the end.
       const task = outcome.task;
-      setTaskCache((c) => ({ ...c, [parentId]: [...(c[parentId] ?? []), task] }));
-      setRevealTaskId(task.id);
-    } else if (outcome.kind === 'project') {
+      setTaskCache((c) => ({ ...c, [task.crmProjectId]: [task, ...(c[task.crmProjectId] ?? [])] }));
+    } else {
       const created = outcome.project;
       setProjects((prev) => [created, ...prev]);
       setTaskCache((c) => ({ ...c, [created.id]: [] }));
