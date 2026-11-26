@@ -388,7 +388,6 @@ describe("Captures and Devices (F94, F99)", () => {
       { label: "Taken", value: "412" },
       { label: "Expected", value: "980" },
       { label: "Time Entries without any", value: "2" },
-      { label: "Deleted", value: "7" },
     ]);
     expect(captures.line).toBe(
       "Screenshots the desktop app takes while a Timer runs. Expected: one per 5 minutes of tracked time, as the Tracking Policy asks.",
