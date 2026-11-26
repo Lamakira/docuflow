@@ -284,6 +284,43 @@ export function canChangeOpportunityStage(from: string, to: string): boolean {
   return true;
 }
 
+/** What the record form and Rename say when the name is left empty. */
+export const OPPORTUNITY_NAME_REQUIRED = "Name the Opportunity.";
+
+/** What the "⋯" menu on a pipeline card offers. */
+export type OpportunityCardActions = {
+  rename: boolean;
+  owner: boolean;
+  note: boolean;
+  /** The open stages the card can move to, or null when it cannot move. */
+  moveTo: OpportunityStageOption[] | null;
+  /** Mark as won and Mark as lost. */
+  outcomes: boolean;
+};
+
+/**
+ * The record page edits and takes notes in any stage, but never moves a Won or
+ * Lost Opportunity; a Read-only Workspace writes nothing, so it gets no menu.
+ */
+export function opportunityCardActions(input: {
+  canChangeStage: boolean;
+  readOnly: boolean;
+  currentStage: string;
+  stages: OpportunityStageOption[];
+}): OpportunityCardActions | null {
+  if (input.readOnly) return null;
+  if (!input.canChangeStage) return { rename: true, owner: true, note: true, moveTo: null, outcomes: false };
+  return {
+    rename: true,
+    owner: true,
+    note: true,
+    moveTo: input.stages.filter(
+      (stage) => !stage.terminal && !isOpportunityTerminal(stage.id) && stage.id !== input.currentStage,
+    ),
+    outcomes: true,
+  };
+}
+
 export function combinedStatusForStage(stage: string, currentCombined?: string): string {
   if (
     stage === "won" &&
@@ -595,7 +632,7 @@ export function opportunityDraft(saved: SavedOpportunity): OpportunityDraft {
 
 function readOpportunityDraft(draft: OpportunityDraft): { fields: OpportunityFields; issue: null } | { fields: null; issue: string } {
   const name = draft.name.trim();
-  if (!name) return { fields: null, issue: "Name the Opportunity." };
+  if (!name) return { fields: null, issue: OPPORTUNITY_NAME_REQUIRED };
   if (draft.closeDate && !/^\d{4}-\d{2}-\d{2}$/.test(draft.closeDate)) {
     return { fields: null, issue: "Pick the Expected close date from the calendar." };
   }

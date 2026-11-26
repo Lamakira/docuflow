@@ -7,6 +7,7 @@ import {
   type FormEvent,
   type MouseEvent,
   type PointerEvent,
+  type ReactNode,
 } from "react";
 import { Pencil, Plus, Search, Trash2 } from "lucide-react";
 import {
@@ -28,6 +29,7 @@ import type {
 import { isDeliveryProject, opportunityStageFromCombined } from "@shared/projectLifecycle";
 import { useAuth } from "@/hooks/useAuth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useBoardDragScroll } from "./boardEdgeScroll";
 import { motionForSurface } from "./motion";
 import { isStandingRefusal, notify } from "./notify";
 import { matchV2Route } from "./presentation";
@@ -60,7 +62,9 @@ import {
   opportunityNotesPath,
   opportunityStageHistoryPath,
   opportunitySourceOptions,
+  opportunityCardActions,
   opportunityWriteRefusal,
+  OPPORTUNITY_NAME_REQUIRED,
   readLostDraft,
   readWinDraft,
   reopenStageOf,
@@ -95,6 +99,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { SkeletonBoard, SkeletonRecordHead, SkeletonSection, V2PageSkeleton } from "./V2Skeleton";
 import { V2PageHead } from "./V2PageHead";
+import { V2RowMenu, type V2RowMenuItem } from "./V2RowMenu";
 
 type OpportunityRowsResponse = { data: CrmProjectWithDetails[]; total?: number };
 type ModuleField = { slug: string; options: string[] | null };
@@ -227,12 +232,15 @@ function OpportunityCardView({
   dragging,
   locked,
   onOpen,
+  menu,
 }: {
   card: OpportunityCard;
   provided: DraggableProvided;
   dragging: boolean;
   locked: boolean;
   onOpen: (href: string) => void;
+  /** The card's "⋯" menu: a sibling of the link, since a button cannot sit inside one. */
+  menu?: ReactNode;
 }) {
   const origin = useRef<{ x: number; y: number } | null>(null);
   const cardRef = useRef<HTMLAnchorElement | null>(null);
@@ -268,51 +276,50 @@ function OpportunityCardView({
   }
 
   return (
-    <a
-      ref={(element) => {
-        provided.innerRef(element);
-        cardRef.current = element;
-      }}
-      href={recordHref}
-      {...provided.draggableProps}
-      {...provided.dragHandleProps}
-      // The library gives the handle role="button"; the card stays a link. Its
-      // lift instructions arrive as aria-describedby, so the link keeps its own name.
-      role={undefined}
-      className="df-opportunity-card"
-      data-dragging={dragging ? "true" : "false"}
-      data-pressing="false"
-      data-locked={locked ? "true" : "false"}
-      data-changing={card.changing ? "true" : "false"}
-      aria-busy={card.changing ? true : undefined}
-      data-testid={`v2-opportunity-card-${card.id}`}
-      onPointerDown={onPointerDown}
-      onClick={onClick}
-    >
-      <div className="df-row-title">{card.name}</div>
-      {card.clientLabel ? <div className="df-opportunity-card-client">{card.clientLabel}</div> : null}
-      {card.valueLabel ? <div className="df-opportunity-card-value">{card.valueLabel}</div> : null}
-      {card.ownerName || card.closeLabel ? (
-        <div className="df-opportunity-card-meta">
-          {card.ownerName && card.ownerInitials ? (
-            <span
-              className="df-opportunity-card-owner"
-              role="img"
-              title={`Owner: ${card.ownerName}`}
-              aria-label={`Owner: ${card.ownerName}`}
-            >
-              {card.ownerInitials}
-            </span>
-          ) : null}
-          {card.closeLabel ? (
-            <span className="df-opportunity-card-close" data-overdue={card.closeOverdue ? "true" : undefined}>
-              Close {card.closeLabel}
-              {card.closeOverdue ? <span className="df-sr-only"> (passed)</span> : null}
-            </span>
-          ) : null}
-        </div>
-      ) : null}
-    </a>
+    <div ref={provided.innerRef} {...provided.draggableProps} className="df-opportunity-card-shell">
+      <a
+        ref={cardRef}
+        href={recordHref}
+        {...provided.dragHandleProps}
+        // The library gives the handle role="button"; the card stays a link. Its
+        // lift instructions arrive as aria-describedby, so the link keeps its own name.
+        role={undefined}
+        className="df-opportunity-card"
+        data-dragging={dragging ? "true" : "false"}
+        data-pressing="false"
+        data-locked={locked ? "true" : "false"}
+        data-changing={card.changing ? "true" : "false"}
+        aria-busy={card.changing ? true : undefined}
+        data-testid={`v2-opportunity-card-${card.id}`}
+        onPointerDown={onPointerDown}
+        onClick={onClick}
+      >
+        <div className="df-row-title">{card.name}</div>
+        {card.clientLabel ? <div className="df-opportunity-card-client">{card.clientLabel}</div> : null}
+        {card.valueLabel ? <div className="df-opportunity-card-value">{card.valueLabel}</div> : null}
+        {card.ownerName || card.closeLabel ? (
+          <div className="df-opportunity-card-meta">
+            {card.ownerName && card.ownerInitials ? (
+              <span
+                className="df-opportunity-card-owner"
+                role="img"
+                title={`Owner: ${card.ownerName}`}
+                aria-label={`Owner: ${card.ownerName}`}
+              >
+                {card.ownerInitials}
+              </span>
+            ) : null}
+            {card.closeLabel ? (
+              <span className="df-opportunity-card-close" data-overdue={card.closeOverdue ? "true" : undefined}>
+                Close {card.closeLabel}
+                {card.closeOverdue ? <span className="df-sr-only"> (passed)</span> : null}
+              </span>
+            ) : null}
+          </div>
+        ) : null}
+      </a>
+      {menu}
+    </div>
   );
 }
 
@@ -433,7 +440,25 @@ function OpportunityFieldInputs({
   );
 }
 
-type Outcome = { kind: OpportunityOutcome; row: CrmProjectWithDetails };
+/** `fromMenu`: opened from the card's "⋯" menu, so focus goes back to that button. */
+type Outcome = { kind: OpportunityOutcome; row: CrmProjectWithDetails; fromMenu?: boolean };
+
+/**
+ * A dialog opened from a card's "⋯" menu hands focus back to that menu's
+ * button when it closes; left to Radix, it went to the page.
+ */
+function focusCardMenu(opportunityId: string) {
+  return (event: Event) => {
+    const trigger = cardMenuButton(opportunityId);
+    if (!trigger) return;
+    event.preventDefault();
+    trigger.focus();
+  };
+}
+
+function cardMenuButton(opportunityId: string): HTMLElement | null {
+  return document.querySelector<HTMLElement>(`[data-testid="v2-opportunity-card-menu-${opportunityId}"]`);
+}
 
 /**
  * Mark as won asks for the Client Project the win makes (ADR-0001): its
@@ -492,6 +517,7 @@ function OpportunityOutcomeDialog({
         open
         onOpenChange={(open) => !open && onClose()}
         title="Mark as won"
+        onCloseAutoFocus={outcome.fromMenu ? focusCardMenu(row.id) : undefined}
         description={`Winning ${name} makes it a Client Project. Its Estimated value stays on the Opportunity; the Project's budget is time. It cannot be moved back to an open stage afterwards.`}
         submitLabel="Mark as won"
         pending={save.isPending}
@@ -574,6 +600,7 @@ function OpportunityOutcomeDialog({
       open
       onOpenChange={(open) => !open && onClose()}
       title={alreadyLost ? (row.lostReason ? "Change Lost reason" : "Add Lost reason") : "Mark as lost"}
+      onCloseAutoFocus={outcome.fromMenu ? focusCardMenu(row.id) : undefined}
       description={
         alreadyLost
           ? `Why ${name} was lost.`
@@ -672,6 +699,173 @@ function OpportunityReopenDialog({
           value={stage}
           options={stages.filter((option) => !option.terminal).map((option) => ({ value: option.id, label: option.label }))}
           onChange={setStage}
+        />
+      </label>
+    </V2FormDialog>
+  );
+}
+
+type CardAction = { kind: "rename" | "owner" | "note"; row: CrmProjectWithDetails };
+
+/** Rename from a pipeline card's menu: the record form's Name field, alone. */
+function OpportunityRenameDialog({ row, onClose }: { row: CrmProjectWithDetails; onClose: () => void }) {
+  const writes = useWorkspaceWrites();
+  const [name, setName] = useState(row.project?.name ?? "");
+  const [refusal, setRefusal] = useState<string | null>(null);
+  const save = useMutation({
+    mutationFn: (projectName: string) => apiRequest("PATCH", `/api/crm/projects/${row.id}`, { projectName }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/projects"] });
+      onClose();
+      notify.success("Opportunity renamed");
+    },
+    onError: (error: Error) => setRefusal(writes.failed(error, "Edit Opportunities")),
+  });
+  function submit() {
+    if (writes.readOnly) {
+      setRefusal(writes.refusal());
+      return;
+    }
+    const next = name.trim();
+    if (!next) {
+      setRefusal(OPPORTUNITY_NAME_REQUIRED);
+      return;
+    }
+    save.mutate(next);
+  }
+  return (
+    <V2FormDialog
+      open
+      onOpenChange={(open) => !open && onClose()}
+      title={`Rename ${row.project?.name || "this Opportunity"}`}
+      description="The new name shows on the pipeline and on its record."
+      submitLabel="Rename"
+      pending={save.isPending}
+      canSubmit
+      onSubmit={submit}
+      refusal={refusal}
+      testId="v2-opportunity-rename"
+      onCloseAutoFocus={focusCardMenu(row.id)}
+    >
+      <label className="df-daily-field">
+        Name
+        <input
+          type="text"
+          value={name}
+          autoFocus
+          onChange={(event) => {
+            setName(event.target.value);
+            if (refusal === OPPORTUNITY_NAME_REQUIRED) setRefusal(null);
+          }}
+          placeholder="Opportunity name"
+          aria-label="Opportunity name"
+        />
+      </label>
+    </V2FormDialog>
+  );
+}
+
+/** Change Owner from a pipeline card's menu: the record form's Owner select, alone. */
+function OpportunityOwnerDialog({
+  row,
+  users,
+  onClose,
+}: {
+  row: CrmProjectWithDetails;
+  users: SafeUser[];
+  onClose: () => void;
+}) {
+  const writes = useWorkspaceWrites();
+  const [ownerId, setOwnerId] = useState(row.opportunityOwnerId ?? "");
+  const [refusal, setRefusal] = useState<string | null>(null);
+  const save = useMutation({
+    mutationFn: (opportunityOwnerId: string | null) =>
+      apiRequest("PATCH", `/api/crm/projects/${row.id}`, { opportunityOwnerId }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/projects"] });
+      onClose();
+      notify.success("Owner changed");
+    },
+    onError: (error: Error) => setRefusal(writes.failed(error, "Edit Opportunities")),
+  });
+  function submit() {
+    if (writes.readOnly) {
+      setRefusal(writes.refusal());
+      return;
+    }
+    save.mutate(ownerId || null);
+  }
+  return (
+    <V2FormDialog
+      open
+      onOpenChange={(open) => !open && onClose()}
+      title={`Change Owner of ${row.project?.name || "this Opportunity"}`}
+      description="The Owner is the person who follows this sale."
+      submitLabel="Save"
+      pending={save.isPending}
+      canSubmit
+      onSubmit={submit}
+      refusal={refusal}
+      testId="v2-opportunity-owner"
+      onCloseAutoFocus={focusCardMenu(row.id)}
+    >
+      <label className="df-daily-field">
+        Owner
+        <V2FilterSelect
+          label=""
+          ariaLabel="Owner"
+          value={ownerId || V2_SELECT_NONE}
+          options={peopleOptions(users, "No Owner")}
+          onChange={(value) => setOwnerId(fromSelect(value))}
+        />
+      </label>
+    </V2FormDialog>
+  );
+}
+
+/** Add note from a pipeline card's menu: the record's note dialog, without opening the record. */
+function OpportunityAddNoteDialog({ row, onClose }: { row: CrmProjectWithDetails; onClose: () => void }) {
+  const writes = useWorkspaceWrites();
+  const [content, setContent] = useState("");
+  const [refusal, setRefusal] = useState<string | null>(null);
+  const save = useMutation({
+    mutationFn: (text: string) => apiRequest("POST", opportunityNotesPath(row.id), { content: text }),
+    onSuccess: () => {
+      // The prefix covers the record's notes key too.
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/projects"] });
+      onClose();
+      notify.success("Note added");
+    },
+    onError: (error: Error) => setRefusal(writes.failed(error, "Manage Opportunity Notes")),
+  });
+  function submit() {
+    if (writes.readOnly) {
+      setRefusal(writes.refusal());
+      return;
+    }
+    save.mutate(content.trim());
+  }
+  return (
+    <V2FormDialog
+      open
+      onOpenChange={(open) => !open && onClose()}
+      title={`Add note to ${row.project?.name || "this Opportunity"}`}
+      description="A note keeps what was said or decided on this Opportunity. It is dated and signed with your name."
+      submitLabel="Add note"
+      pending={save.isPending}
+      canSubmit={Boolean(content.trim())}
+      onSubmit={submit}
+      refusal={refusal}
+      testId="v2-opportunity-add-note"
+      onCloseAutoFocus={focusCardMenu(row.id)}
+    >
+      <label className="df-daily-field">
+        Note
+        <textarea
+          value={content}
+          autoFocus
+          onChange={(event) => setContent(event.target.value)}
+          aria-label="Opportunity note"
         />
       </label>
     </V2FormDialog>
@@ -1374,6 +1568,7 @@ export function V2OpportunitiesPage() {
   const [draft, setDraft] = useState(() => newOpportunityDraft(""));
   const [writeRefusal, setWriteRefusal] = useState<string | null>(null);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
+  const [cardAction, setCardAction] = useState<CardAction | null>(null);
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
 
   const { readOnly, refusal, failed } = useWorkspaceWrites();
@@ -1535,8 +1730,75 @@ export function V2OpportunitiesPage() {
     pipeline.columns.flatMap((column) => column.cards.map((card) => [card.id, card] as const)),
   );
 
+  const boardDrag = useBoardDragScroll(pipelineRef, stacked);
+
+  // Move to redraws the card in its new column, which drops the focus; once
+  // the board shows it there, focus goes to its "⋯" button (and the board
+  // scrolls to it).
+  const refocusAfterMove = useRef<string | null>(null);
+  useEffect(() => {
+    const id = refocusAfterMove.current;
+    if (!id) return;
+    const trigger = cardMenuButton(id);
+    if (!trigger) return;
+    refocusAfterMove.current = null;
+    trigger.focus();
+  }, [projectsResponse]);
+
+  /** The card's "⋯" menu; none in a Read-only Workspace, where nothing can be written. */
+  function cardMenu(card: OpportunityCard, columnId: string): ReactNode {
+    const row = rowsById.get(card.id);
+    const actions = opportunityCardActions({
+      canChangeStage: card.canChangeStage,
+      readOnly,
+      currentStage: card.stage,
+      stages,
+    });
+    if (!row || !actions) return null;
+    const items: V2RowMenuItem[] = [];
+    if (actions.rename) {
+      items.push({ label: "Rename…", testId: `v2-opportunity-card-rename-${card.id}`, onSelect: () => setCardAction({ kind: "rename", row }) });
+    }
+    if (actions.moveTo && actions.moveTo.length > 0) {
+      items.push({
+        label: "Move to",
+        testId: `v2-opportunity-card-move-${card.id}`,
+        onSelect: () => {},
+        items: actions.moveTo.map((stage) => ({
+          label: stage.label,
+          testId: `v2-opportunity-card-move-${card.id}-${stage.id}`,
+          onSelect: () => {
+            refocusAfterMove.current = card.id;
+            onStageChange(row, columnId, stage.id);
+          },
+        })),
+      });
+    }
+    if (actions.owner) {
+      items.push({ label: "Change Owner…", testId: `v2-opportunity-card-owner-${card.id}`, onSelect: () => setCardAction({ kind: "owner", row }) });
+    }
+    if (actions.note) {
+      items.push({ label: "Add note…", testId: `v2-opportunity-card-note-${card.id}`, onSelect: () => setCardAction({ kind: "note", row }) });
+    }
+    if (actions.outcomes) {
+      items.push(
+        { label: "Mark as won…", testId: `v2-opportunity-card-won-${card.id}`, separatorBefore: true, onSelect: () => setOutcome({ kind: "won", row, fromMenu: true }) },
+        { label: "Mark as lost…", testId: `v2-opportunity-card-lost-${card.id}`, onSelect: () => setOutcome({ kind: "lost", row, fromMenu: true }) },
+      );
+    }
+    return (
+      <V2RowMenu
+        ariaLabel={`Actions on ${card.name}`}
+        testId={`v2-opportunity-card-menu-${card.id}`}
+        triggerVariant="ghost"
+        triggerClassName="df-opportunity-card-menu"
+        items={items}
+      />
+    );
+  }
+
   function handleDragEnd(result: DropResult) {
-    pipelineRef.current?.setAttribute("data-dragging", "false");
+    boardDrag.end();
     const { destination, source, draggableId } = result;
     if (!destination) return;
     if (destination.droppableId === source.droppableId) return;
@@ -1657,7 +1919,9 @@ export function V2OpportunitiesPage() {
       {pipeline.emptyState?.kind === "none" || pipeline.emptyState?.kind === "filtered" ? null : (
       <>
       <DragDropContext
-        onDragStart={() => pipelineRef.current?.setAttribute("data-dragging", "true")}
+        // Before the library measures (onDragStart came too late): see
+        // useBoardDragScroll in boardEdgeScroll.ts.
+        onBeforeCapture={boardDrag.beforeCapture}
         onDragEnd={handleDragEnd}
       >
         <div
@@ -1716,6 +1980,7 @@ export function V2OpportunitiesPage() {
                             dragging={false}
                             locked={!card.canChangeStage || readOnly}
                             onOpen={setLocation}
+                            menu={cardMenu(card, column.id)}
                           />
                         )}
                       </Draggable>
@@ -1762,6 +2027,20 @@ export function V2OpportunitiesPage() {
           users={users}
           clients={clients}
         />
+      ) : null}
+      {cardAction?.kind === "rename" ? (
+        <OpportunityRenameDialog key={`rename-${cardAction.row.id}`} row={cardAction.row} onClose={() => setCardAction(null)} />
+      ) : null}
+      {cardAction?.kind === "owner" ? (
+        <OpportunityOwnerDialog
+          key={`owner-${cardAction.row.id}`}
+          row={cardAction.row}
+          users={users}
+          onClose={() => setCardAction(null)}
+        />
+      ) : null}
+      {cardAction?.kind === "note" ? (
+        <OpportunityAddNoteDialog key={`note-${cardAction.row.id}`} row={cardAction.row} onClose={() => setCardAction(null)} />
       ) : null}
     </div>
   );

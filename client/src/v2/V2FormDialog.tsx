@@ -30,6 +30,12 @@ export type V2FormDialogProps = {
   refusal?: string | null;
   testId: string;
   children: ReactNode;
+  /**
+   * Where focus goes when the dialog closes. By default Radix returns it to
+   * what was focused when it opened; a dialog opened from a menu would send
+   * it to the page, since the menu item is gone by then.
+   */
+  onCloseAutoFocus?: (event: Event) => void;
 };
 
 export function V2FormDialog({
@@ -44,6 +50,7 @@ export function V2FormDialog({
   refusal,
   testId,
   children,
+  onCloseAutoFocus,
 }: V2FormDialogProps) {
   function submit(event: FormEvent) {
     event.preventDefault();
@@ -55,7 +62,7 @@ export function V2FormDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       {/* Radix portals to document.body, outside `.df-v2`, so the panel
           carries the class itself or the --df-* tokens do not resolve. */}
-      <DialogContent className="df-v2 df-alert df-form-dialog" data-testid={testId}>
+      <DialogContent className="df-v2 df-alert df-form-dialog" data-testid={testId} onCloseAutoFocus={onCloseAutoFocus}>
         <DialogHeader>
           <DialogTitle className="df-form-dialog-title">{title}</DialogTitle>
           <DialogDescription className="df-form-dialog-copy">{description}</DialogDescription>

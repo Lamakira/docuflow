@@ -2362,3 +2362,48 @@ every customer the addresses of all DocuFlow staff.
   the shared refusal; tabs that scroll without a bar and bring the open one into view.
 
 - **Fixed:** 2026-11-26. All but the raw stored names of the dev Workspace. The Workspace tab holds the name (editable by the Owner), the Owner and the time zone; Members and Roles goes to People; Screencasts timezones leaves v2; plain words and sentence case; the shared refusal; tabs that scroll without a bar on a phone and bring the open one into view (seen in light and dark, at 375 px).
+
+## F111 - A card cannot be dragged to a column off screen
+
+- **Status:** closed - fixed 2026-11-26
+- **Found:** 2026-11-26, reported by the CEO on the Opportunities board (seen)
+
+- Dragging a Lead card towards Won or Lost: the board does not scroll, so the columns past
+  the window cannot be reached. Held at the board's right edge for 2 seconds, it moved 0px.
+- Cause: each column scrolls on its own inside a board that scrolls sideways. The drag
+  library follows one scroll container and warns `unsupported nested scroll container
+  detected`; it scrolled the column, never the board.
+- Once the board is the one container, the library still stops when the dragged card's
+  centre leaves the board, which happens when a card held by its left side is pushed to the
+  edge (it stopped after 84px).
+
+- **Proposal:** during a drag the columns stop scrolling (set before the library measures),
+  so the board is the container it follows; the board also scrolls from the pointer's
+  position near either edge, so a card held anywhere reaches every column.
+
+- **Fixed:** 2026-11-26. A card held by its left side reaches Lost: the board scrolled to
+  its end, a release over Won opened Mark as won, a release over Follow up moved the card
+  with its Undo (seen, on the dev board). The dragged copy keeps its width. The Projects
+  board had the same defect and shares the fix (seen: it scrolls to its end during a drag).
+  A card lifted near an edge leaves the board still until the pointer has moved away; the
+  drag library's own slow start near an edge stays.
+
+## F112 - Every change to a card needs its record page
+
+- **Status:** closed - fixed 2026-11-26
+- **Found:** 2026-11-26, asked by the CEO
+
+- Renaming, moving to a far stage, changing the Owner, adding a note, or marking won or lost
+  all mean opening the Opportunity first. Moving by keyboard has no other way than the
+  drag.
+
+- **Proposal:** a "⋯" menu on each card: Rename, Move to (the open stages), Change Owner,
+  Add note, Mark as won, Mark as lost. A Won or Lost card keeps Rename, Change Owner and
+  Add note. No menu in a Read-only Workspace.
+
+- **Fixed:** 2026-11-26. The menu shows on hover or focus, always on a touch screen, and
+  never during a drag (seen, at 1024 px and 375 px). Move to moves with Undo; Rename,
+  Change Owner, Add note and Mark as won or lost open their dialog, which hands focus back
+  to the card's button (seen, by mouse and keyboard). A Won card offers Rename, Change Owner
+  and Add note (seen). Found on the way, in the shared row menu: a dialog opened from it
+  could leave the page unclickable once closed; the item now acts after the menu closes.
