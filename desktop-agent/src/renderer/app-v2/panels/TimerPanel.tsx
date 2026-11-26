@@ -17,6 +17,7 @@ import { useAgent } from '../../app/stores/AgentContext';
 import type { Project, Task } from '../../app/types';
 import { Panel, PanelHead, PanelBody, PanelRow, Pager } from '../components/Panel';
 import { useUi } from '../ui/UiContext';
+import { createFromTimerPanel } from '../../../lib/createFromTimerPanel';
 import { useActiveTask } from '../ui/useActiveTask';
 import { useFitCount } from '../ui/useFitCount';
 import { formatDuration, formatElapsed } from '../format';
@@ -46,6 +47,7 @@ export function TimerPanel() {
   const [newName, setNewName] = useState('');
   const [busy, setBusy] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  const [revealTaskId, setRevealTaskId] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const [listRef, perPage] = useFitCount<HTMLDivElement>(ROW_H, { min: 2, max: 14, item: '.v2-row' });
@@ -136,6 +138,14 @@ export function TimerPanel() {
   const current = Math.min(page, pages - 1);
   const visible = rows.slice(current * perPage, current * perPage + perPage);
 
+  // A created Task is appended, so it can land past the first page; show the page it is on.
+  useEffect(() => {
+    if (!revealTaskId) return;
+    const index = (rows as Task[]).findIndex((t) => t.id === revealTaskId);
+    if (index >= 0) setPage(Math.floor(index / perPage));
+    setRevealTaskId(null);
+  }, [revealTaskId, rows, perPage]);
+
   // Only the projects on screen pay for a task fetch. Keyed on the ids rather
   // than the array so paging triggers it and re-rendering does not.
   const visibleIds = openProject ? '' : (visible as Project[]).map((p) => p.id).join(',');
@@ -174,34 +184,24 @@ export function TimerPanel() {
     if (!name || busy) return;
     setBusy(true);
     setCreateError(null);
-
-    if (openProject) {
-      const result = await bridge.createTask({ crmProjectId: openProject.id, name });
-      setBusy(false);
-      if (!result.ok || !result.data) { setCreateError(result.error ?? 'Could not create the task'); return; }
-      const created = result.data;
-      setTaskCache((c) => ({ ...c, [openProject.id]: [...(c[openProject.id] ?? []), created] }));
-      setCreating(false);
-      setNewName('');
-      await start(created, openProject.name);   // creating a task starts tracking it
-      return;
-    }
-
-    const result = await bridge.createProject({ name });
+    const parentId = openProject?.id;
+    const outcome = await createFromTimerPanel(name, openProject, bridge);
     setBusy(false);
-    if (!result.ok || !result.data) { setCreateError(result.error ?? 'Could not create the project'); return; }
-    const created = result.data;
-    setProjects((prev) => [created, ...prev]);
-    setTaskCache((c) => ({ ...c, [created.id]: [] }));
+    if (!outcome.ok) { setCreateError(outcome.error); return; }
     setCreating(false);
     setNewName('');
     setSearch('');
-    if (projectOnly) {
-      await startProject(created);             // with no Tasks, creating a project starts tracking it
-      return;
+    if (outcome.kind === 'task' && parentId) {
+      const task = outcome.task;
+      setTaskCache((c) => ({ ...c, [parentId]: [...(c[parentId] ?? []), task] }));
+      setRevealTaskId(task.id);
+    } else if (outcome.kind === 'project') {
+      const created = outcome.project;
+      setProjects((prev) => [created, ...prev]);
+      setTaskCache((c) => ({ ...c, [created.id]: [] }));
+      if (!projectOnly) setOpenProjectId(created.id);   // with Tasks, a new project opens on its (empty) Task list
     }
-    setOpenProjectId(created.id);              // creating a project opens it
-    showToast(`“${created.name}” created`);
+    showToast(outcome.toast);
   }
 
   // A stopped entry reads as paused at zero, which is what it is from here: the
