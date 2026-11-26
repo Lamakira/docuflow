@@ -4,10 +4,11 @@ import path from "path";
 const fake = (name: string) => path.resolve(import.meta.dirname, "tests/fakes", name);
 
 export default defineConfig({
-  // Vitest 4 runs its own Vite 8, where `oxc` is the transform that applies;
-  // the app builds with Vite 5, which ignores this key. tsconfig keeps
-  // `jsx: preserve`, so tests that render a component (the brand test renders
-  // BrandMark) need JSX compiled here.
+  // tsconfig keeps `jsx: preserve`, so tests that render a component (the
+  // brand test renders BrandMark) need JSX compiled here. Vitest now shares the
+  // app's Vite 6, where esbuild compiles it; `oxc` is the same setting for a
+  // Vite 8, which ignores `esbuild`.
+  esbuild: { jsx: "automatic" },
   oxc: { jsx: { runtime: "automatic" } },
   resolve: {
     alias: {
