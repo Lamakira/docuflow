@@ -683,6 +683,14 @@ describe("Actions menu on a pipeline card", () => {
     expect(css).toMatch(/\.df-opportunity-pipeline\[data-dragging="true"\] \.df-opportunity-card-shell button\.df-btn\.df-opportunity-card-menu\s*\{[^}]*opacity:\s*0/);
   });
 
+  it("shows the card's menu button at rest, never only on hover", () => {
+    // 2026-11-26: "il faut rendre les 3 points immédiatement visibles sur les cartes plutôt qu'au survol"
+    const hidden = css.match(/[^{}]*\{[^}]*\}/g)?.filter((block) => block.includes("df-opportunity-card-menu") && /opacity:\s*0\b/.test(block)) ?? [];
+    expect(hidden.map((block) => block.trim().split("{")[0].trim())).toEqual([
+      '.df-v2 .df-opportunity-pipeline[data-dragging="true"] .df-opportunity-card-shell button.df-btn.df-opportunity-card-menu',
+    ]);
+  });
+
   it("opens a menu item's dialog only once the menu has closed, and hands focus back to the card's button", () => {
     // A dialog opened while the menu was closing left the page unclickable
     // after it closed (seen 2026-11-26 with Mark as won, then Escape).
