@@ -17,6 +17,7 @@ import { useAgent } from '../../app/stores/AgentContext';
 import type { Project, Task } from '../../app/types';
 import { Panel, PanelHead, PanelBody, PanelRow, Pager } from '../components/Panel';
 import { useUi } from '../ui/UiContext';
+import { createFromTimerPanel, mergeTaskRead } from '../../../lib/createFromTimerPanel';
 import { useActiveTask } from '../ui/useActiveTask';
 import { useFitCount } from '../ui/useFitCount';
 import { formatDuration, formatElapsed } from '../format';
@@ -70,19 +71,25 @@ export function TimerPanel() {
    */
   const requested = useRef<Set<string>>(new Set());
 
+  /** When each Task created here was added, so a read issued before it cannot drop it. */
+  const createdAt = useRef<Record<string, number>>({});
+
   /**
-   * The one place a task response is applied. Both callers of `getTasks` — the
-   * fetch below and the post-timer refresh — go through it, so a refresh cannot
-   * leave behind an error its own success just disproved, and cannot fail
-   * silently either.
+   * The one place a task response is applied. Every `getTasks` call — the
+   * fetch below and the post-timer refresh — goes through `readTasks` and lands
+   * here, so a refresh cannot leave behind an error its own success just
+   * disproved, and cannot fail silently either.
    */
-  function receiveTasks(projectId: string, r: Awaited<ReturnType<typeof bridge.getTasks>>) {
+  function receiveTasks(projectId: string, r: Awaited<ReturnType<typeof bridge.getTasks>>, issuedAt: number) {
     if (!r.ok) {
       requested.current.delete(projectId);
       setTaskError((e) => ({ ...e, [projectId]: r.error ?? 'Could not load tasks' }));
       return;
     }
-    setTaskCache((c) => ({ ...c, [projectId]: r.data }));
+    setTaskCache((c) => ({
+      ...c,
+      [projectId]: mergeTaskRead(c[projectId] ?? [], r.data, createdAt.current, issuedAt),
+    }));
     setTaskError((e) => {
       if (!(projectId in e)) return e;
       const next = { ...e };
@@ -91,10 +98,15 @@ export function TimerPanel() {
     });
   }
 
+  function readTasks(projectId: string) {
+    const issuedAt = Date.now();
+    void bridge.getTasks({ crmProjectId: projectId }).then((r) => receiveTasks(projectId, r, issuedAt));
+  }
+
   function ensureTasks(projectId: string) {
     if (projectOnly || requested.current.has(projectId)) return;
     requested.current.add(projectId);
-    void bridge.getTasks({ crmProjectId: projectId }).then((r) => receiveTasks(projectId, r));
+    readTasks(projectId);
   }
 
   useEffect(() => {
@@ -105,11 +117,7 @@ export function TimerPanel() {
   // the entry changes so the row totals are not stale.
   useEffect(() => {
     if (!openProjectId) return;
-    const t = setTimeout(() => {
-      void bridge.getTasks({ crmProjectId: openProjectId }).then((r) =>
-        receiveTasks(openProjectId, r),
-      );
-    }, 1500);
+    const t = setTimeout(() => readTasks(openProjectId), 1500);
     return () => clearTimeout(t);
   }, [timer?.entryId, openProjectId]);
 
@@ -174,34 +182,30 @@ export function TimerPanel() {
     if (!name || busy) return;
     setBusy(true);
     setCreateError(null);
-
-    if (openProject) {
-      const result = await bridge.createTask({ crmProjectId: openProject.id, name });
-      setBusy(false);
-      if (!result.ok || !result.data) { setCreateError(result.error ?? 'Could not create the task'); return; }
-      const created = result.data;
-      setTaskCache((c) => ({ ...c, [openProject.id]: [...(c[openProject.id] ?? []), created] }));
-      setCreating(false);
-      setNewName('');
-      await start(created, openProject.name);   // creating a task starts tracking it
-      return;
-    }
-
-    const result = await bridge.createProject({ name });
+    const outcome = await createFromTimerPanel(name, openProject, bridge);
     setBusy(false);
-    if (!result.ok || !result.data) { setCreateError(result.error ?? 'Could not create the project'); return; }
-    const created = result.data;
-    setProjects((prev) => [created, ...prev]);
-    setTaskCache((c) => ({ ...c, [created.id]: [] }));
+    if (!outcome.ok) { setCreateError(outcome.error); return; }
     setCreating(false);
     setNewName('');
     setSearch('');
-    if (projectOnly) {
-      await startProject(created);             // with no Tasks, creating a project starts tracking it
-      return;
+    if (outcome.kind === 'task') {
+      // First, not last: closing the form puts the list back on its first page,
+      // where the new Task is then in view. The next read of the project's tasks
+      // returns the server's order (oldest first) and moves it to the end.
+      const task = outcome.task;
+      createdAt.current[task.id] = Date.now();
+      setTaskCache((c) => ({ ...c, [task.crmProjectId]: [task, ...(c[task.crmProjectId] ?? [])] }));
+    } else {
+      const created = outcome.project;
+      setProjects((prev) => [created, ...prev]);
+      if (!projectOnly) {
+        // With Tasks, a new project opens on its (empty) Task list. Without them
+        // no row carries a task count, so the new one is given none either.
+        setTaskCache((c) => ({ ...c, [created.id]: [] }));
+        setOpenProjectId(created.id);
+      }
     }
-    setOpenProjectId(created.id);              // creating a project opens it
-    showToast(`“${created.name}” created`);
+    showToast(outcome.toast);
   }
 
   // A stopped entry reads as paused at zero, which is what it is from here: the
