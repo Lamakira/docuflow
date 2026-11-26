@@ -3193,28 +3193,10 @@ button.df-activity-row {
   color: var(--df-case-ink);
 }
 
-/* At rest the button is hidden on a fine pointer, still focusable; hover, focus
-   or its open menu shows it. */
-@media (hover: hover) and (pointer: fine) {
-  .df-v2 .df-opportunity-card-shell button.df-btn.df-opportunity-card-menu {
-    opacity: 0;
-  }
-
-  .df-v2 .df-opportunity-card-shell:hover button.df-btn.df-opportunity-card-menu,
-  .df-v2 .df-opportunity-card-shell:focus-within button.df-btn.df-opportunity-card-menu,
-  .df-v2 .df-opportunity-card-shell button.df-btn.df-opportunity-card-menu:focus-visible,
-  .df-v2 .df-opportunity-card-shell button.df-btn.df-opportunity-card-menu[data-state="open"] {
-    opacity: 1;
-  }
-}
-
-/* A touch screen has no hover to reveal it, and a finger needs 44px: the
-   button keeps its size and its touch area reaches 8px past each side. */
+/* The button shows at rest, on every card: the owner wants the actions seen
+   without hovering (2026-11-26). A finger needs 44px: the button keeps its
+   size and its touch area reaches 8px past each side. */
 @media (pointer: coarse) {
-  .df-v2 .df-opportunity-card-shell button.df-btn.df-opportunity-card-menu {
-    opacity: 1;
-  }
-
   .df-v2 .df-opportunity-card-shell button.df-btn.df-opportunity-card-menu::after {
     content: "";
     position: absolute;
