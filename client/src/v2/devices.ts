@@ -35,10 +35,13 @@ export type DevicesInput = {
 export type DeviceRow = {
   key: string;
   name: string;
+  /** As the agent sent it: the row's identity and what Revoke names. */
   os: string | null;
+  /** The OS as the reader says it (`osLabel`). */
+  osLabel: string;
   version: string | null;
   lastSeen: string;
-  status: "ONLINE" | "OFFLINE" | "NEVER SEEN";
+  status: "Online" | "Offline" | "Never seen";
   revoke: boolean;
 };
 
@@ -85,11 +88,32 @@ export function formatRelativeTime(dateStr: string | null, now: Date): string {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
+/** The agent sends `process.platform`; the reader reads the OS's name. */
+export function osLabel(os: string | null): string {
+  if (!os) return "-";
+  if (os === "win32") return "Windows";
+  if (os === "darwin") return "macOS";
+  if (os === "linux") return "Linux";
+  return os;
+}
+
+/**
+ * How long a pairing code has left, kept relative: the code lasts minutes, so
+ * a clock time says less than "in 10 minutes".
+ */
+export function pairingExpiry(expiresAt: string, now: Date): { expired: boolean; label: string } {
+  const remaining = new Date(expiresAt).getTime() - now.getTime();
+  if (remaining <= 0) return { expired: true, label: "Expired" };
+  if (remaining < 60_000) return { expired: false, label: "Expires in less than a minute" };
+  const minutes = Math.round(remaining / 60_000);
+  return { expired: false, label: `Expires in ${minutes} ${minutes === 1 ? "minute" : "minutes"}` };
+}
+
 function statusFor(device: DeviceInput, now: Date): DeviceRow["status"] {
-  if (!device.lastSeenAt) return "NEVER SEEN";
+  if (!device.lastSeenAt) return "Never seen";
   const minutesSinceSeen = (now.getTime() - new Date(device.lastSeenAt).getTime()) / 60000;
-  if (minutesSinceSeen < 5) return "ONLINE";
-  return "OFFLINE";
+  if (minutesSinceSeen < 5) return "Online";
+  return "Offline";
 }
 
 function timestamp(device: DeviceInput): number {
@@ -116,6 +140,7 @@ function groupByMachine(raw: DeviceInput[], now: Date): DeviceRow[] {
         key,
         name: representative.name,
         os: representative.os,
+        osLabel: osLabel(representative.os),
         version: representative.clientVersion ? `v${representative.clientVersion}` : null,
         lastSeen: formatRelativeTime(representative.lastSeenAt, now),
         status: statusFor(representative, now),
@@ -146,7 +171,8 @@ export function composeDevices(input: DevicesInput): DevicesModel {
       expiresAt: input.pairing.expiresAt,
     },
     pairAllowed: !readOnly,
-    revokeAllowed: !readOnly,
+    // Revoke stays open in a Read-only Workspace: it is how a lost computer is cut off.
+    revokeAllowed: true,
     writeRefusal: readOnly
       ? chromeRefusal({
           kind: "workspace-condition",

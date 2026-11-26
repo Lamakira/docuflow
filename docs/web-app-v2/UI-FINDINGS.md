@@ -2407,3 +2407,96 @@ every customer the addresses of all DocuFlow staff.
   to the card's button (seen, by mouse and keyboard). A Won card offers Rename, Change Owner
   and Add note (seen). Found on the way, in the shared row menu: a dialog opened from it
   could leave the page unclickable once closed; the item now acts after the menu closes.
+
+## F113 - The Devices list sends each Device's token hash to the browser
+
+- **Status:** closed - fixed 2026-11-26
+- **Found:** 2026-11-26, the Devices review (seen)
+
+- `GET /api/agent/devices` returns the raw `devices` rows (`getUserDevices`,
+  `server/modules/postgresStorage.ts`), `deviceTokenHash` included: the SHA-256 of the secret
+  a Device signs in with. The screen reads six fields.
+
+- **Proposal:** the route returns only what the screen shows (id, name, os, version, last
+  seen, revoked), and a test refuses any other key.
+
+- **Fixed:** 2026-11-26. The route returns six fields (seen: `id, name, os, clientVersion, lastSeenAt, revokedAt`); a test refuses the hash and the user id.
+
+## F114 - A pairing code can be guessed
+
+- **Status:** closed - fixed 2026-11-26
+- **Found:** 2026-11-26, the Devices review (from code)
+
+- A code is 6 characters from 32 (about a billion), valid 10 minutes. `POST
+  /api/agent/pairing/complete` needs no session and is held only by the global limit of 120
+  requests a minute per address. Every Pair a device and New code mints one more code while
+  the earlier ones stay valid. A guessed code enrolls the guesser's computer as that Member,
+  whose agent can then write time and captures into the Workspace.
+
+- **Proposal:** a strict limit on pairing complete (a few tries per address per 15 minutes),
+  and a new code replaces the person's unused ones.
+
+- **Fixed:** 2026-11-26. Pairing complete allows 10 failed tries per address per 15 minutes, in every environment; a code that enrolls does not count (seen: the tenth failure answered 429). A new code expires the person's unused ones (seen: the earlier code answered `Pairing code expired`).
+
+## F115 - An expired pairing code stays on screen
+
+- **Status:** closed - fixed 2026-11-26
+- **Found:** 2026-11-26, the Devices review (seen)
+
+- `Expires 16:45:04`: a clock time with seconds, for a code that lasts 10 minutes. It never
+  changes; after 10 minutes the code is still shown with Copy code, and the agent answers
+  `Pairing code expired`.
+- A new code is not announced to a screen reader. A failed one is a hand-written line, `Could
+  not generate a code.`, with no way to try again.
+
+- **Proposal:** `Expires in 10 minutes`, kept current; once expired the code goes and New code
+  stays. The code is announced; a failure is the shared failed state with Try again.
+
+- **Fixed:** 2026-11-26. `Expires in 10 minutes`, read again every 15 seconds; past it, the code and Copy code go and New code stays (seen, with the clock moved 11 minutes on). A new code is announced (`Pairing code ready`); a failure is the shared failed state with Try again, said once.
+
+## F116 - The code's words on the Devices list
+
+- **Status:** closed - fixed 2026-11-26
+- **Found:** 2026-11-26, the Devices review (seen)
+
+- OS reads `win32`, `darwin`, `linux`: the agent sends `process.platform`
+  (`desktop-agent/src/main/index.ts`).
+- `ONLINE`, `OFFLINE`, `NEVER SEEN` in capitals, in boxes as wide as the column (as F110 found
+  on Administration).
+
+- **Proposal:** Windows, macOS, Linux; Online, Offline, Never seen in sentence case, as the
+  other status pills now read.
+
+- **Fixed:** 2026-11-26. Windows, macOS, Linux; Online, Offline, Never seen in the shared pill, as wide as its word (seen).
+
+## F117 - A refresh that fails hides the Devices
+
+- **Status:** closed - fixed 2026-11-26
+- **Found:** 2026-11-26, the Devices review (from code)
+
+- The list refreshes every 15 seconds. When one refresh fails, `isError` is true with the
+  list still in hand, and the page swaps the list for `Your Devices could not be loaded`
+  until a later one succeeds (the F107 pattern).
+
+- **Proposal:** keep the list and say once that it could not be refreshed, with the shared
+  `useRefreshFailure`.
+
+- **Fixed:** 2026-11-26. A failed refresh keeps the list and says once that it could not be refreshed; the failed state shows only when nothing was loaded (from code and tests).
+
+## F118 - Revoke
+
+- **Status:** closed - fixed 2026-11-26
+- **Found:** 2026-11-26, the Devices review (seen unless marked)
+
+- A hand-written confirmation, where Administration now uses the shared `DestructiveConfirm`.
+- It says Revoke `ends X's access to the Workspace`. A Device belongs to the person, not the
+  Workspace (`devices` has no Workspace), so it ends that computer's access everywhere; and it
+  does not say what is lost: captures not yet sent from it, and the need to pair again (from
+  code).
+- Once the row goes, focus lands on the page instead of the next row.
+- A Read-only Workspace refuses Revoke, which is how a lost computer is cut off (from code).
+
+- **Proposal:** the shared confirmation, saying what ends and what is lost; focus to the next
+  row or to Pair a device; Revoke allowed in a Read-only Workspace.
+
+- **Fixed:** 2026-11-26. The shared confirmation says the computer stops recording and is signed out in every Workspace, that unsent captures are lost and that it must be paired again (seen); focus goes to the next row's Revoke (seen). A Read-only Workspace now allows Revoke and still refuses pairing (tests).

@@ -3316,6 +3316,11 @@ button.df-activity-row {
   color: var(--df-archive-slate);
 }
 
+/* The status pill fits its word instead of filling the column (F116). */
+.df-devices-register .df-status-word {
+  justify-self: start;
+}
+
 .df-register-head {
   padding: var(--df-space-3) var(--df-space-5);
   background: var(--df-cold-stock);

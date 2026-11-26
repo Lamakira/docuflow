@@ -173,25 +173,27 @@ describe("Devices from existing agent routes (#194)", () => {
         key: "Office Mac||macOS",
         name: "Office Mac",
         os: "macOS",
+        osLabel: "macOS",
         version: "v1.4.0",
         lastSeen: "2m ago",
-        status: "ONLINE",
+        status: "Online",
         revoke: true,
       },
       {
         key: "Lab Linux||Linux",
         name: "Lab Linux",
         os: "Linux",
+        osLabel: "Linux",
         version: null,
         lastSeen: "Never",
-        status: "NEVER SEEN",
+        status: "Never seen",
         revoke: true,
       },
     ]);
     expect(JSON.stringify(page.rows)).not.toContain("Retired");
   });
 
-  it("shows the pairing code when it appears and refuses writes in a Read-only Workspace", () => {
+  it("shows the pairing code when it appears and refuses pairing, not Revoke, in a Read-only Workspace", () => {
     const pairing = composeDevices(
       emptyDevices({
         pairing: {
@@ -219,7 +221,7 @@ describe("Devices from existing agent routes (#194)", () => {
 
     const readOnly = composeDevices(emptyDevices({ condition: "Read-only" }));
     expect(readOnly.pairAllowed).toBe(false);
-    expect(readOnly.revokeAllowed).toBe(false);
+    expect(readOnly.revokeAllowed).toBe(true);
     expect(readOnly.writeRefusal).toBe(
       "Harbor Co is read-only. Viewing, export, and recovery stay available.",
     );
@@ -346,22 +348,22 @@ function reducedMotionCss(): string {
     .join("\n");
 }
 
-describe("Revoking a Device confirms in an AlertDialog (F7)", () => {
+describe("Revoking a Device confirms in the shared confirmation (F7, F118)", () => {
   const source = readFileSync(
     join(dirname(fileURLToPath(import.meta.url)), "../../client/src/v2/V2Devices.tsx"),
     "utf8",
   );
 
-  it("opens a dialog from Revoke and revokes only from the dialog's Revoke", () => {
-    const control = source.slice(source.indexOf("function RevokeControl("));
-    expect(control).toMatch(/<AlertDialog>\s*<AlertDialogTrigger asChild>\s*<Button\s+variant="destructiveOutline"/);
-    expect(control).toContain("data-testid={`v2-devices-revoke-${row.key}`}");
-    expect(control).toContain('<AlertDialogContent className="df-v2 df-alert">');
-    expect(control).toContain("<AlertDialogTitle>Revoke this Device?</AlertDialogTitle>");
-    expect(control).toMatch(/<AlertDialogCancel className="df-btn" autoFocus>\s*Keep Device/);
-    expect(control).toMatch(
-      /<AlertDialogAction\s+className="df-btn bg-destructive[^"]*"\s+disabled=\{pending\}\s+data-testid=\{`v2-devices-revoke-confirm-\$\{row\.key\}`\}\s+onClick=\{\(\) => onRevoke\(row\)\}/,
-    );
+  it("opens the shared DestructiveConfirm from Revoke and revokes only from its confirm", () => {
+    const control = source.slice(source.indexOf("<DestructiveConfirm"));
+    expect(control).toMatch(/^<DestructiveConfirm\s+icon=\{Ban\}\s+label="Revoke"\s+title="Revoke this Device\?"/);
+    expect(control).toContain('keepLabel="Keep Device"');
+    expect(control).toContain('confirmLabel="Revoke Device"');
+    expect(control).toContain("pending={revoke.isPending}");
+    expect(control).toContain("testId={`v2-devices-revoke-${row.key}`}");
+    expect(control).toMatch(/onConfirm=\{\(\) => onRevoke\(row\)\}/);
+    expect(source).not.toMatch(/AlertDialog/);
+    expect(source).not.toContain("function RevokeControl(");
     // The trigger only opens the dialog; no inline confirming state remains.
     expect(source).not.toContain("revokeKey");
     expect(source).not.toContain("df-devices-confirm");
