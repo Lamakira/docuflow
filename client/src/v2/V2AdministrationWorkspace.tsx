@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useState } from "react";
 import { Link } from "wouter";
 import { ArrowRight, Check, ChevronsUpDown, Users } from "lucide-react";
 import { useMutation } from "@tanstack/react-query";
@@ -19,6 +19,7 @@ import {
 } from "./administration";
 import { errorMessage, notify } from "./notify";
 import { SkeletonBand, SkeletonSection } from "./V2Skeleton";
+import { V2FormDialog } from "./V2FormDialog";
 import { V2LoadFailed } from "./V2EmptyState";
 import {
   AdministrationRefused,
@@ -40,8 +41,8 @@ type WorkspaceSettingsResponse = {
 const CHROME_MEMBERSHIPS_KEY = ["/api/memberships"];
 
 /**
- * The Workspace tab (F110): its name (the Owner renames it), its Owner, how
- * many Members it holds, and the time zone its reminders count in.
+ * The Workspace tab (F110): its name (the Owner renames it through a dialog),
+ * its Owner, how many Members it holds, and the time zone its reminders count in.
  */
 export function V2AdministrationWorkspace({
   context,
@@ -66,6 +67,7 @@ export function V2AdministrationWorkspace({
     members: members.data?.memberships,
   });
   const [nameProblem, setNameProblem] = useState<string | null>(null);
+  const [renameOpen, setRenameOpen] = useState(false);
 
   const rename = useMutation({
     mutationFn: (name: string) => apiRequest("PATCH", workspacePath(), { name }),
@@ -73,13 +75,21 @@ export function V2AdministrationWorkspace({
       await queryClient.invalidateQueries({ queryKey: CHROME_MEMBERSHIPS_KEY });
       onNameDraft(null);
       setNameProblem(null);
+      setRenameOpen(false);
       notify.success("Workspace renamed");
     },
     onError: (error) => setNameProblem(errorMessage(error, "The Workspace could not be renamed.")),
   });
 
-  function onRename(event: FormEvent) {
-    event.preventDefault();
+  function onRenameOpenChange(open: boolean) {
+    setRenameOpen(open);
+    if (!open) {
+      onNameDraft(null);
+      setNameProblem(null);
+    }
+  }
+
+  function onRename() {
     if (nameDraft === null) return;
     const issue = workspaceNameIssue(nameDraft);
     if (issue) return setNameProblem(issue);
@@ -102,33 +112,45 @@ export function V2AdministrationWorkspace({
             <span className="df-admin-identity-sub">{card.renameNote ?? "Your Workspace"}</span>
           </div>
           <span className="df-status df-admin-identity-role" data-tone="active">{card.roleBadge}</span>
-        </div>
-        {card.renamable ? (
-          <form className="df-admin-form df-inline-form df-admin-rename" onSubmit={onRename} noValidate>
-            <label className="df-daily-field">
-              Name
-              <Input
-                value={nameDraft ?? card.name}
-                maxLength={WORKSPACE_NAME_MAX + 20}
-                aria-invalid={nameProblem ? true : undefined}
-                aria-describedby={nameProblem ? "df-workspace-name-problem" : undefined}
-                onChange={(event) => {
-                  setNameProblem(null);
-                  onNameDraft(event.target.value === card.name ? null : event.target.value);
-                }}
-                data-testid="v2-administration-workspace-name"
-              />
-            </label>
-            <Button type="submit" className="df-btn" disabled={rename.isPending || nameDraft === null}>
-              {rename.isPending ? "Saving…" : "Save name"}
+          {card.renamable ? (
+            <Button
+              variant="outline"
+              type="button"
+              className="df-btn"
+              onClick={() => setRenameOpen(true)}
+              data-testid="v2-administration-workspace-rename"
+            >
+              Rename
             </Button>
-            {nameProblem ? (
-              <p id="df-workspace-name-problem" className="df-form-note df-refusal-inline" role="alert">
-                {nameProblem}
-              </p>
-            ) : null}
-          </form>
-        ) : null}
+          ) : null}
+        </div>
+        <V2FormDialog
+          open={renameOpen}
+          onOpenChange={onRenameOpenChange}
+          title="Rename Workspace"
+          description="The name everyone in this Workspace sees."
+          submitLabel={rename.isPending ? "Saving…" : "Save name"}
+          pending={rename.isPending}
+          canSubmit={nameDraft !== null}
+          onSubmit={onRename}
+          refusal={nameProblem}
+          testId="v2-administration-workspace-rename-dialog"
+        >
+          <label className="df-daily-field">
+            Name
+            <Input
+              value={nameDraft ?? card.name}
+              maxLength={WORKSPACE_NAME_MAX + 20}
+              aria-invalid={nameProblem ? true : undefined}
+              onChange={(event) => {
+                setNameProblem(null);
+                onNameDraft(event.target.value === card.name ? null : event.target.value);
+              }}
+              autoFocus
+              data-testid="v2-administration-workspace-name"
+            />
+          </label>
+        </V2FormDialog>
         {members.state === "loading" ? (
           <div className="df-admin-facts" aria-hidden="true">
             <SkeletonBand tiles={2} />
