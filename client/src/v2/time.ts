@@ -18,6 +18,7 @@ import { MONTHS } from "./dates";
 import { DEFAULT_REGISTER_PAGE_SIZE, readPage, readPageSize, writePaging } from "./paging";
 import { fullProjectName, type ProjectTaskProject } from "./tasks";
 import { isDeliveryProject, projectHasOpportunity } from "@shared/projectLifecycle";
+import { STALE_THRESHOLD_MS } from "@shared/timePortion";
 
 export type TimeEntryRowInput = {
   id: string;
@@ -51,6 +52,8 @@ export type TimeTrackingInput = {
   workdaySeconds: number;
   /** Simultaneous Time in the reader's day, from the same stats; 0 or omitted when none. */
   simultaneousSeconds?: number;
+  /** The clock the running rows tick on; `now` when omitted. */
+  nowMs?: number;
   /** Seconds since the register was read, for the running row's part of the period. */
   liveSeconds?: number;
   /** Where the register's period starts; null or omitted for all time. */
@@ -373,11 +376,26 @@ function widenTimeLabel(range: "today" | "week" | "all"): string | null {
   return `Show ${label.charAt(0).toLowerCase()}${label.slice(1)}`;
 }
 
+/**
+ * A running row the Timer does not show (another of the reader's Simultaneous
+ * Timers, another Member's) still ticks: its seconds since its last sign of
+ * life, as the server counts them, and none once it has gone silent.
+ */
+function liveSecondsOf(entry: Pick<TimeEntryRowInput, "status" | "lastActivityAt">, nowMs: number): number {
+  if (entry.status !== "running") return 0;
+  const last = parseDate(entry.lastActivityAt);
+  if (!last) return 0;
+  const silentMs = nowMs - last.getTime();
+  return silentMs > STALE_THRESHOLD_MS ? 0 : Math.max(0, Math.floor(silentMs / 1000));
+}
+
 export function composeTimeTracking(input: TimeTrackingInput): TimeTrackingModel {
   const rows = input.entries.map((entry) => {
     const running = entry.status === "running" || entry.id === input.activeEntryId;
     const seconds =
-      running && entry.id === input.activeEntryId ? input.displayDuration : entry.duration || 0;
+      running && entry.id === input.activeEntryId
+        ? input.displayDuration
+        : (entry.duration || 0) + liveSecondsOf(entry, input.nowMs ?? input.now.getTime());
     const canDelete =
       entry.status === "stopped" && (input.isAdmin || entry.userId === input.currentUserId);
     return {

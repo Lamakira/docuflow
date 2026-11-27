@@ -157,3 +157,33 @@ describe("the Time page offers another Timer beside a running one (#400)", () =>
     expect(chipSource.indexOf('data-testid="v2-timer-stop"')).toBeLessThan(chipSource.indexOf('data-testid="v2-timer-count"'));
   });
 });
+
+describe("every running row of the register ticks (#400)", () => {
+  const now = new Date("2026-11-27T10:00:00.000Z");
+  const row = (id: string, lastActivityAt: Date) => ({
+    id,
+    startTime: new Date(now.getTime() - 30 * 60_000),
+    endTime: null,
+    lastActivityAt,
+    duration: 100,
+    status: "running",
+    userId: "u",
+    crmProjectId: "p",
+    taskId: null,
+    description: null,
+  });
+
+  it("counts the seconds since a row's last sign of life when the Timer shows another one", () => {
+    const page = composeTimeTracking({
+      now,
+      currentUserId: "u",
+      isAdmin: false,
+      isRunning: true,
+      displayDuration: 500,
+      activeEntryId: "shown",
+      entries: [row("shown", now), row("beside", new Date(now.getTime() - 60_000)), row("silent", new Date(now.getTime() - 11 * 60_000))],
+      workdaySeconds: 0,
+    });
+    expect(page.rows.map((r) => r.duration)).toEqual(["00:08:20", "00:02:40", "00:01:40"]);
+  });
+});

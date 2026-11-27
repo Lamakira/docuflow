@@ -382,6 +382,7 @@ function TimeEntriesPane() {
 
   const page = composeTimeTracking({
     now,
+    nowMs: Date.now(),
     currentUserId: user?.id ?? "",
     isAdmin: canManage,
     isRunning,
