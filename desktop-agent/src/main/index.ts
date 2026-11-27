@@ -10,6 +10,7 @@ import fs from "fs";
 import os from "os";
 import { randomUUID } from "node:crypto";
 import { API_BASE, API_BASE_SOURCE, API_HOST } from "../lib/config";
+import { UpdateRequiredGate } from "../lib/agentProtocol";
 import {
   INSTANCE_RECORD_FILENAME,
   SHUTDOWN_SIGNALS,
@@ -204,12 +205,30 @@ function handleDeviceRevoked(): void {
   console.log("[Main] device.revoked — stopping workers and clearing session");
   stopWorkers();
   store.clearSession();
+  updateGate.reset();
   clearSavedTrackingPolicy(app.getPath("userData"));
   agentTimerRequiresTask = false;
   pushStateToRenderer();
 }
 
-const apiClient = new ApiClient(store, handleDeviceRevoked);
+/** The server refused this agent's protocol version (#398): capture stops, the queue keeps draining. */
+const updateGate = new UpdateRequiredGate(
+  {
+    stopCapture: () => {
+      stopCaptureWorkers();
+      console.log("[Main] update-required — capture stopped, queue keeps draining");
+    },
+    startCapture: () => {
+      // Workers running means paired and past startWorkers(); otherwise startWorkers() will start capture.
+      if (store.isPaired() && heartbeatWorker) startCaptureWorkers();
+    },
+    save: (state) => store.setUpdateRequired(state),
+    changed: () => pushStateToRenderer(),
+  },
+  store.getUpdateRequired(),
+);
+
+const apiClient = new ApiClient(store, handleDeviceRevoked, updateGate);
 
 /** Mirrored from server `GET /api/agent/capabilities` — when true, IPC must reject timer start without taskId. */
 let agentTimerRequiresTask = false;
@@ -645,44 +664,18 @@ function trackingPolicyRefreshFailed(message: string): void {
   trackingPolicyStatus = { ...trackingPolicyStatus, refreshError: message };
 }
 
-function startWorkers(): void {
-  if (!store.isPaired()) return;
-
-  // Apply the last policy this Device received before the first heartbeat, so
-  // a start without the server does not fall back to hard-coded defaults.
-  const startup = startupTrackingPolicy(loadSavedTrackingPolicy(app.getPath("userData")), {
-    ...DEFAULT_TRACKING_POLICY,
-    screenshotsEnabled: SCREENSHOTS_ENABLED,
-  });
-  trackingPolicy = startup.policy;
-  trackingPolicyStatus = startup.status;
-  console.log(
-    `[Main] tracking-policy.startup — ${startup.status.source}` +
-    (startup.status.receivedAt ? ` (received ${startup.status.receivedAt})` : "")
-  );
-
-  heartbeatWorker = new HeartbeatWorker(
-    apiClient,
-    store,
-    applyServerTimerSync,
-    receiveTrackingPolicy,
-    trackingPolicyRefreshFailed,
-  );
-  heartbeatWorker.start();
-
+/**
+ * Capture is the activity and screenshot workers. Split from startWorkers so an
+ * agent the server refused on protocol version stops capturing while the
+ * SyncWorker keeps draining what is already queued (#398).
+ */
+function startCaptureWorkers(): void {
+  if (activityWorker || screenshotWorker) return;
   activityWorker = new ActivityWorker(queue, store);
   activityWorker.applyIdleTimeout(trackingPolicy.idleTimeoutMinutes);
   activityWorker.applyActivityCapture(trackingPolicy.activityCaptureEnabled);
   activityWorker.setIdleUxCallback((idleSeconds) => handleIdleUx(idleSeconds));
   activityWorker.start();
-
-  syncWorker = new SyncWorker(apiClient, queue, store);
-  syncWorker.setOnTimerCommandSynced((type) => {
-    // A stop adds the entry to the server total; a start auto-stops the previous entry.
-    if (type !== "stop" && type !== "start") return;
-    refreshWorkedTodayServerBase().then(() => pushStateToRenderer()).catch(() => { /* non-fatal */ });
-  });
-  syncWorker.start();
 
   screenshotWorker = new ScreenCaptureWorker(queue, store, trackingPolicy.screenshotsEnabled);
   screenshotWorker.applyPolicy(trackingPolicy);
@@ -729,6 +722,55 @@ function startWorkers(): void {
   screenshotWorker.start();
   // Prune screenshots older than 30 days at startup (non-blocking)
   screenshotWorker.pruneOldScreenshots(30).catch(() => {});
+}
+
+function stopCaptureWorkers(): void {
+  if (idleFlow.active) {
+    idleFlow.cancel();
+    clearIdleActivityCheck();
+    releaseIdleOnTop();
+    mainWindow?.webContents.send("agent:idle-dismiss");
+  }
+  activityWorker?.stop();
+  screenshotWorker?.stop();
+  activityWorker = null;
+  screenshotWorker = null;
+}
+
+function startWorkers(): void {
+  if (!store.isPaired()) return;
+
+  // Apply the last policy this Device received before the first heartbeat, so
+  // a start without the server does not fall back to hard-coded defaults.
+  const startup = startupTrackingPolicy(loadSavedTrackingPolicy(app.getPath("userData")), {
+    ...DEFAULT_TRACKING_POLICY,
+    screenshotsEnabled: SCREENSHOTS_ENABLED,
+  });
+  trackingPolicy = startup.policy;
+  trackingPolicyStatus = startup.status;
+  console.log(
+    `[Main] tracking-policy.startup — ${startup.status.source}` +
+    (startup.status.receivedAt ? ` (received ${startup.status.receivedAt})` : "")
+  );
+
+  heartbeatWorker = new HeartbeatWorker(
+    apiClient,
+    store,
+    applyServerTimerSync,
+    receiveTrackingPolicy,
+    trackingPolicyRefreshFailed,
+  );
+  heartbeatWorker.start();
+
+  syncWorker = new SyncWorker(apiClient, queue, store);
+  syncWorker.setOnTimerCommandSynced((type) => {
+    // A stop adds the entry to the server total; a start auto-stops the previous entry.
+    if (type !== "stop" && type !== "start") return;
+    refreshWorkedTodayServerBase().then(() => pushStateToRenderer()).catch(() => { /* non-fatal */ });
+  });
+  syncWorker.start();
+
+  if (!updateGate.blocksCapture) startCaptureWorkers();
 
   // Create floating widget if it doesn't exist yet
   if (!widgetWindow) {
@@ -814,16 +856,9 @@ function stopWorkers(): void {
   linuxScreenLockWatcher?.stop();
   linuxScreenLockWatcher = null;
 
-  if (idleFlow.active) {
-    idleFlow.cancel();
-    clearIdleActivityCheck();
-    releaseIdleOnTop();
-    mainWindow?.webContents.send("agent:idle-dismiss");
-  }
+  stopCaptureWorkers();
   heartbeatWorker?.stop();
-  activityWorker?.stop();
   syncWorker?.stop();
-  screenshotWorker?.stop();
   stopResyncPolling();
   if (workedTodayInterval) {
     clearTimeout(workedTodayInterval);
@@ -834,9 +869,7 @@ function stopWorkers(): void {
     pausedReminderInterval = null;
   }
   heartbeatWorker = null;
-  activityWorker = null;
   syncWorker = null;
-  screenshotWorker = null;
 
   // Destroy widget on logout/revoke
   if (widgetWindow) {
@@ -996,22 +1029,29 @@ function stopResyncPolling(): void {
   }
 }
 
-/** Notify renderer(s) of state changes */
-function pushStateToRenderer(): void {
-  const timerState = store.getTimerState();
-
-  rebuildTrayMenu();
-
-  mainWindow?.webContents.send("agent:state-update", {
+function rendererState() {
+  return {
     isPaired: store.isPaired(),
     deviceName: store.getDeviceName(),
     userEmail: store.getUserEmail(),
     apiHost: API_HOST,
     apiBase: API_BASE,
     apiBaseSource: API_BASE_SOURCE,
-    timer: timerState,
+    timer: store.getTimerState(),
     timerRequiresTask: agentTimerRequiresTask,
-  });
+    updateRequired: updateGate.state
+      ? { minProtocolVersion: updateGate.state.minProtocolVersion, downloadUrl: downloadUrl() }
+      : null,
+  };
+}
+
+/** Notify renderer(s) of state changes */
+function pushStateToRenderer(): void {
+  const timerState = store.getTimerState();
+
+  rebuildTrayMenu();
+
+  mainWindow?.webContents.send("agent:state-update", rendererState());
 
   // Push timer state to widget + sync visibility
   if (widgetWindow) {
@@ -1022,18 +1062,7 @@ function pushStateToRenderer(): void {
 
 // ─── IPC: Pairing ───
 
-ipcMain.handle("agent:get-state", () => {
-  return {
-    isPaired: store.isPaired(),
-    deviceName: store.getDeviceName(),
-    userEmail: store.getUserEmail(),
-    apiHost: API_HOST,
-    apiBase: API_BASE,
-    apiBaseSource: API_BASE_SOURCE,
-    timer: store.getTimerState(),
-    timerRequiresTask: agentTimerRequiresTask,
-  };
-});
+ipcMain.handle("agent:get-state", () => rendererState());
 
 ipcMain.handle("agent:login", async (event, { pairingCode }) => {
   const sendProgress = (message: string) => {
@@ -1084,6 +1113,7 @@ ipcMain.handle("agent:login", async (event, { pairingCode }) => {
 ipcMain.handle("agent:unpair", () => {
   stopWorkers();
   store.clearSession();
+  updateGate.reset();
   clearSavedTrackingPolicy(app.getPath("userData"));
   agentTimerRequiresTask = false;
   pushStateToRenderer();
@@ -1106,6 +1136,12 @@ function updatePlatform(): "windows" | "macos" | "linux" | null {
     case "linux": return "linux";
     default: return null;
   }
+}
+
+/** Redirect endpoint: the server resolves the signed installer URL itself. */
+function downloadUrl(): string | null {
+  const platform = updatePlatform();
+  return platform ? `${API_BASE}/downloads/${platform}` : null;
 }
 
 /** Returns true if `latest` is a strictly higher semver than `current`. */
@@ -1147,8 +1183,7 @@ ipcMain.handle("agent:check-update", async () => {
       updateAvailable,
       currentVersion,
       latestVersion,
-      // Use the redirect endpoint so the server resolves the signed URL itself.
-      downloadUrl: `${API_BASE}/downloads/${platform}`,
+      downloadUrl: downloadUrl(),
     };
   } catch (error: any) {
     console.warn("[Main] check-update failed:", error.message);

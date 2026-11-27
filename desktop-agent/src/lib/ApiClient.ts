@@ -12,6 +12,12 @@
 import { AgentStore } from "./AgentStore";
 import { API_BASE } from "./config";
 import { NETWORK_UNAVAILABLE } from "./timerCommandFailure";
+import {
+  AGENT_PROTOCOL_HEADERS,
+  PROTOCOL_BELOW_MINIMUM,
+  protocolRefusal,
+  type ProtocolListener,
+} from "./agentProtocol";
 
 /** The server's refusal code for an area the Workspace's Plan leaves out. */
 export const PLAN_UPGRADE_REQUIRED = "plan_upgrade_required";
@@ -71,9 +77,17 @@ export class ApiClient {
   /** Called when the server signals the device is revoked or permanently invalid. */
   private onRevoke: (() => void) | null;
 
-  constructor(store: AgentStore, onRevoke?: () => void) {
+  /** Told when the server refuses (or, on a heartbeat, accepts) this agent's protocol version (#398). */
+  private protocol: ProtocolListener | null;
+
+  constructor(
+    store: AgentStore,
+    onRevoke?: () => void,
+    protocol?: ProtocolListener,
+  ) {
     this.store = store;
     this.onRevoke = onRevoke ?? null;
+    this.protocol = protocol ?? null;
   }
 
   // ─── Authentication ───
@@ -364,6 +378,8 @@ export class ApiClient {
     const isServerUpload = !uploadURL.startsWith("http") || uploadURL.startsWith(API_BASE);
     const headers: Record<string, string> = { "Content-Type": "image/png" };
     if (isServerUpload) {
+      // Never sent to a third-party presigned URL.
+      Object.assign(headers, AGENT_PROTOCOL_HEADERS);
       await this.ensureAccessToken();
       headers["Authorization"] = `Bearer ${this.accessToken}`;
     }
@@ -400,10 +416,13 @@ export class ApiClient {
       taskName?: string | null;
     } | null;
   }> {
-    return this.authenticatedRequest("/api/agent/heartbeat", {
+    const res = await this.authenticatedRequest("/api/agent/heartbeat", {
       method: "POST",
       body: JSON.stringify(data),
     });
+    // The heartbeat is a non-drain path: its success proves the server accepts this version (#398).
+    this.protocol?.accepted();
+    return res;
   }
 
   async sendEventsBatch(data: Record<string, unknown>): Promise<{ ok: boolean; accepted: number; duplicate?: boolean }> {
@@ -441,6 +460,7 @@ export class ApiClient {
         },
       });
 
+      if (retry.status === 403) await this.throwForbidden(retry, path, init);
       if (!retry.ok) {
         const data = await retry.json().catch(() => ({ message: retry.statusText }));
         throw Object.assign(new Error(data.message || `Request failed: ${retry.status}`), { status: retry.status });
@@ -448,30 +468,7 @@ export class ApiClient {
       return retry.json().catch(() => null);
     }
 
-    if (res.status === 403) {
-      const data = await res.json().catch(() => ({ message: res.statusText }));
-      const msg = data.message || `Request failed: ${res.status}`;
-      // 403 does not mean revocation by itself, and treating it that way signed
-      // the user out on an ordinary refusal — one GET /api/agent/tasks against a
-      // project they were not a member of was enough, before #31 removed that
-      // gate. Timer pause, resume and stop still answer 403 "Not authorized" on
-      // another user's entry, and a server older than #31 still refuses tasks,
-      // so the distinction is load-bearing. Revocation responses carry
-      // `code: "device_revoked"`; the message check keeps older servers working.
-      if (data.code === 'device_revoked' || /device has been revoked/i.test(msg)) {
-        console.log(`[ApiClient] Device revoked (403): ${msg}`);
-        this.onRevoke?.();
-      } else {
-        // The path is the whole diagnosis: a refusal message alone says only
-        // that one happened somewhere. Query included — it names the project.
-        console.log(`[ApiClient] Forbidden (403, not a revocation): ${init.method ?? 'GET'} ${path} — ${msg}`);
-      }
-      // The Workspace's Plan leaves this area out; retrying cannot succeed (#299).
-      if (data.code === PLAN_UPGRADE_REQUIRED) {
-        throw Object.assign(new Error(msg), { code: PLAN_UPGRADE_REQUIRED });
-      }
-      throw new Error(msg);
-    }
+    if (res.status === 403) await this.throwForbidden(res, path, init);
 
     if (!res.ok) {
       const ct = res.headers.get("content-type") ?? "";
@@ -483,6 +480,39 @@ export class ApiClient {
     }
 
     return res.json().catch(() => null);
+  }
+
+  /** Inspect a 403 (first response or 401 retry) and throw; never returns. */
+  private async throwForbidden(res: Response, path: string, init: RequestInit): Promise<never> {
+    const data = await res.json().catch(() => ({ message: res.statusText }));
+    const msg = data.message || `Request failed: ${res.status}`;
+    // The server refused this agent's protocol version; capture stops, the queue keeps draining (#398).
+    const refusal = protocolRefusal(data);
+    if (refusal) {
+      console.log(`[ApiClient] Update required (403 protocol_below_minimum): ${init.method ?? 'GET'} ${path}`);
+      this.protocol?.refused(refusal);
+      throw Object.assign(new Error(msg), { code: PROTOCOL_BELOW_MINIMUM, status: 403 });
+    }
+    // 403 does not mean revocation by itself, and treating it that way signed
+    // the user out on an ordinary refusal — one GET /api/agent/tasks against a
+    // project they were not a member of was enough, before #31 removed that
+    // gate. Timer pause, resume and stop still answer 403 "Not authorized" on
+    // another user's entry, and a server older than #31 still refuses tasks,
+    // so the distinction is load-bearing. Revocation responses carry
+    // `code: "device_revoked"`; the message check keeps older servers working.
+    if (data.code === 'device_revoked' || /device has been revoked/i.test(msg)) {
+      console.log(`[ApiClient] Device revoked (403): ${msg}`);
+      this.onRevoke?.();
+    } else {
+      // The path is the whole diagnosis: a refusal message alone says only
+      // that one happened somewhere. Query included — it names the project.
+      console.log(`[ApiClient] Forbidden (403, not a revocation): ${init.method ?? 'GET'} ${path} — ${msg}`);
+    }
+    // The Workspace's Plan leaves this area out; retrying cannot succeed (#299).
+    if (data.code === PLAN_UPGRADE_REQUIRED) {
+      throw Object.assign(new Error(msg), { code: PLAN_UPGRADE_REQUIRED });
+    }
+    throw new Error(msg);
   }
 
   private async ensureAccessToken(): Promise<void> {
@@ -526,6 +556,7 @@ export class ApiClient {
           headers: {
             "Content-Type": "application/json",
             ...((init.headers as Record<string, string>) ?? {}),
+            ...AGENT_PROTOCOL_HEADERS,
           },
         });
       } catch (error) {

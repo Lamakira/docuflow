@@ -68,7 +68,7 @@ hides exactly the cases the no-scrollbar rule exists for:
 
 | Parameter | What it exercises |
 |---|---|
-| `?scenario=…` | `running`, `paused`, `stopped`, `fresh`, `signed-out`, `revoked`, `error`, `rollover` |
+| `?scenario=…` | `running`, `paused`, `stopped`, `fresh`, `signed-out`, `revoked`, `error`, `rollover`, `update-required` (Timer running), `update-required-stopped` |
 | `?projects=20` | panel pager, page reset on search, drill-down from a later page |
 | `?entries=17` | activity table truncation and the "N more entries today" line |
 | `?shots=40` | capture grid paging |
@@ -186,6 +186,7 @@ Switzer — Cabinet Grotesk has no tabular figures, so a 92px clock in it jumps
 | Screens | `screens/ScreensScreen.tsx` |
 | Settings | `screens/SettingsScreen.tsx` |
 | Login | `pages/LoginPage.tsx` |
+| Update required (#398) | `pages/UpdateRequiredPage.tsx` |
 | Idle prompt | `components/IdlePrompt.tsx` |
 | Activity bar | `Widget.tsx` — not part of this handoff, restated in the new tokens |
 

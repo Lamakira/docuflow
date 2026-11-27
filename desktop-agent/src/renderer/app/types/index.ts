@@ -1,6 +1,7 @@
 import type { ChromeMode } from '../../../lib/windowChrome';
 import type { IdlePromptPayload } from '../../../lib/idleFlow';
 import type { TrackingPolicy, TrackingPolicyStatus } from '../../../lib/trackingPolicy';
+import type { UpdateRequired } from '../../../lib/agentProtocol';
 
 export type { IdlePromptPayload };
 export type DeviceTrackingPolicy = TrackingPolicy & { status: TrackingPolicyStatus };
@@ -43,6 +44,8 @@ export interface AgentState {
   timer: TimerState;
   /** False when the Workspace's Plan has no Tasks: the timer tracks the Project itself (#299). */
   timerRequiresTask?: boolean;
+  /** Set when the server refused this agent's protocol version (#398). */
+  updateRequired?: (UpdateRequired & { downloadUrl: string | null }) | null;
 }
 
 export interface RecentTask {

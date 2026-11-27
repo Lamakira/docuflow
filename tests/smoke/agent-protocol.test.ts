@@ -95,6 +95,16 @@ describe("desktop agent protocol v1", () => {
     expect(refusedProjects.status).toBe(403);
     expect(refusedProjects.body.code).toBe("protocol_below_minimum");
 
+    // The version the agent declares (#398) is current, so it is never refused.
+    const declared = { "X-Agent-Protocol-Version": "1" };
+    const declaredHeartbeat = await device.request
+      .post("/api/agent/heartbeat")
+      .set(declared)
+      .send(heartbeatBody);
+    expect(declaredHeartbeat.status).toBe(200);
+    const declaredProjects = await device.request.get("/api/agent/projects").set(declared);
+    expect(declaredProjects.status).toBe(200);
+
     const invalidHeader = await device.request
       .post("/api/agent/heartbeat")
       .set({ "X-Agent-Protocol-Version": "nope" })
