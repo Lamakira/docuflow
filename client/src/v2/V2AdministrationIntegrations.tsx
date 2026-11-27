@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useReturnFocus } from "./returnFocus";
 import { Ban, Copy, Plus, RotateCw } from "lucide-react";
 import { useMutation } from "@tanstack/react-query";
 import { PUBLIC_API_CAPABILITIES, WEBHOOK_ENDPOINTS_MANAGE_CAPABILITY_ID, WEBHOOK_EVENT_TYPES } from "@shared/schema";
@@ -398,6 +399,7 @@ function AccountActions({
 function KeyDialog({ secret, onClose }: { secret: RevealedSecretInput | null; onClose: () => void }) {
   const [asking, setAsking] = useState(false);
   const shown = secretOnce(secret);
+  const returnFocus = useReturnFocus(shown !== null);
 
   useEffect(() => {
     setAsking(false);
@@ -414,7 +416,7 @@ function KeyDialog({ secret, onClose }: { secret: RevealedSecretInput | null; on
         if (!open) setAsking(true);
       }}
     >
-      <DialogContent
+      <DialogContent onCloseAutoFocus={returnFocus.onCloseAutoFocus}
         className="df-v2 df-alert df-form-dialog"
         data-testid="v2-administration-secret"
         onEscapeKeyDown={(event) => {

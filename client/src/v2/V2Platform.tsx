@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useReturnFocus } from "./returnFocus";
 import { Redirect, useLocation } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Search } from "lucide-react";
@@ -113,6 +114,7 @@ function V2PlatformUsers({ heading }: { heading: string }) {
   const [refusal, setRefusal] = useState<string | null>(null);
   const [showingWorkspaces, setShowingWorkspaces] = useState<{ id: string; name: string } | null>(null);
   const [confirming, setConfirming] = useState<{ userId: string; action: PlatformAction } | null>(null);
+  const returnFocus = useReturnFocus(confirming !== null);
   const allowed = isPlatformAdmin(user);
 
   const { data: users = [], isLoading, error: usersError } = useQuery<SafeUser[]>({
@@ -256,7 +258,7 @@ function V2PlatformUsers({ heading }: { heading: string }) {
           if (!open) setConfirming(null);
         }}
       >
-        <AlertDialogContent className="df-v2 df-alert">
+        <AlertDialogContent onCloseAutoFocus={returnFocus.onCloseAutoFocus} className="df-v2 df-alert">
           <AlertDialogHeader>
             <AlertDialogTitle>{confirming?.action.title}</AlertDialogTitle>
             <AlertDialogDescription>{confirming?.action.consequence}</AlertDialogDescription>
@@ -290,6 +292,7 @@ function V2PlatformUsers({ heading }: { heading: string }) {
 
 /** The Workspaces one User belongs to, with the Workspace Role in each. */
 function UserWorkspacesSheet({ user, onClose }: { user: { id: string; name: string } | null; onClose: () => void }) {
+  const returnFocus = useReturnFocus(user !== null);
   const path = platformUserWorkspacesPath(user?.id ?? "");
   const { data: rows = [], isLoading, error } = useQuery<PlatformUserWorkspace[]>({
     queryKey: [path],
@@ -299,7 +302,7 @@ function UserWorkspacesSheet({ user, onClose }: { user: { id: string; name: stri
   const list = composeUserWorkspaces(rows);
   return (
     <Sheet open={user !== null} onOpenChange={(open) => (open ? undefined : onClose())}>
-      <SheetContent className="df-v2" data-testid="v2-platform-user-workspaces">
+      <SheetContent onCloseAutoFocus={returnFocus.onCloseAutoFocus} className="df-v2" data-testid="v2-platform-user-workspaces">
         <SheetHeader>
           <SheetTitle>Workspaces of {user?.name}</SheetTitle>
           <SheetDescription>Each Workspace the User belongs to, and their Workspace Role in it.</SheetDescription>
