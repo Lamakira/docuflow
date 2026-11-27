@@ -501,7 +501,7 @@ export function startChoice(input: {
 /** What Switch stops, named in the add-or-switch dialog. */
 export function switchStopsLine(timerLabels: string[]): string {
   if (timerLabels.length === 1) return `Switch stops the Timer on ${timerLabels[0]}.`;
-  return `Switch stops your ${timerLabels.length} running Timers.`;
+  return `Switch stops your ${timerLabels.length} Timers, paused ones included.`;
 }
 
 /** One local day boundary, shared by every surface that filters on a date. */

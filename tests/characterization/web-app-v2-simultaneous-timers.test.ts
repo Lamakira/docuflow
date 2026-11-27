@@ -40,7 +40,7 @@ describe("startChoice", () => {
 
   it("names what Switch stops", () => {
     expect(switchStopsLine(["Ledger"])).toBe("Switch stops the Timer on Ledger.");
-    expect(switchStopsLine(["Ledger", "Atlas"])).toBe("Switch stops your 2 running Timers.");
+    expect(switchStopsLine(["Ledger", "Atlas"])).toBe("Switch stops your 2 Timers, paused ones included.");
   });
 });
 
@@ -140,5 +140,20 @@ describe("Start goes through the add-or-switch question", () => {
       .filter((file) => file.endsWith(".tsx") && file !== "V2StartTimer.tsx")
       .filter((file) => fromContext.test(readFileSync(join(V2_DIR, file), "utf8")));
     expect(offenders).toEqual([]);
+  });
+});
+
+describe("the Time page offers another Timer beside a running one (#400)", () => {
+  const timeSource = readFileSync(join(V2_DIR, "V2Time.tsx"), "utf8");
+  const chipSource = readFileSync(join(V2_DIR, "V2TimerChip.tsx"), "utf8");
+
+  it("keeps its own Project and Task, and starts through the add-or-switch question", () => {
+    expect(timeSource).toContain("busy && simultaneousTimers");
+    expect(timeSource).toContain("onClick={() => start(anotherProjectId, anotherTaskId || undefined)}");
+    expect(timeSource).toContain("Start another");
+  });
+
+  it("puts the list of Timers after Stop on the chip, never between Pause and Stop", () => {
+    expect(chipSource.indexOf('data-testid="v2-timer-stop"')).toBeLessThan(chipSource.indexOf('data-testid="v2-timer-count"'));
   });
 });

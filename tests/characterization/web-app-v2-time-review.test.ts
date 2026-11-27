@@ -196,7 +196,8 @@ describe("which Projects take time (F71)", () => {
     const picker = read("client/src/v2/V2ProjectPicker.tsx");
     expect(picker).toContain('from "@/components/ui/command"');
     expect(picker).toContain('from "@/components/ui/popover"');
-    expect(timeSource.match(/<V2ProjectPicker/g)).toHaveLength(2);
+    // The Timer, the filter, and the Timer added beside a running one (#400): the same picker each time.
+    expect(timeSource.match(/<V2ProjectPicker/g)).toHaveLength(3);
     expect(read("client/src/v2/V2LinkDocumentationDialog.tsx")).toContain("<V2ProjectPicker");
     expect(projectTasksHref("p 1")).toBe("/time/projects?project=p+1");
     expect(timeSource).toContain("This Project has no Task yet.");

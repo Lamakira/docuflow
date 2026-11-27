@@ -208,8 +208,25 @@ function TimeEntriesPane() {
     handlePause,
     handleResume,
     handleStop,
+    simultaneousTimers,
+    requiresTaskForStart,
+    timers,
   } = useTimeTracker();
   const { start, dialog: startDialog } = useStartTimer();
+  // With Simultaneous Timers on, the Timer keeps showing the running one and
+  // offers another beside it (ADR-0031): its own Project and Task, so choosing
+  // them does not move the running Timer's.
+  const [anotherProjectId, setAnotherProjectId] = useState("");
+  const [anotherTaskId, setAnotherTaskId] = useState("");
+  const { data: anotherTasks } = useQuery<TasksResponse>({
+    queryKey: ["/api/tasks", anotherProjectId],
+    queryFn: () => fetch(`/api/tasks?crmProjectId=${anotherProjectId}`, { credentials: "include" }).then((r) => r.json()),
+    enabled: Boolean(anotherProjectId),
+  });
+  useEffect(() => {
+    setAnotherProjectId("");
+    setAnotherTaskId("");
+  }, [timers.length]);
 
   const [writeRefusal, setWriteRefusal] = useState<string | null>(null);
   const [leavingIds, setLeavingIds] = useState<string[]>([]);
@@ -503,6 +520,47 @@ function TimeEntriesPane() {
             </Button>
           ) : null}
         </div>
+        {busy && simultaneousTimers ? (
+          <div className="df-toolbar" data-align="start" data-testid="v2-time-timer-another">
+            <V2ProjectPicker
+              variant="chip"
+              label="Another Project"
+              value={anotherProjectId}
+              valueLabel="Choose a Project"
+              disabled={readOnly}
+              onChange={(next) => {
+                setAnotherProjectId(next);
+                setAnotherTaskId("");
+              }}
+              options={offered}
+              state={timeProjects.state}
+              testId="v2-time-timer-another-project"
+            />
+            <V2FilterSelect
+              label="Task"
+              ariaLabel="Task for another Timer"
+              value={anotherTaskId || V2_SELECT_NONE}
+              disabled={readOnly || !anotherProjectId}
+              onChange={(next) => setAnotherTaskId(next === V2_SELECT_NONE ? "" : next)}
+              options={[
+                { value: V2_SELECT_NONE, label: "Choose a Task" },
+                ...(anotherTasks?.data ?? [])
+                  .filter((task) => task.status !== "archived")
+                  .map((task) => ({ value: task.id, label: task.name })),
+              ]}
+            />
+            <Button
+              variant="outline"
+              type="button"
+              className="df-btn"
+              disabled={readOnly || pending || !anotherProjectId || (requiresTaskForStart && !anotherTaskId)}
+              onClick={() => start(anotherProjectId, anotherTaskId || undefined)}
+              data-testid="v2-time-timer-another-start"
+            >
+              Start another
+            </Button>
+          </div>
+        ) : null}
         {noTask ? (
           <p className="df-note" data-testid="v2-time-timer-no-task">
             This Project has no Task yet.{" "}

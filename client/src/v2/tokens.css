@@ -8757,8 +8757,8 @@ a.df-dossier-client-link:hover {
   cursor: pointer;
 }
 
-.df-timers-popover {
-  width: min(360px, calc(100vw - var(--df-space-4)));
+.df-v2.df-timers-popover {
+  width: min(340px, calc(100vw - var(--df-space-4)));
   display: flex;
   flex-direction: column;
   gap: var(--df-space-3);
@@ -8768,7 +8768,7 @@ a.df-dossier-client-link:hover {
 .df-timers-list {
   display: flex;
   flex-direction: column;
-  gap: var(--df-space-1);
+  gap: var(--df-space-3);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -8781,14 +8781,29 @@ a.df-dossier-client-link:hover {
   min-width: 0;
 }
 
-.df-timers-name {
+.df-timers-label {
+  display: flex;
   flex: 1;
+  flex-direction: column;
   min-width: 0;
+}
+
+.df-timers-name,
+.df-timers-task {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+.df-timers-name {
   font-size: var(--df-text-3);
+  font-weight: 500;
   color: var(--df-case-ink);
+}
+
+.df-timers-task {
+  font-size: var(--df-text-2);
+  color: var(--df-archive-slate);
 }
 
 .df-timers-clock {

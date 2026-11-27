@@ -94,11 +94,9 @@ export function V2TimerChip({
   }
 
   const extraTimers = timers.length - 1;
-  const projectLabelOf = (crmProjectId: string) => {
+  const projectNamesOf = (crmProjectId: string) => {
     const row = projects.find((item) => item.id === crmProjectId);
-    const name = row?.project?.name || null;
-    const client = row?.client?.name || null;
-    return client && name ? `${client} · ${name}` : (name ?? "Project");
+    return { projectName: row?.project?.name || "Project", clientName: row?.client?.name || null };
   };
 
   const strip = variant === "strip";
@@ -166,6 +164,12 @@ export function V2TimerChip({
           <PlayIcon />
         ) : null}
       </button>
+      {commands.stop ? (
+        <button type="button" className="df-chip-stop" onClick={onStop} aria-label="Stop Timer" data-testid="v2-timer-stop">
+          <StopIcon />
+        </button>
+      ) : null}
+      {/* After Stop, not between Pause and Stop: a click meant for the list stopped a Timer. */}
       {extraTimers > 0 ? (
         <Popover open={timersOpen} onOpenChange={setTimersOpen}>
           <PopoverTrigger asChild>
@@ -173,7 +177,7 @@ export function V2TimerChip({
               type="button"
               variant="ghost"
               className="df-chip-count"
-              aria-label={`${timers.length} Timers running, show all`}
+              aria-label={`Show all ${timers.length} Timers`}
               data-testid="v2-timer-count"
             >
               +{extraTimers}
@@ -185,7 +189,7 @@ export function V2TimerChip({
                 <TimerRow
                   key={timer.id}
                   timer={timer}
-                  projectLabel={projectLabelOf(timer.crmProjectId)}
+                  {...projectNamesOf(timer.crmProjectId)}
                   onPause={async () => {
                     if (await handlePauseTimer(timer.id)) notify.success("Timer paused");
                   }}
@@ -214,11 +218,6 @@ export function V2TimerChip({
           </PopoverContent>
         </Popover>
       ) : null}
-      {commands.stop ? (
-        <button type="button" className="df-chip-stop" onClick={onStop} aria-label="Stop Timer" data-testid="v2-timer-stop">
-          <StopIcon />
-        </button>
-      ) : null}
       {startDialog}
     </div>
   );
@@ -229,13 +228,15 @@ type ChipTimer = ReturnType<typeof useTimeTracker>["timers"][number];
 /** One Timer in the list: its Project, Task and clock, with its own pause or resume and stop. */
 function TimerRow({
   timer,
-  projectLabel,
+  projectName,
+  clientName,
   onPause,
   onResume,
   onStop,
 }: {
   timer: ChipTimer;
-  projectLabel: string;
+  projectName: string;
+  clientName: string | null;
   onPause: () => void;
   onResume: () => void;
   onStop: () => void;
@@ -257,8 +258,10 @@ function TimerRow({
     (running && timer.lastActivityAt ? Math.max(0, Math.floor((now - new Date(timer.lastActivityAt).getTime()) / 1000)) : 0);
   return (
     <li className="df-timers-row" data-status={timer.status}>
-      <span className="df-timers-name" title={taskName ? `${projectLabel} · ${taskName}` : projectLabel}>
-        {taskName ? `${projectLabel} · ${taskName}` : projectLabel}
+      {/* The Project on one line and its Task under it: in one line both ended in an ellipsis. */}
+      <span className="df-timers-label" title={[clientName, projectName, taskName].filter(Boolean).join(" · ")}>
+        <span className="df-timers-name">{projectName}</span>
+        <span className="df-timers-task">{taskName ?? clientName ?? "No Task"}</span>
       </span>
       <span className="df-mono df-timers-clock">{formatElapsedClock(elapsed)}</span>
       <Button
@@ -267,7 +270,7 @@ function TimerRow({
         size="icon"
         className="df-timers-action"
         onClick={running ? onPause : onResume}
-        aria-label={`${running ? "Pause" : "Resume"} Timer on ${projectLabel}`}
+        aria-label={`${running ? "Pause" : "Resume"} Timer on ${taskName ?? projectName}`}
       >
         {running ? <PauseIcon /> : <PlayIcon />}
       </Button>
@@ -277,7 +280,7 @@ function TimerRow({
         size="icon"
         className="df-timers-action"
         onClick={onStop}
-        aria-label={`Stop Timer on ${projectLabel}`}
+        aria-label={`Stop Timer on ${taskName ?? projectName}`}
       >
         <StopIcon />
       </Button>

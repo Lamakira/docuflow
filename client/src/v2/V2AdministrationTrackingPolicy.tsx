@@ -215,19 +215,6 @@ export function V2AdministrationTrackingPolicy({
           <p className="df-policy-hint">{policy.hints.idleTimeout}</p>
           <div className="df-policy-grid">{numberField("idleTimeoutMinutes", "Idle timeout (minutes)", "Idle timeout")}</div>
         </div>
-        {simultaneous.visible ? (
-          <div className="df-policy-group" data-testid="v2-administration-simultaneous-timers">
-            <CheckRow
-              id="df-policy-simultaneous-timers"
-              label={simultaneous.label}
-              checked={form.simultaneousTimersEnabled}
-              disabled={!editable || (simultaneous.disabled && !form.simultaneousTimersEnabled)}
-              onChange={(next) => edit({ simultaneousTimersEnabled: next })}
-            />
-            <p className="df-policy-hint">{simultaneous.hint}</p>
-            {simultaneous.note ? <p className="df-policy-hint">{simultaneous.note}</p> : null}
-          </div>
-        ) : null}
         <CheckRow
           id="df-policy-idle"
           label="Prompt on idle"
@@ -243,6 +230,20 @@ export function V2AdministrationTrackingPolicy({
               {numberField("idleCountdownSeconds", "Prompt countdown (seconds)", "Idle countdown")}
             </div>
           </div>
+        ) : null}
+        {/* After the idle settings, not inside them: it is about Timers, not idle time. */}
+        {simultaneous.visible ? (
+          <>
+            <CheckRow
+              id="df-policy-simultaneous-timers"
+              label={simultaneous.label}
+              checked={form.simultaneousTimersEnabled}
+              disabled={!editable || (simultaneous.disabled && !form.simultaneousTimersEnabled)}
+              onChange={(next) => edit({ simultaneousTimersEnabled: next })}
+            />
+            <p className="df-policy-hint">{simultaneous.hint}</p>
+            {simultaneous.note ? <p className="df-policy-hint">{simultaneous.note}</p> : null}
+          </>
         ) : null}
       </div>
       <div className="df-form-actions">

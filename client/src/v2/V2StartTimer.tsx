@@ -69,7 +69,9 @@ export function useStartTimer(): {
           <DialogHeader>
             <DialogTitle className="df-form-dialog-title">A Timer is already running</DialogTitle>
             <DialogDescription className="df-form-dialog-copy">
-              {choice.canAdd ? "Add this Timer beside the others, or switch to it. " : `${choice.limitLine} `}
+              {choice.canAdd
+                ? `Add this Timer beside ${timers.length === 1 ? "the one running" : "the others"}, or switch to it. `
+                : `${choice.limitLine} `}
               {switchStopsLine(labels)}
             </DialogDescription>
           </DialogHeader>
