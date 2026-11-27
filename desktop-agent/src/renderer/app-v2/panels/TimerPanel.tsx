@@ -23,7 +23,7 @@ import type { ActiveTimerState, Project, Task } from '../../app/types';
 import { Panel, PanelHead, PanelBody, PanelRow, Pager } from '../components/Panel';
 import { useUi } from '../ui/UiContext';
 import { createFromTimerPanel, mergeTaskRead } from '../../../lib/createFromTimerPanel';
-import { startChoice, type StartMode } from '../../../lib/simultaneousTimers';
+import { addConflictNote, startChoice, type StartMode } from '../../../lib/simultaneousTimers';
 import { useActiveTask } from '../ui/useActiveTask';
 import { useFitCount } from '../ui/useFitCount';
 import { formatDuration, formatElapsed, formatHM } from '../format';
@@ -194,7 +194,7 @@ export function TimerPanel() {
     const choice = startChoice({
       simultaneousTimersEnabled: simultaneousEnabled,
       activeCount: timers.length,
-      taskHasTimer: timers.some((t) => (taskId ? t.taskId === taskId : t.crmProjectId === crmProjectId)),
+      conflictNote: addConflictNote(timers, crmProjectId, taskId),
     });
     if (!choice.ask) { void run(); return; }
     choiceTrigger.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;

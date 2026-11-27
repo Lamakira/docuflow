@@ -9,6 +9,25 @@
 export const MAX_SIMULTANEOUS_TIMERS = 3;
 export const TIMER_LIMIT_MESSAGE = `You run ${MAX_SIMULTANEOUS_TIMERS} Timers. Stop one to add another.`;
 export const TASK_HAS_TIMER_MESSAGE = "A Timer already runs on this task.";
+export const PROJECT_HAS_TIMER_MESSAGE = "This project already has a Timer.";
+export const PROJECT_OCCUPIED_MESSAGE = "A Timer without a task already runs on this project.";
+
+/**
+ * Why this Timer cannot be added beside the active ones, as the server would
+ * refuse it (ADR-0031): its task already has a Timer, or a Timer without a
+ * task occupies the whole project. Null when it can be.
+ */
+export function addConflictNote(
+  timers: ReadonlyArray<{ crmProjectId: string | null; taskId: string | null }>,
+  crmProjectId: string,
+  taskId: string | null,
+): string | null {
+  if (taskId !== null && timers.some((t) => t.taskId === taskId)) return TASK_HAS_TIMER_MESSAGE;
+  const sameProject = timers.filter((t) => t.crmProjectId === crmProjectId);
+  if (taskId === null && sameProject.length > 0) return PROJECT_HAS_TIMER_MESSAGE;
+  if (sameProject.some((t) => t.taskId === null)) return PROJECT_OCCUPIED_MESSAGE;
+  return null;
+}
 
 /** `add` keeps the other Timers; `switch` (or no mode) stops them, as one Timer did. */
 export type StartMode = "add" | "switch";
@@ -32,7 +51,8 @@ export interface StartChoice {
 export function startChoice(input: {
   simultaneousTimersEnabled: boolean;
   activeCount: number;
-  taskHasTimer?: boolean;
+  /** From `addConflictNote` for the project and task asked for. */
+  conflictNote?: string | null;
 }): StartChoice {
   if (!input.simultaneousTimersEnabled || input.activeCount === 0) {
     return { ask: false, canAdd: false, note: null };
@@ -40,7 +60,7 @@ export function startChoice(input: {
   if (input.activeCount >= MAX_SIMULTANEOUS_TIMERS) {
     return { ask: true, canAdd: false, note: TIMER_LIMIT_MESSAGE };
   }
-  if (input.taskHasTimer) return { ask: true, canAdd: false, note: TASK_HAS_TIMER_MESSAGE };
+  if (input.conflictNote) return { ask: true, canAdd: false, note: input.conflictNote };
   return { ask: true, canAdd: true, note: null };
 }
 

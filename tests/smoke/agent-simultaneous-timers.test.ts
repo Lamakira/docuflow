@@ -22,6 +22,7 @@ import {
 } from "../../desktop-agent/src/lib/systemAway";
 import { noTimerReminderDue, NO_TIMER_REMINDER_MIN_ACTIVE_MS, NO_TIMER_REMINDER_MIN_STOPPED_MS } from "../../desktop-agent/src/lib/noTimerReminder";
 import {
+  addConflictNote,
   aggregateTimerStatus,
   heartbeatTimeEntryIds,
   MAX_SIMULTANEOUS_TIMERS,
@@ -404,10 +405,19 @@ describe("Start asks Add or Switch", () => {
     });
   });
 
-  it("offers Switch only when the task already has a Timer", () => {
-    expect(startChoice({ simultaneousTimersEnabled: true, activeCount: 1, taskHasTimer: true })).toMatchObject({
+  it("offers Switch only when the server would refuse the add, as it reads the task and the project", () => {
+    const timers = [
+      { crmProjectId: "p1", taskId: "t1" },
+      { crmProjectId: "p2", taskId: null },
+    ];
+    expect(addConflictNote(timers, "p1", "t1")).toBe("A Timer already runs on this task.");
+    expect(addConflictNote(timers, "p1", null)).toBe("This project already has a Timer.");
+    expect(addConflictNote(timers, "p2", "t9")).toBe("A Timer without a task already runs on this project.");
+    expect(addConflictNote(timers, "p1", "t2")).toBeNull();
+    expect(startChoice({ simultaneousTimersEnabled: true, activeCount: 2, conflictNote: addConflictNote(timers, "p2", "t9") })).toEqual({
       ask: true,
       canAdd: false,
+      note: "A Timer without a task already runs on this project.",
     });
   });
 

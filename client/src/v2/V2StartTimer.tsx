@@ -22,25 +22,37 @@ import {
 } from "@/components/ui/dialog";
 import { notify } from "./notify";
 import { useReturnFocus } from "./returnFocus";
-import { startChoice, switchStopsLine } from "./time";
+import { addConflictLine, startChoice, switchStopsLine, type StartChoice } from "./time";
 
-type PendingStart = { projectId?: string; taskId?: string };
+type PendingStart = { projectId?: string; taskId?: string; choice: Extract<StartChoice, { kind: "ask" }> };
 
 export function useStartTimer(): {
   /** Resolves true when the Timer started; false when refused, or when the question was opened. */
   start: (projectId?: string, taskId?: string) => Promise<boolean>;
   dialog: ReactNode;
 } {
-  const { handleStart, simultaneousTimers, maxTimers, timers, projects } = useTimeTracker();
+  const { handleStart, simultaneousTimers, maxTimers, timers, projects, selectedProjectId, selectedTaskId } =
+    useTimeTracker();
   const [pending, setPending] = useState<PendingStart | null>(null);
+  // Kept after closing, so the dialog stays mounted while it closes and returns focus.
+  const [shown, setShown] = useState<PendingStart["choice"] | null>(null);
   const [busy, setBusy] = useState(false);
   const open = pending !== null;
   const returnFocus = useReturnFocus(open);
-  const choice = startChoice({ simultaneousTimers, maxTimers, activeCount: timers.length });
 
   async function start(projectId?: string, taskId?: string): Promise<boolean> {
+    // The Project and Task handleStart will use: the ones named, else the Timer's own.
+    const pid = projectId || selectedProjectId;
+    const tid = taskId || (pid === selectedProjectId ? selectedTaskId : "") || null;
+    const choice = startChoice({
+      simultaneousTimers,
+      maxTimers,
+      activeCount: timers.length,
+      conflictLine: pid ? addConflictLine(timers, pid, tid) : null,
+    });
     if (choice.kind === "switch") return handleStart(projectId, taskId);
-    setPending({ projectId, taskId });
+    setPending({ projectId, taskId, choice });
+    setShown(choice);
     return false;
   }
 
@@ -58,8 +70,9 @@ export function useStartTimer(): {
     return row?.project?.name ?? "a Project";
   });
 
+  const choice = shown;
   const dialog =
-    choice.kind === "ask" ? (
+    choice ? (
       <Dialog open={open} onOpenChange={(next) => (!next && !busy ? setPending(null) : undefined)}>
         <DialogContent
           className="df-v2 df-alert df-form-dialog"

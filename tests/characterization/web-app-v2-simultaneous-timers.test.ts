@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { agentUpdateBanner } from "../../client/src/v2/agentUpdate";
 import { simultaneousTimersOption } from "../../client/src/v2/administration";
-import { composeTimeTracking, startChoice, switchStopsLine, workedTimeLabel } from "../../client/src/v2/time";
+import { addConflictLine, composeTimeTracking, startChoice, switchStopsLine, workedTimeLabel } from "../../client/src/v2/time";
 
 /**
  * Simultaneous Timers on the web (#400, ADR-0031): the add-or-switch question,
@@ -187,3 +187,24 @@ describe("every running row of the register ticks (#400)", () => {
     expect(page.rows.map((r) => r.duration)).toEqual(["00:08:20", "00:02:40", "00:01:40"]);
   });
 });
+
+describe("the web offers Add only when the server would take it (#400)", () => {
+  const timers = [
+    { crmProjectId: "p1", taskId: "t1" },
+    { crmProjectId: "p2", taskId: null },
+  ];
+
+  it("names the Task or the Project that already has a Timer", () => {
+    expect(addConflictLine(timers, "p1", "t1")).toBe("A Timer already runs on this Task.");
+    expect(addConflictLine(timers, "p1", null)).toBe("This Project already has a Timer.");
+    expect(addConflictLine(timers, "p2", "t9")).toBe("A Timer without a Task already runs on this Project.");
+    expect(addConflictLine(timers, "p1", "t2")).toBeNull();
+  });
+
+  it("asks with Switch only and that reason", () => {
+    expect(
+      startChoice({ simultaneousTimers: true, maxTimers: 3, activeCount: 2, conflictLine: addConflictLine(timers, "p1", "t1") }),
+    ).toEqual({ kind: "ask", canAdd: false, limitLine: "A Timer already runs on this Task." });
+  });
+});
+

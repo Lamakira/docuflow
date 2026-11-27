@@ -501,19 +501,37 @@ export type StartChoice =
   /** Ask: `canAdd` is false at the limit, and `limitLine` says why. */
   | { kind: "ask"; canAdd: boolean; limitLine: string | null };
 
+/**
+ * Why this Timer cannot be added beside the active ones, as the server would
+ * refuse it (ADR-0031): its Task already has a Timer, or a Timer without a
+ * Task occupies the whole Project. Null when it can be.
+ */
+export function addConflictLine(
+  timers: ReadonlyArray<{ crmProjectId: string; taskId: string | null }>,
+  crmProjectId: string,
+  taskId: string | null,
+): string | null {
+  if (taskId !== null && timers.some((timer) => timer.taskId === taskId)) return "A Timer already runs on this Task.";
+  const sameProject = timers.filter((timer) => timer.crmProjectId === crmProjectId);
+  if (taskId === null && sameProject.length > 0) return "This Project already has a Timer.";
+  if (sameProject.some((timer) => timer.taskId === null)) return "A Timer without a Task already runs on this Project.";
+  return null;
+}
+
 /** ADR-0031 "Starting": with the option on and a Timer active, Start asks add or switch. */
 export function startChoice(input: {
   simultaneousTimers: boolean;
   maxTimers: number;
   activeCount: number;
+  /** From `addConflictLine` for the Project and Task asked for. */
+  conflictLine?: string | null;
 }): StartChoice {
   if (!input.simultaneousTimers || input.activeCount < 1) return { kind: "switch" };
-  const canAdd = input.activeCount < input.maxTimers;
-  return {
-    kind: "ask",
-    canAdd,
-    limitLine: canAdd ? null : `You run ${input.maxTimers} Timers. Stop one to add another.`,
-  };
+  if (input.activeCount >= input.maxTimers) {
+    return { kind: "ask", canAdd: false, limitLine: `You run ${input.maxTimers} Timers. Stop one to add another.` };
+  }
+  if (input.conflictLine) return { kind: "ask", canAdd: false, limitLine: input.conflictLine };
+  return { kind: "ask", canAdd: true, limitLine: null };
 }
 
 /** What Switch stops, named in the add-or-switch dialog. */
