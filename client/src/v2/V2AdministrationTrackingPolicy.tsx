@@ -7,6 +7,8 @@ import {
   composeTrackingPolicyEditor,
   normalizeScreenshotPolicy,
   pruneEdits,
+  simultaneousTimersOption,
+  type SimultaneousTimersSetting,
   workspaceSettingsPath,
   type PolicyEdits,
   type PolicyNumberKey,
@@ -28,6 +30,7 @@ import {
 
 type WorkspaceSettingsResponse = {
   screenshotPolicy: ScreenshotPolicy | null;
+  simultaneousTimers?: SimultaneousTimersSetting;
 };
 
 /**
@@ -99,6 +102,7 @@ export function V2AdministrationTrackingPolicy({
   }
 
   const form = policy.form;
+  const simultaneous = simultaneousTimersOption(settings.data?.simultaneousTimers);
   const editable = policy.editable;
 
   function edit(patch: PolicyEdits) {
@@ -211,6 +215,19 @@ export function V2AdministrationTrackingPolicy({
           <p className="df-policy-hint">{policy.hints.idleTimeout}</p>
           <div className="df-policy-grid">{numberField("idleTimeoutMinutes", "Idle timeout (minutes)", "Idle timeout")}</div>
         </div>
+        {simultaneous.visible ? (
+          <div className="df-policy-group" data-testid="v2-administration-simultaneous-timers">
+            <CheckRow
+              id="df-policy-simultaneous-timers"
+              label={simultaneous.label}
+              checked={form.simultaneousTimersEnabled}
+              disabled={!editable || (simultaneous.disabled && !form.simultaneousTimersEnabled)}
+              onChange={(next) => edit({ simultaneousTimersEnabled: next })}
+            />
+            <p className="df-policy-hint">{simultaneous.hint}</p>
+            {simultaneous.note ? <p className="df-policy-hint">{simultaneous.note}</p> : null}
+          </div>
+        ) : null}
         <CheckRow
           id="df-policy-idle"
           label="Prompt on idle"

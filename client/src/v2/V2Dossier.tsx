@@ -1,3 +1,4 @@
+import { useStartTimer } from "./V2StartTimer";
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Link2, Pencil, PanelLeft, PanelLeftClose, Plus, RotateCcw, Trash2, Upload } from "lucide-react";
 import { Link, useLocation } from "wouter";
@@ -286,7 +287,8 @@ export function V2DossierPage() {
   const now = useMemo(() => new Date(), []);
   const { user } = useAuth();
   const { memberships } = useV2Chrome();
-  const { isRunning, activeEntry, handleStart, setSelectedProjectId, requiresTaskForStart } = useTimeTracker();
+  const { isRunning, activeEntry, setSelectedProjectId, requiresTaskForStart } = useTimeTracker();
+  const { start: startTimer, dialog: startDialog } = useStartTimer();
   const monthStart = useMemo(() => startOfMonth(now), [now]);
   const dayEnd = useMemo(() => endOfDay(now), [now]);
   const current = memberships?.memberships.find((row) => row.workspaceId === memberships.activeWorkspaceId);
@@ -946,7 +948,7 @@ export function V2DossierPage() {
       return;
     }
     setSelectedProjectId(projectId);
-    handleStart(projectId, firstTodoTask?.id);
+    startTimer(projectId, firstTodoTask?.id);
   }
 
   function onSaveDate(field: keyof ProjectDatesDraft, day: string) {
@@ -1463,7 +1465,7 @@ export function V2DossierPage() {
               onStartTask: (taskId) => {
                 if (!canTrackTime) return;
                 setSelectedProjectId(projectId);
-                handleStart(projectId, taskId);
+                startTimer(projectId, taskId);
               },
               onStartTimer,
               onNewDocument,
@@ -1518,6 +1520,7 @@ export function V2DossierPage() {
           </div>
         ) : null}
       </div>
+      {startDialog}
     </div>
   );
 }

@@ -19,6 +19,7 @@ import { V2FirstWorkspace } from "./V2FirstWorkspace";
 import { V2WorkspaceChooser } from "./V2WorkspaceChooser";
 import { selectCommandPanel } from "./chrome";
 import { canManageAdministration } from "./administration";
+import { AGENT_UPDATE_PATH, agentUpdateBanner, type AgentUpdateResponse } from "./agentUpdate";
 import { planGateCopy, planGateFor, trialNotice, useEntitlements } from "./plan";
 import {
   chromeLayoutForViewport,
@@ -140,6 +141,12 @@ export function V2Shell({ children }: { children: React.ReactNode }) {
   const supportNotice = supportAccessNotice(supportGrants);
   const planGate = planGateFor(navIdForPath(location), entitlements);
   const trial = trialNotice(entitlements);
+  const { data: agentUpdate } = useQuery<AgentUpdateResponse>({
+    queryKey: [AGENT_UPDATE_PATH],
+    enabled: Boolean(memberships?.activeWorkspaceId),
+    staleTime: 5 * 60_000,
+  });
+  const agentBanner = agentUpdateBanner(agentUpdate);
 
   useEffect(() => {
     setPanel(null);
@@ -340,6 +347,14 @@ export function V2Shell({ children }: { children: React.ReactNode }) {
                     {!secondFactorRequired && supportNotice ? (
                       <div className="df-plan-banner" role="status" data-testid="v2-support-access-banner">
                         <p>{supportNotice}</p>
+                      </div>
+                    ) : null}
+                    {agentBanner ? (
+                      <div className="df-plan-banner" role="status" data-testid="v2-agent-update-banner">
+                        <p>{agentBanner.copy}</p>
+                        <Button asChild variant="outline" size="sm" className="df-btn">
+                          <Link href={agentBanner.href}>{agentBanner.linkLabel}</Link>
+                        </Button>
                       </div>
                     ) : null}
                     {secondFactorBlocked ? (

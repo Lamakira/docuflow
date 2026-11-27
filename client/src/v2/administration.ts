@@ -867,6 +867,46 @@ function effectivePolicy(saved: ScreenshotPolicy, edits: PolicyEdits): Screensho
   return merged as unknown as ScreenshotPolicy;
 }
 
+export type SimultaneousTimersSetting = {
+  launched: boolean;
+  launchAt: string | null;
+  includedInPlan: boolean;
+};
+
+export type SimultaneousTimersOption = {
+  /** False on a Plan without Tasks (Starter): the option is not shown at all. */
+  visible: boolean;
+  /** Before the launch the switch cannot be turned on. */
+  disabled: boolean;
+  label: string;
+  hint: string;
+  /** Why it is disabled, or null. */
+  note: string | null;
+};
+
+export const SIMULTANEOUS_TIMERS_LABEL = "Simultaneous Timers";
+export const SIMULTANEOUS_TIMERS_HINT = "Let Members run up to 3 Timers at once. Each hour counts once in their day.";
+
+export function simultaneousTimersOption(
+  setting: SimultaneousTimersSetting | null | undefined,
+  options: { locale?: string; timeZone?: string } = {},
+): SimultaneousTimersOption {
+  const base = { label: SIMULTANEOUS_TIMERS_LABEL, hint: SIMULTANEOUS_TIMERS_HINT };
+  if (!setting || !setting.includedInPlan) return { ...base, visible: false, disabled: true, note: null };
+  if (setting.launched) return { ...base, visible: true, disabled: false, note: null };
+  const date = setting.launchAt ? new Date(setting.launchAt) : null;
+  const note =
+    date && !Number.isNaN(date.getTime())
+      ? `Available from ${new Intl.DateTimeFormat(options.locale ?? "en-GB", {
+          day: "numeric",
+          month: "long",
+          year: "numeric",
+          timeZone: options.timeZone,
+        }).format(date)}`
+      : "Available once every desktop app can be updated";
+  return { ...base, visible: true, disabled: true, note };
+}
+
 export type TrackingPolicyInput = {
   workspaceName: string;
   workspaceRole: string;

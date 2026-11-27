@@ -49,6 +49,8 @@ export type TimeTrackingInput = {
   activeEntryId: string | null;
   entries: TimeEntryRowInput[];
   workdaySeconds: number;
+  /** Simultaneous Time in the reader's day, from the same stats; 0 or omitted when none. */
+  simultaneousSeconds?: number;
   /** Seconds since the register was read, for the running row's part of the period. */
   liveSeconds?: number;
   /** Where the register's period starts; null or omitted for all time. */
@@ -399,7 +401,10 @@ export function composeTimeTracking(input: TimeTrackingInput): TimeTrackingModel
   const window = input.range === "today" ? "today" : input.range === "week" ? "this week" : null;
   const widenLabel = input.range ? widenTimeLabel(input.range) : null;
   return {
-    workdayHours: `You today ${formatHours(input.workdaySeconds)}`,
+    workdayHours:
+      (input.simultaneousSeconds ?? 0) > 0
+        ? workedTimeLabel(input.workdaySeconds, input.simultaneousSeconds ?? 0)
+        : `You today ${formatHours(input.workdaySeconds)}`,
     empty,
     emptyState: emptyModelOf(
       emptyKindOf(empty, Boolean(input.facetsActive), window !== null, input.everRecorded ?? null),
@@ -461,6 +466,42 @@ export function formatSpan(seconds: number): string {
   const hours = Math.floor(safe / 3600);
   const minutes = Math.floor((safe % 3600) / 60);
   return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
+}
+
+/**
+ * The reader's day as ADR-0031 words it: Worked Time (each hour once) and, when
+ * two or more Timers ran at once, the Simultaneous Time inside it.
+ */
+export function workedTimeLabel(workedSeconds: number, simultaneousSeconds: number): string {
+  const worked = `Worked time ${formatSpan(workedSeconds)}`;
+  return simultaneousSeconds > 0 ? `${worked} · ${formatSpan(simultaneousSeconds)} simultaneous` : worked;
+}
+
+export type StartChoice =
+  /** Start switches at once, as with one Timer at a time (no mode sent). */
+  | { kind: "switch" }
+  /** Ask: `canAdd` is false at the limit, and `limitLine` says why. */
+  | { kind: "ask"; canAdd: boolean; limitLine: string | null };
+
+/** ADR-0031 "Starting": with the option on and a Timer active, Start asks add or switch. */
+export function startChoice(input: {
+  simultaneousTimers: boolean;
+  maxTimers: number;
+  activeCount: number;
+}): StartChoice {
+  if (!input.simultaneousTimers || input.activeCount < 1) return { kind: "switch" };
+  const canAdd = input.activeCount < input.maxTimers;
+  return {
+    kind: "ask",
+    canAdd,
+    limitLine: canAdd ? null : `You run ${input.maxTimers} Timers. Stop one to add another.`,
+  };
+}
+
+/** What Switch stops, named in the add-or-switch dialog. */
+export function switchStopsLine(timerLabels: string[]): string {
+  if (timerLabels.length === 1) return `Switch stops the Timer on ${timerLabels[0]}.`;
+  return `Switch stops your ${timerLabels.length} running Timers.`;
 }
 
 /** One local day boundary, shared by every surface that filters on a date. */

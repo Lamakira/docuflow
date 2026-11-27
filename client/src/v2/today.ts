@@ -1,5 +1,6 @@
 import { projectStatusColor } from "./palette";
 import { MONTHS, WEEKDAYS } from "./dates";
+import { workedTimeLabel } from "./time";
 
 export type TodayProject = {
   id: string;
@@ -48,6 +49,8 @@ export type TodayInput = {
   notifications: TodayNotification[];
   recentDocuments: TodayDocument[];
   users: TodayUser[];
+  /** The reader's Simultaneous Time today; omitted when the stats span the team. */
+  simultaneousSeconds?: number;
   todaySecondsByUser: Array<{ userId: string; totalDuration: number }>;
   monthSecondsByProject: Array<{ crmProjectId: string; totalDuration: number }>;
   missingDailyUpdates: Array<{
@@ -117,6 +120,8 @@ export type TodayModel = {
   workday: {
     memberCount: number;
     hoursTodayLabel: string;
+    /** "Worked time 4h 30m · 1h 30m simultaneous", only when Timers overlapped. */
+    workedTime: string | null;
     members: WorkdayMemberRow[];
     openTimerSince: string | null;
   };
@@ -394,6 +399,7 @@ function composeWorkday(input: TodayInput): TodayModel["workday"] {
   return {
     memberCount: members.length,
     hoursTodayLabel: `${formatHours(totalSeconds)} today`,
+    workedTime: (input.simultaneousSeconds ?? 0) > 0 ? workedTimeLabel(totalSeconds, input.simultaneousSeconds ?? 0) : null,
     members,
     openTimerSince: openTimerSince(input),
   };

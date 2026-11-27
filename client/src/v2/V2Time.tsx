@@ -1,3 +1,4 @@
+import { useStartTimer } from "./V2StartTimer";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useParams, useSearch } from "wouter";
 import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
@@ -77,7 +78,7 @@ type TimeEntriesResponse = {
   totals?: { duration: number; idle: number };
 };
 type ProjectsResponse = { data: CrmProjectWithDetails[]; total?: number };
-type TimeStats = { totalDuration: number };
+type TimeStats = { totalDuration: number; simultaneousDuration?: number };
 type TasksResponse = { data: ProjectTask[] };
 
 const ENTRY_MOTION = motionForSurface("time-entry").enterExit;
@@ -204,11 +205,11 @@ function TimeEntriesPane() {
     pauseMutationPending,
     resumeMutationPending,
     stopMutationPending,
-    handleStart,
     handlePause,
     handleResume,
     handleStop,
   } = useTimeTracker();
+  const { start, dialog: startDialog } = useStartTimer();
 
   const [writeRefusal, setWriteRefusal] = useState<string | null>(null);
   const [leavingIds, setLeavingIds] = useState<string[]>([]);
@@ -370,6 +371,7 @@ function TimeEntriesPane() {
     displayDuration,
     activeEntryId: activeEntry?.id ?? null,
     entries: shownRows.map(toRow),
+    simultaneousSeconds: stats?.simultaneousDuration ?? 0,
     workdaySeconds: (stats?.totalDuration ?? 0) + secondsSinceRead(statsReadAt, Date.now(), isRunning, displayDuration),
     liveSeconds: secondsSinceRead(entriesReadAt, Date.now(), isRunning, displayDuration),
     periodStart: rangeDates.startDate,
@@ -430,7 +432,7 @@ function TimeEntriesPane() {
       return;
     }
     if (busy) handleStop();
-    else handleStart();
+    else start();
   }
 
   function onPauseResume() {
@@ -677,6 +679,7 @@ function TimeEntriesPane() {
           />
         )}
       </section>
+      {startDialog}
     </>
   );
 }
