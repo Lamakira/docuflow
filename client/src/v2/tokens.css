@@ -1860,16 +1860,6 @@ button.df-activity-row {
   max-width: 480px;
 }
 
-/* The Owner renames the Workspace under its name (F110). */
-.df-card > .df-admin-rename {
-  flex-wrap: wrap;
-}
-
-.df-admin-rename > .df-refusal-inline {
-  flex-basis: 100%;
-  margin: 0;
-}
-
 .df-v2 .df-timezone-trigger {
   justify-content: space-between;
   width: 100%;

@@ -631,12 +631,19 @@ describe("The Workspace and Billing tabs (#281, F110)", () => {
     });
   });
 
-  it("lets the Owner alone rename the Workspace, beside the name", () => {
+  it("lets the Owner alone rename the Workspace, through a Rename button and a dialog", () => {
     expect(composeWorkspaceCard(workspaceInput({ workspaceRole: "OWNER" }))).toMatchObject({ renamable: true, renameNote: null });
     expect(adminWorkspaceSource).toContain('apiRequest("PATCH", workspacePath(), { name })');
     // The chrome reads the name from /api/memberships, so a rename refreshes that.
     expect(adminWorkspaceSource).toContain('const CHROME_MEMBERSHIPS_KEY = ["/api/memberships"];');
     expect(adminWorkspaceSource).toContain("{card.renamable ? (");
+    expect(adminWorkspaceSource).toContain('data-testid="v2-administration-workspace-rename"');
+    expect(adminWorkspaceSource).toContain("<V2FormDialog");
+    expect(adminWorkspaceSource).toContain('title="Rename Workspace"');
+    expect(adminWorkspaceSource).toContain('testId="v2-administration-workspace-rename-dialog"');
+    expect(adminWorkspaceSource).not.toContain("df-admin-rename");
+    expect(adminWorkspaceSource).not.toContain("df-inline-form");
+    expect(css).not.toContain(".df-admin-rename");
   });
 
   it("leaves the owner and members empty when unknown, and singularises one Member", () => {
