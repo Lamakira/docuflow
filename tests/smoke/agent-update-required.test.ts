@@ -14,6 +14,7 @@ import { ApiClient } from "../../desktop-agent/src/lib/ApiClient";
 import { AgentStore } from "../../desktop-agent/src/lib/AgentStore";
 import { SqliteQueue } from "../../desktop-agent/src/lib/SqliteQueue";
 import { SyncWorker } from "../../desktop-agent/src/workers/SyncWorker";
+import { HeartbeatWorker } from "../../desktop-agent/src/workers/HeartbeatWorker";
 import {
   AGENT_PROTOCOL_VERSION,
   UpdateRequiredGate,
@@ -42,6 +43,7 @@ describe("agent update required (#398)", () => {
   let calls: Call[];
   let heartbeatOk: boolean;
   let unauthorizedOnce: boolean;
+  let heartbeatFails: boolean;
 
   function ports() {
     return { stopCapture: vi.fn(), startCapture: vi.fn(), save: vi.fn(), changed: vi.fn() };
@@ -62,6 +64,7 @@ describe("agent update required (#398)", () => {
     calls = [];
     heartbeatOk = false;
     unauthorizedOnce = false;
+    heartbeatFails = false;
 
     vi.stubGlobal("fetch", async (input: unknown, init: RequestInit = {}) => {
       const url = String(input);
@@ -94,6 +97,9 @@ describe("agent update required (#398)", () => {
       }
       if (pathname.includes("/api/agent/screenshots/upload/") && method === "PUT") return json(200, {});
       if (pathname.endsWith("/api/agent/screenshots/confirm")) return json(200, { ok: true });
+      if (pathname.endsWith("/api/agent/heartbeat") && heartbeatFails) {
+        return json(500, { message: "Internal error" });
+      }
       if (pathname.endsWith("/api/agent/heartbeat") && heartbeatOk) {
         return json(200, { ok: true, serverTime: new Date().toISOString(), timerSync: null });
       }
@@ -250,6 +256,43 @@ describe("agent update required (#398)", () => {
     store.clearSession();
     expect(store.getUpdateRequired()).toBeNull();
     expect(new AgentStore().getUpdateRequired()).toBeNull();
+  });
+
+  // On a restart, a Timer session left open is closed at the last activity the
+  // agent recorded. A refused heartbeat still means the server answered while
+  // the Timer kept running there, so the blocked minutes must not be cut off.
+  async function heartbeatOnce(client: ApiClient) {
+    vi.useFakeTimers({ toFake: ["setTimeout", "setInterval"] });
+    const worker = new HeartbeatWorker(client, store);
+    const touched = vi.spyOn(store, "touchActivity");
+    worker.start();
+    await vi.advanceTimersByTimeAsync(2_000);
+    worker.stop();
+    vi.useRealTimers();
+    await vi.waitFor(() => expect(calls.some((c) => c.url.endsWith("/api/agent/heartbeat"))).toBe(true));
+    await new Promise((r) => setTimeout(r, 0));
+    return touched;
+  }
+
+  it("keeps the last activity fresh when the heartbeat is refused for the protocol", async () => {
+    const { gate, client } = makeClient();
+    const touched = await heartbeatOnce(client);
+    expect(gate.blocksCapture).toBe(true);
+    expect(touched).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves the last activity alone when the heartbeat fails for another reason", async () => {
+    heartbeatFails = true;
+    const { gate, client } = makeClient();
+    const touched = await heartbeatOnce(client);
+    expect(gate.blocksCapture).toBe(false);
+    expect(touched).not.toHaveBeenCalled();
+  });
+
+  it("does not poll the Timer every 5 s while blocked: each poll would only be refused", () => {
+    const main = fs.readFileSync(path.resolve(import.meta.dirname, "../../desktop-agent/src/main/index.ts"), "utf8");
+    const body = main.slice(main.indexOf("async function syncTimerFromServer"));
+    expect(body.slice(0, body.indexOf("try {"))).toMatch(/if \(updateGate\.state\) return;/);
   });
 
   it("declares the same protocol version as the server", () => {

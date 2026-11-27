@@ -11,6 +11,7 @@ import { app } from "electron";
 import { ApiClient } from "../lib/ApiClient";
 import { AgentStore } from "../lib/AgentStore";
 import { heartbeatTimeEntryId } from "../lib/systemAway";
+import { PROTOCOL_BELOW_MINIMUM } from "../lib/agentProtocol";
 const HEARTBEAT_INTERVAL_MS = 60_000;
 
 type TimerSyncCallback = (
@@ -106,6 +107,9 @@ export class HeartbeatWorker {
       }
     } catch (error: any) {
       console.error("[HeartbeatWorker] Failed:", error.message);
+      // Refused for the protocol (#398): the server answered and the Timer keeps
+      // running there, so a restart must not close the session at the refusal.
+      if (error?.code === PROTOCOL_BELOW_MINIMUM) this.store.touchActivity();
       this.onPolicyRefreshFailed?.(error.message ?? "Heartbeat failed");
     }
   }

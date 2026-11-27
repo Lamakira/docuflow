@@ -219,6 +219,7 @@ const updateGate = new UpdateRequiredGate(
       console.log("[Main] update-required — capture stopped, queue keeps draining");
     },
     startCapture: () => {
+      console.log("[Main] update-required cleared — the server accepts this version again");
       // Workers running means paired and past startWorkers(); otherwise startWorkers() will start capture.
       if (store.isPaired() && heartbeatWorker) startCaptureWorkers();
     },
@@ -994,6 +995,8 @@ async function refreshWorkedTodayServerBase(): Promise<void> {
 /** Fetch active entry from server and reconcile local state. */
 async function syncTimerFromServer(): Promise<void> {
   if (!store.isPaired()) return;
+  // Blocked (#398): every read is refused. The heartbeat checks once a minute and clears the state.
+  if (updateGate.state) return;
   try {
     const requestedAtMono = performance.now();
     const active = await apiClient.getActiveEntry();
