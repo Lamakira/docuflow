@@ -224,4 +224,31 @@ describe("Simultaneous Timers over HTTP (#400)", () => {
     const stats = await admin.agent.get("/api/time-tracking/stats").query({ includeActive: "1" });
     expect(stats.body.screenshotCount).toBe(1);
   });
+
+  it("warns a Member whose Device still runs an older desktop app, in the app and by the operator's script", async () => {
+    const app = await makeApp();
+    const admin = await registerAdmin(app);
+    const device = await loginDevice(app, admin, { deviceName: "Studio laptop" });
+
+    delete process.env[LAUNCH_ENV];
+    expect((await admin.agent.get("/api/time-tracking/agent-update")).body).toEqual({ launchAt: null, launched: false, devices: [] });
+
+    process.env[LAUNCH_ENV] = "2099-01-01T00:00:00.000Z";
+    // An agent before 0.2.8 declares nothing.
+    expect((await device.request.post("/api/agent/heartbeat").send(heartbeatBody(device, { clientVersion: "0.2.7" }))).status).toBe(200);
+    const warned = await admin.agent.get("/api/time-tracking/agent-update");
+    expect(warned.body).toEqual({
+      launchAt: "2099-01-01T00:00:00.000Z",
+      launched: false,
+      devices: [{ id: device.deviceId, name: "Studio laptop", clientVersion: "0.2.7" }],
+    });
+    const { warnOutdatedAgents } = await import("../../scripts/warn-outdated-agents");
+    const dryRun = await warnOutdatedAgents();
+    expect(dryRun).toEqual({ members: 1, sent: 0, failed: [] });
+
+    await device.request.post("/api/agent/heartbeat").set(V2).send(heartbeatBody(device));
+    expect((await admin.agent.get("/api/time-tracking/agent-update")).body.devices).toEqual([]);
+    expect((await warnOutdatedAgents()).members).toBe(0);
+  });
 });
+

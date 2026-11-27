@@ -417,3 +417,30 @@ export async function sendSupportStatusEmail(input: {
     `,
   });
 }
+
+/**
+ * Before Simultaneous Timers launch (#400, ADR-0031): this Member's desktop app
+ * will stop starting Timers on `launchAt` until it is updated.
+ */
+export async function sendAgentUpdateEmail(input: {
+  toEmail: string;
+  recipientName: string;
+  launchAt: Date;
+  deviceNames: string[];
+  appUrl: string;
+}): Promise<{ success: boolean; error?: string }> {
+  const devices = input.deviceNames.map((name) => `<li>${escapeHtml(name)}</li>`).join("");
+  return sendBillingEmail({
+    toEmail: input.toEmail,
+    subject: `DocuFlow - Update your desktop app before ${dateInWords(input.launchAt)}`,
+    body: `
+      <h1 style="color: #333;">Update your desktop app</h1>
+      <p>Hello ${escapeHtml(input.recipientName)},</p>
+      <p>From <strong>${dateInWords(input.launchAt)}</strong>, the version of the DocuFlow desktop app on these computers can no longer start a Timer:</p>
+      <ul>${devices}</ul>
+      <p>Install the new version before then. Your time and captures already recorded are kept, and a Timer still running can be stopped from the web app.</p>
+      <p>${emailButton(`${input.appUrl}/devices`, "Get the new desktop app")}</p>
+    `,
+  });
+}
+

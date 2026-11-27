@@ -70,6 +70,7 @@ import {
   SimultaneousTimersNotLaunchedError,
 } from "./modules/activity/policy";
 import { simultaneousTimersLaunchAt, simultaneousTimersLaunched } from "./simultaneousTimersLaunch";
+import { outdatedAgentDevicesForUser } from "./modules/identity/outdatedAgents";
 import {
   PlanFeatureNotIncludedError,
   SeatExhaustedError,
@@ -4630,6 +4631,26 @@ Instructions:
     } catch (error) {
       logError("time-tracking.timers.failed", error, { userId: getUserId(req) });
       res.status(500).json({ message: "Failed to fetch Timers" });
+    }
+  });
+
+  /**
+   * The caller's Devices whose desktop app must be updated before Simultaneous
+   * Timers launch (#400, ADR-0031). Empty until the operator sets the launch date.
+   */
+  app.get("/api/time-tracking/agent-update", isAuthenticated, async (req: any, res) => {
+    try {
+      const launchAt = simultaneousTimersLaunchAt();
+      if (!launchAt) return res.json({ launchAt: null, launched: false, devices: [] });
+      const outdated = await outdatedAgentDevicesForUser(getUserId(req)!);
+      res.json({
+        launchAt: launchAt.toISOString(),
+        launched: simultaneousTimersLaunched(),
+        devices: outdated.map(({ id, name, clientVersion }) => ({ id, name, clientVersion })),
+      });
+    } catch (error) {
+      logError("time-tracking.agent-update.failed", error, { userId: getUserId(req) });
+      res.status(500).json({ message: "Failed to check the desktop app version" });
     }
   });
 
