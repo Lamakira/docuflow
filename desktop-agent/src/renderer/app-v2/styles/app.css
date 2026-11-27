@@ -569,6 +569,9 @@ button:disabled { cursor: default; }
 .v2-btn--secondary:hover:not(:disabled) { background: var(--row-hover-strong); }
 .v2-btn--danger { background: var(--status-danger-bg); color: var(--status-danger); }
 .v2-btn--block { width: 100%; padding: 10px 13px; }
+/* The browser's ring takes the accent colour, which vanishes on a primary
+   button; an ink ring outside the button shows on every fill (#398). */
+.v2-btn:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
 
 .v2-link {
   font-size: 12px;
@@ -1647,6 +1650,16 @@ button:disabled { cursor: default; }
   -webkit-app-region: no-drag;
 }
 .v2-update-required__card section + section { padding-top: 12px; border-top: 1px solid var(--border-card); }
+.v2-update-required__name {
+  display: block;
+  margin-top: 4px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .v2-update-required__card p {
   margin: 4px 0 0;
   font-size: 12.5px;

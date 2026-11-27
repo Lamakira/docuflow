@@ -18,19 +18,19 @@ import { WindowControls } from '../components/WindowControls';
 import { BrandMark } from '../components/BrandMark';
 
 /** What the Timer is on, in the words the rest of the app uses. */
-function trackedName(timer: TimerState): string {
+function trackedName(timer: TimerState): string | null {
   if (timer.taskName && timer.projectName) return `${timer.taskName} (${timer.projectName})`;
-  return timer.taskName || timer.projectName || 'The Timer';
+  return timer.taskName || timer.projectName || null;
 }
 
 const TIMER_ON_SERVER = {
   running: {
     title: 'Your Timer is still running',
-    body: (name: string) => `${name} keeps counting on the server. You can stop it from the DocuFlow web app.`,
+    body: 'It keeps counting on the server. You can stop it from the DocuFlow web app.',
   },
   paused: {
     title: 'Your Timer is paused',
-    body: (name: string) => `${name} stays paused on the server. You can resume or stop it from the DocuFlow web app.`,
+    body: 'It stays paused on the server. You can resume or stop it from the DocuFlow web app.',
   },
 } as const;
 
@@ -48,6 +48,7 @@ export function UpdateRequiredPage() {
       ? { url: agent.apiBase, label: 'Open web app' }
       : null;
   const timer = agent.timer;
+  const name = trackedName(timer);
   const onServer = timer.entryId && (timer.status === 'running' || timer.status === 'paused')
     ? TIMER_ON_SERVER[timer.status]
     : null;
@@ -72,7 +73,6 @@ export function UpdateRequiredPage() {
           <button
             className="v2-btn v2-btn--primary v2-btn--block"
             type="button"
-            autoFocus
             onClick={() => window.agentBridge.openExternal(action.url)}
           >
             {action.label}
@@ -87,7 +87,9 @@ export function UpdateRequiredPage() {
         {onServer && (
           <section>
             <strong className="v2-set__label">{onServer.title}</strong>
-            <p>{onServer.body(trackedName(timer))}</p>
+            {/* One line whatever the name, so the page keeps fitting the window. */}
+            {name && <span className="v2-update-required__name" title={name}>{name}</span>}
+            <p>{onServer.body}</p>
           </section>
         )}
         <section>

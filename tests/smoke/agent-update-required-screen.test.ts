@@ -72,7 +72,8 @@ describe("agent update required screen (#398)", () => {
   it("says a running Timer is still running on the server and can be stopped from the web app", () => {
     const html = render({});
     expect(html).toContain("Your Timer is still running");
-    expect(html).toContain("Ledger rebuild (Northwind) keeps counting on the server.");
+    expect(html).toContain("Ledger rebuild (Northwind)");
+    expect(html).toContain("It keeps counting on the server.");
     expect(html).toContain("stop it from the DocuFlow web app");
   });
 
@@ -95,5 +96,16 @@ describe("agent update required screen (#398)", () => {
 
   it("renders nothing once the state clears", () => {
     expect(render({ updateRequired: null })).toBe("");
+  });
+});
+
+describe("v2 buttons show a focus ring (#398)", () => {
+  it("draws an ink ring outside every v2 button, since the browser's accent ring vanishes on a primary one", async () => {
+    const { readFileSync } = await import("node:fs");
+    const css = readFileSync(
+      path.resolve(import.meta.dirname, "../../desktop-agent/src/renderer/app-v2/styles/app.css"),
+      "utf8",
+    );
+    expect(css).toMatch(/\.v2-btn:focus-visible\s*\{[^}]*outline:\s*2px solid var\(--text-primary\)/);
   });
 });
