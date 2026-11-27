@@ -20,11 +20,26 @@ export interface Task {
 
 export type TimerStatus = 'running' | 'paused' | 'stopped';
 
+/** One active Timer (#400). Up to three run at once when the Tracking Policy allows it. */
+export interface ActiveTimerState {
+  entryId: string;
+  status: 'running' | 'paused';
+  crmProjectId: string | null;
+  projectName: string | null;
+  taskName: string | null;
+  taskId: string | null;
+  description: string | null;
+  elapsed: number;
+  elapsedToday: number; // the task counts its time in full, Simultaneous Time included
+}
+
 export interface TimerState {
   status: TimerStatus;
   elapsed: number;      // total entry elapsed (unclamped) — for server reconciliation
   elapsedToday: number; // entry elapsed clamped to current local day — use this for UI display
-  workedToday: number;  // all tasks today, clamped to current local day (all devices)
+  workedToday: number;  // Worked Time today, counted once however many Timers ran (all devices)
+  /** The part of workedToday during which two or more Timers ran (#400). */
+  simultaneousToday?: number;
   thisSession: number;  // total tracked since this app launch (all tasks, not day-scoped)
   dayKey: string;       // local calendar day or synthetic test-day key (midnight rollover detection)
   entryId: string | null;
@@ -32,6 +47,8 @@ export interface TimerState {
   projectName: string | null;
   taskName: string | null;
   description: string | null;
+  /** Every active Timer, oldest first; the fields above describe the latest running one (#400). */
+  timers?: ActiveTimerState[];
 }
 
 export interface AgentState {
@@ -44,6 +61,8 @@ export interface AgentState {
   timer: TimerState;
   /** False when the Workspace's Plan has no Tasks: the timer tracks the Project itself (#299). */
   timerRequiresTask?: boolean;
+  /** The Tracking Policy lets this Member run up to three Timers at once (#400). */
+  simultaneousTimersEnabled?: boolean;
   /** Set when the server refused this agent's protocol version (#398). */
   updateRequired?: (UpdateRequired & { downloadUrl: string | null }) | null;
 }
@@ -83,10 +102,17 @@ export interface AgentBridge {
     projectName: string;
     description?: string;
     taskDurationToday?: number; // seeds elapsedToday immediately, avoids 0→jump on restart
+    /** `add` keeps the other Timers; absent or `switch` stops them (#400). */
+    mode?: 'add' | 'switch';
   }) => Promise<{ ok: boolean; entry?: any; error?: string }>;
-  timerPause: () => Promise<{ ok: boolean; error?: string }>;
-  timerResume: () => Promise<{ ok: boolean; error?: string }>;
-  timerStop: () => Promise<{ ok: boolean; error?: string }>;
+  /** Without an entry id: the Timer the screen shows. */
+  timerPause: (data?: { entryId?: string }) => Promise<{ ok: boolean; error?: string }>;
+  timerResume: (data?: { entryId?: string }) => Promise<{ ok: boolean; error?: string }>;
+  timerStop: (data?: { entryId?: string }) => Promise<{ ok: boolean; error?: string }>;
+  /** Stop every Timer (#400). Optional: absent from a preload before it. */
+  timerStopAll?: () => Promise<{ ok: boolean; error?: string }>;
+  /** The server refused a start; its Timer is already gone (#400). */
+  onTimerRefused?: (cb: (data: { message: string }) => void) => () => void;
   timerState: () => Promise<TimerState>;
   openExternal: (url: string) => void;
   checkUpdate: () => Promise<{

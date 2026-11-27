@@ -27,6 +27,8 @@ export interface TrackingPolicy {
   screenshotProjectIds: string[] | null;
   /** Off when the Plan leaves activity and idle detection out: no activity events, no idle pause. */
   activityCaptureEnabled: boolean;
+  /** Up to three Timers at once (#400, ADR-0031); off by default and on Starter. */
+  simultaneousTimersEnabled: boolean;
 }
 
 /** Mirrors the server's DEFAULT_SCREENSHOT_POLICY. Used only when no policy was ever received. */
@@ -42,6 +44,7 @@ export const DEFAULT_TRACKING_POLICY: TrackingPolicy = {
   idlePromptEnabled: true,
   idleTimeoutMinutes: 10,
   idleCountdownSeconds: 60,
+  simultaneousTimersEnabled: false,
 };
 
 /** Where the policy in force came from: this run's heartbeat, the copy on disk, or the defaults. */
@@ -125,6 +128,7 @@ export function normalizeTrackingPolicy(
           ? (value.screenshotProjectIds as string[])
           : fallback.screenshotProjectIds,
     activityCaptureEnabled: bool("activityCaptureEnabled"),
+    simultaneousTimersEnabled: bool("simultaneousTimersEnabled"),
   };
 }
 

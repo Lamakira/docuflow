@@ -462,6 +462,14 @@ button:disabled { cursor: default; }
   color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
 }
+/* Simultaneous Timers (#400): one compact card per active Timer, each with its own pause and stop. */
+.v2-actives { flex: none; display: flex; flex-direction: column; gap: 6px; }
+.v2-active--compact { display: flex; align-items: center; gap: 6px; padding: 8px 10px 8px 12px; }
+.v2-active__text { flex: 1; min-width: 0; }
+.v2-active--compact .v2-active__task { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 13px; }
+.v2-active__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.v2-active--compact .v2-active__status { margin: 2px 0 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.v2-active__dot--paused { background: var(--text-muted); }
 
 .v2-seclabel {
   flex: none;
@@ -544,6 +552,17 @@ button:disabled { cursor: default; }
   text-align: right;
   max-width: 92px;
 }
+.v2-choice__title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.v2-choice__body { margin: 4px 0 0; font-size: 12px; line-height: 1.4; color: var(--text-secondary); }
+.v2-choice .v2-create__actions { flex-wrap: wrap; }
 .v2-create__error {
   margin: 8px 0 0;
   font-size: 11.5px;
@@ -569,6 +588,7 @@ button:disabled { cursor: default; }
 .v2-btn--secondary:hover:not(:disabled) { background: var(--row-hover-strong); }
 .v2-btn--danger { background: var(--status-danger-bg); color: var(--status-danger); }
 .v2-btn--block { width: 100%; padding: 10px 13px; }
+.v2-btn--small { padding: 5px 10px; font-size: 11.5px; min-height: 26px; letter-spacing: normal; text-transform: none; }
 /* The browser's ring takes the accent colour, which vanishes on a primary
    button; an ink ring outside the button shows on every fill (#398). */
 .v2-btn:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
@@ -917,6 +937,13 @@ button:disabled { cursor: default; }
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   color: var(--text-primary);
+}
+/* The Simultaneous Time inside Worked Time (#400), only when there is some. */
+.v2-stat__note {
+  margin: 2px 0 0;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
 }
 
 .v2-blank {

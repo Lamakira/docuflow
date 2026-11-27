@@ -8,23 +8,16 @@
  */
 
 import { app } from "electron";
-import { ApiClient } from "../lib/ApiClient";
+import { ApiClient, type ServerTimerSummary } from "../lib/ApiClient";
 import { AgentStore } from "../lib/AgentStore";
 import { heartbeatTimeEntryId } from "../lib/systemAway";
+import { heartbeatTimeEntryIds } from "../lib/simultaneousTimers";
 import { PROTOCOL_BELOW_MINIMUM } from "../lib/agentProtocol";
 const HEARTBEAT_INTERVAL_MS = 60_000;
 
 type TimerSyncCallback = (
-  sync: {
-    entryId: string;
-    status: string;
-    duration: number;
-    taskId?: string | null;
-    lastActivityAt?: string | null;
-    projectName?: string | null;
-    taskName?: string | null;
-    startTime?: string | null;
-  } | null,
+  /** Every active Timer, newest first (#400); one entry or none from a server before it. */
+  timers: ServerTimerSummary[],
   /** When the heartbeat that carried this snapshot was sent (performance.now()). */
   requestedAtMono: number,
 ) => void;
@@ -83,6 +76,8 @@ export class HeartbeatWorker {
         deviceId,
         // #333: no accrual on the server while the Timer is paused here, whatever order commands and heartbeats arrive in.
         timeEntryId: heartbeatTimeEntryId(this.store.getTimerStatus(), this.store.getActiveEntryId()),
+        // #400: every running Timer accrues; `timeEntryId` stays the latest for older servers.
+        timeEntryIds: heartbeatTimeEntryIds(this.store.getTimers()),
         timestamp: new Date().toISOString(),
         clientType: "electron",
         clientVersion: this.store.getClientVersion(),
@@ -94,8 +89,13 @@ export class HeartbeatWorker {
       this.store.touchActivity();
 
       // Propagate server's authoritative timer state for immediate resync
-      if (this.onTimerSync && "timerSync" in result) {
-        this.onTimerSync(result.timerSync ?? null, requestedAtMono);
+      if (this.onTimerSync && ("timers" in result || "timerSync" in result)) {
+        const timers = Array.isArray(result.timers)
+          ? result.timers
+          : result.timerSync
+            ? [result.timerSync]
+            : [];
+        this.onTimerSync(timers, requestedAtMono);
       }
 
       // Propagate full policy (screenshot + idle) so workers update without restart

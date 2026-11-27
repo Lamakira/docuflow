@@ -47,11 +47,18 @@ const WINDOW = {
 
 function Shell() {
   const { state, dispatch } = useAgent();
-  const { clearCompleted } = useUi();
+  const { clearCompleted, showToast } = useUi();
   const status = state.agentState?.timer.status;
 
   // The no-timer reminder's click lands on the Timer screen, where a task is picked.
   useEffect(() => window.agentBridge.onShowTimer(() => dispatch({ type: 'SET_PAGE', page: 'timer' })), [dispatch]);
+
+  // A start the server refused (#400: the option is off, three Timers run, the
+  // task already has one): its Timer is gone, the message says why.
+  useEffect(
+    () => window.agentBridge.onTimerRefused?.(({ message }) => showToast(message, 'error')),
+    [showToast],
+  );
 
   // A task marked complete stays hidden until something starts again — which
   // includes starting the same task a second time.

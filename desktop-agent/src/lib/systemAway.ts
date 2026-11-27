@@ -11,16 +11,21 @@
  */
 
 import type { PendingTimerCommand } from "./SqliteQueue";
+import { isLocalEntryId } from "./simultaneousTimers";
 
 /** A timer command before main gives it a `clientCommandId`. */
 export type TimerCommandDraft = Pick<PendingTimerCommand, "type" | "entryId" | "effectiveAt">;
 
-/** The entry a heartbeat names: only while the Timer runs here. */
+/**
+ * The entry a heartbeat names: only while the Timer runs here, and never a
+ * local placeholder (the server checks it as a UUID). Every running Timer is
+ * named in `timeEntryIds` (lib/simultaneousTimers.ts).
+ */
 export function heartbeatTimeEntryId(
   timerStatus: string,
   activeEntryId: string | null,
 ): string | null {
-  return timerStatus === "running" ? activeEntryId : null;
+  return timerStatus === "running" && !isLocalEntryId(activeEntryId) ? activeEntryId : null;
 }
 
 export function pauseCommandAt(entryId: string, at: Date): TimerCommandDraft {
@@ -43,21 +48,27 @@ export interface SystemAwayPorts {
   now(): Date;
   timerStatus(): string;
   activeEntryId(): string | null;
+  /** Every running Timer (#400). Absent: the active entry alone, as with one Timer. */
+  runningEntryIds?(): string[];
   /** End any idle flow; returns when the idle time began if its countdown was running. */
   cancelIdle(): Date | null;
+  /** Pause every running Timer here at `at`. */
   pauseLocally(at: Date): void;
   enqueue(command: TimerCommandDraft): void;
 }
 
 /**
  * Pause for sleep or screen lock, dated where the idle countdown began if one
- * was running, else now. Returns the pause time, or null when nothing ran.
+ * was running, else now: every running Timer, one pause command each
+ * (ADR-0031). Returns the pause time, or null when nothing ran.
  */
 export function pauseForSystemAway(ports: SystemAwayPorts): Date | null {
-  const entryId = ports.activeEntryId();
-  if (ports.timerStatus() !== "running" || !entryId) return null;
+  if (ports.timerStatus() !== "running") return null;
+  const activeEntryId = ports.activeEntryId();
+  const entryIds = ports.runningEntryIds ? ports.runningEntryIds() : activeEntryId ? [activeEntryId] : [];
+  if (entryIds.length === 0) return null;
   const at = ports.cancelIdle() ?? ports.now();
   ports.pauseLocally(at);
-  ports.enqueue(pauseCommandAt(entryId, at));
+  for (const entryId of entryIds) ports.enqueue(pauseCommandAt(entryId, at));
   return at;
 }

@@ -56,6 +56,19 @@ export interface TimeEntry {
   taskAccumulatedToday?: number;
 }
 
+/** One active Timer as the server lists it (heartbeat `timers`, GET /api/agent/timers). */
+export interface ServerTimerSummary {
+  entryId: string;
+  status: string;
+  duration: number;
+  crmProjectId?: string | null;
+  taskId?: string | null;
+  lastActivityAt?: string | null;
+  projectName?: string | null;
+  taskName?: string | null;
+  startTime?: string | null;
+}
+
 export interface CrmProjectSummary {
   id: string;
   name: string;
@@ -278,7 +291,23 @@ export class ApiClient {
     return this.authenticatedRequest("/api/agent/capabilities", { method: "GET" });
   }
 
-  async startTimer(crmProjectId: string, taskId?: string, description?: string, clientCommandId?: string): Promise<TimeEntry> {
+  /** Every active Timer of the User, newest first (#400, ADR-0031). */
+  async getTimers(): Promise<ServerTimerSummary[]> {
+    const res = await this.authenticatedRequest("/api/agent/timers", { method: "GET" });
+    return res?.data ?? [];
+  }
+
+  /**
+   * `mode: "add"` keeps the User's other Timers; absent (or "switch") stops them.
+   * A refused start answers 409 `{ code, message }` and is not recorded (#400).
+   */
+  async startTimer(
+    crmProjectId: string,
+    taskId?: string,
+    description?: string,
+    clientCommandId?: string,
+    mode?: "add" | "switch",
+  ): Promise<TimeEntry> {
     return this.authenticatedRequest("/api/agent/timer/start", {
       method: "POST",
       body: JSON.stringify({
@@ -289,6 +318,7 @@ export class ApiClient {
         clientType: "desktop",
         clientVersion: this.store.getClientVersion(),
         ...(clientCommandId ? { clientCommandId } : {}),
+        ...(mode ? { mode } : {}),
       }),
     });
   }
@@ -328,16 +358,20 @@ export class ApiClient {
     });
   }
 
-  async getWorkedToday(): Promise<number> {
+  /**
+   * Worked Time today, running Timers included and counted once, with the
+   * Simultaneous Time inside it (#400, ADR-0031).
+   */
+  async getWorkedToday(): Promise<{ total: number; simultaneous: number }> {
     // Use local midnight so "today" matches the user's clock, not the server's UTC timezone
     const now = new Date();
     const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
     const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
     const data = await this.authenticatedRequest(
-      `/api/agent/worked-today?start=${encodeURIComponent(startOfDay.toISOString())}&end=${encodeURIComponent(endOfDay.toISOString())}`,
+      `/api/agent/worked-today?start=${encodeURIComponent(startOfDay.toISOString())}&end=${encodeURIComponent(endOfDay.toISOString())}&includeActive=1`,
       { method: "GET" }
     );
-    return data?.total ?? 0;
+    return { total: data?.total ?? 0, simultaneous: data?.simultaneous ?? 0 };
   }
 
   async getWorkedPeriod(start: Date, end: Date): Promise<number> {
@@ -428,7 +462,11 @@ export class ApiClient {
       lastActivityAt?: string | null;
       projectName?: string | null;
       taskName?: string | null;
+      startTime?: string | null;
     } | null;
+    /** Every active Timer, newest first (#400); absent from servers before it. */
+    timers?: ServerTimerSummary[];
+    screenshotPolicy?: unknown;
   }> {
     const res = await this.authenticatedRequest("/api/agent/heartbeat", {
       method: "POST",

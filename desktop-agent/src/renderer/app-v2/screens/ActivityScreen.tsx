@@ -15,6 +15,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAgent } from '../../app/stores/AgentContext';
 import type { BreakdownRow } from '../../app/types';
 import { ActivityChart } from '../components/ActivityChart';
+import { WorkedTimeStat } from '../components/WorkedTimeStat';
 import { Panel, PanelHead, PanelBody, PanelRow } from '../components/Panel';
 import { Stage, StageHead } from '../components/Stage';
 import { useUi } from '../ui/UiContext';
@@ -189,10 +190,7 @@ export function ActivityScreen() {
             <ActivityChart workedToday={workedToday} refreshKey={chartKey} />
 
             <div className="v2-statgrid">
-              <div className="v2-card v2-stat">
-                <span className="v2-stat__label">WORKED TODAY</span>
-                <p className="v2-stat__value">{formatHM(workedToday)}</p>
-              </div>
+              <WorkedTimeStat label="WORKED TIME" total={workedToday} simultaneous={timer?.simultaneousToday ?? 0} />
               <div className="v2-card v2-stat">
                 <span className="v2-stat__label">CURRENT SESSION</span>
                 <p className="v2-stat__value">{formatElapsed(timer?.elapsedToday ?? 0)}</p>

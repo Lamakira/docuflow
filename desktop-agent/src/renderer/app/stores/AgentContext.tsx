@@ -32,6 +32,8 @@ const defaultTimerState: TimerState = {
   projectName: null,
   taskName: null,
   description: null,
+  timers: [],
+  simultaneousToday: 0,
 };
 
 const initialState: State = {
@@ -82,6 +84,7 @@ function reducer(state: State, action: Action): State {
         apiBaseSource: action.payload.apiBaseSource ?? null,
         timer: action.payload.timer ?? defaultTimerState,
         timerRequiresTask: action.payload.timerRequiresTask ?? prev?.timerRequiresTask,
+        simultaneousTimersEnabled: action.payload.simultaneousTimersEnabled === true,
         // Every push carries it, so absent means cleared (#398).
         updateRequired: action.payload.updateRequired ?? null,
       };
@@ -129,6 +132,10 @@ function reducer(state: State, action: Action): State {
             elapsed: state.agentState.timer.elapsed + 1,
             elapsedToday: state.agentState.timer.elapsedToday + 1,
             thisSession: state.agentState.timer.thisSession + 1,
+            // Each running Timer keeps its own clock (#400).
+            timers: state.agentState.timer.timers?.map((t) =>
+              t.status === 'running' ? { ...t, elapsed: t.elapsed + 1, elapsedToday: t.elapsedToday + 1 } : t,
+            ),
           },
         },
       };
@@ -173,10 +180,13 @@ interface AgentContextValue {
     projectName: string;
     description?: string;
     taskDurationToday?: number;
+    mode?: 'add' | 'switch';
   }) => Promise<{ ok: boolean; error?: string }>;
-  pauseTimer: () => Promise<{ ok: boolean; error?: string }>;
-  resumeTimer: () => Promise<{ ok: boolean; error?: string }>;
-  stopTimer: () => Promise<{ ok: boolean; error?: string }>;
+  /** Without an entry id: the Timer the screen shows (#400). */
+  pauseTimer: (entryId?: string) => Promise<{ ok: boolean; error?: string }>;
+  resumeTimer: (entryId?: string) => Promise<{ ok: boolean; error?: string }>;
+  stopTimer: (entryId?: string) => Promise<{ ok: boolean; error?: string }>;
+  stopAllTimers: () => Promise<{ ok: boolean; error?: string }>;
   navigateToSettings: (section: string) => void;
 }
 
@@ -266,6 +276,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
     projectName: string;
     description?: string;
     taskDurationToday?: number;
+    mode?: 'add' | 'switch';
   }) => {
     const result = await bridge.timerStart(args);
     if (result.ok) {
@@ -285,8 +296,8 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
     return result;
   }, []);
 
-  const pauseTimer = useCallback(async () => {
-    const result = await bridge.timerPause();
+  const pauseTimer = useCallback(async (entryId?: string) => {
+    const result = await bridge.timerPause(entryId ? { entryId } : undefined);
     if (result.ok) {
       const s = await bridge.getState();
       dispatch({ type: 'STATE_UPDATE', payload: s });
@@ -294,8 +305,8 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
     return result;
   }, []);
 
-  const resumeTimer = useCallback(async () => {
-    const result = await bridge.timerResume();
+  const resumeTimer = useCallback(async (entryId?: string) => {
+    const result = await bridge.timerResume(entryId ? { entryId } : undefined);
     if (result.ok) {
       const s = await bridge.getState();
       dispatch({ type: 'STATE_UPDATE', payload: s });
@@ -303,8 +314,18 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
     return result;
   }, []);
 
-  const stopTimer = useCallback(async () => {
-    const result = await bridge.timerStop();
+  const stopTimer = useCallback(async (entryId?: string) => {
+    const result = await bridge.timerStop(entryId ? { entryId } : undefined);
+    if (result.ok) {
+      const s = await bridge.getState();
+      dispatch({ type: 'STATE_UPDATE', payload: s });
+    }
+    return result;
+  }, []);
+
+  const stopAllTimers = useCallback(async () => {
+    if (!bridge.timerStopAll) return { ok: false, error: 'Update the app to stop every Timer at once' };
+    const result = await bridge.timerStopAll();
     if (result.ok) {
       const s = await bridge.getState();
       dispatch({ type: 'STATE_UPDATE', payload: s });
@@ -318,7 +339,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <AgentContext.Provider
-      value={{ state, dispatch, login, logout, startTimer, pauseTimer, resumeTimer, stopTimer, navigateToSettings }}
+      value={{ state, dispatch, login, logout, startTimer, pauseTimer, resumeTimer, stopTimer, stopAllTimers, navigateToSettings }}
     >
       {children}
     </AgentContext.Provider>
