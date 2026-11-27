@@ -69,7 +69,8 @@ export function dayCalendar(timeZone: string): DayCalendar {
   };
 }
 
-function nextDay(day: string): string {
+/** The calendar day after `day` ("YYYY-MM-DD"). */
+export function nextCalendarDay(day: string): string {
   return new Date(Date.parse(`${day}T00:00:00.000Z`) + 24 * HOUR_MS).toISOString().slice(0, 10);
 }
 
@@ -85,7 +86,7 @@ export function dayPortions(
   if (end < at) return days;
   do {
     const date = calendar.dayOf(at);
-    const next = calendar.startOfDay(nextDay(date));
+    const next = calendar.startOfDay(nextCalendarDay(date));
     const until = next < end ? next : end;
     days.push({ date, ...timePortion(span, { start: at, end: until }) });
     at = until;

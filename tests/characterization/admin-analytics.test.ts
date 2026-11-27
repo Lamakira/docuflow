@@ -113,7 +113,7 @@ describe("admin analytics (characterization)", () => {
     );
 
     const rows = exported.text.split("\r\n");
-    expect(rows[0]).toBe("\uFEFFDate,Start,End,Member,Client,Project,Task,Description,Status,Tracked (h),Idle (h)");
+    expect(rows[0]).toBe("\uFEFFDate,Start,End,Member,Client,Project,Task,Description,Status,Tracked (h),Idle (h),Worked (h)");
     // Newest first: the running entry, then the stopped one.
     expect(rows).toHaveLength(3);
     expect(rows[1]).toContain('"still going","running"');

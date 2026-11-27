@@ -317,4 +317,72 @@ describe("Simultaneous Timers through the Time module (#400)", () => {
     expect(active.map((entry) => entry.taskId)).toEqual([w.map.id, w.ledger.id]);
     expect((await w.storage.getActiveTimeEntry(w.user.id))?.taskId).toBe(w.map.id);
   });
+
+  describe("Worked Time counts each hour once (ADR-0031)", () => {
+    const day = { startDate: new Date("2026-08-01T00:00:00.000Z"), endDate: new Date("2026-08-01T23:59:59.999Z") };
+
+    it("gives 4h on A and 2h on B, 1h30 of it together, 4h30 of Worked Time and 1h30 simultaneous", async () => {
+      const w = await seed();
+      await setOption(true);
+      const a = (await command(w.user.id, "start", 0, { crmProjectId: w.atlas.id, taskId: w.ledger.id })).timeEntry!;
+      const b = (
+        await command(w.user.id, "start", 150, { crmProjectId: w.borealis.id, taskId: w.map.id, mode: "add" })
+      ).timeEntry!;
+      await command(w.user.id, "stop", 240, { timeEntryId: a.id });
+      await command(w.user.id, "stop", 270, { timeEntryId: b.id });
+
+      const stats = await inSeededWorkspace(() => w.storage.getTimeStats({ userId: w.user.id, ...day }));
+      expect(stats.totalDuration).toBe(270 * 60);
+      expect(stats.simultaneousDuration).toBe(90 * 60);
+      expect(stats.byUser).toEqual([expect.objectContaining({ userId: w.user.id, totalDuration: 270 * 60 })]);
+      const project = (id: string) => stats.byProject.find((row) => row.crmProjectId === id)?.totalDuration;
+      expect([project(w.atlas.id), project(w.borealis.id)]).toEqual([240 * 60, 120 * 60]);
+
+      const analytics = { startDate: day.startDate, endDate: day.endDate, timeZone: "UTC", userId: w.user.id };
+      const productivity = await inSeededWorkspace(() => w.storage.getAdminProductivity(analytics));
+      expect(productivity.byUser[0].totalSeconds).toBe(270 * 60);
+      expect(productivity.dailyTrend).toEqual([{ date: "2026-08-01", totalSeconds: 270 * 60 }]);
+      const overview = await inSeededWorkspace(() => w.storage.getAdminOverview(analytics));
+      expect(overview.totalTrackedSeconds).toBe(270 * 60);
+
+      const exported = await inSeededWorkspace(() => w.storage.getTimeExport(analytics));
+      expect(exported.reduce((sum, row) => sum + row.seconds, 0)).toBe(360 * 60);
+      expect(exported.reduce((sum, row) => sum + row.workedSeconds, 0)).toBe(270 * 60);
+    });
+
+    it("gives two Tasks of one Project an hour each and the Project one hour when they run together", async () => {
+      const w = await seed();
+      await setOption(true);
+      const a = (await command(w.user.id, "start", 0, { crmProjectId: w.atlas.id, taskId: w.ledger.id })).timeEntry!;
+      const b = (
+        await command(w.user.id, "start", 0, { crmProjectId: w.atlas.id, taskId: w.audit.id, mode: "add" })
+      ).timeEntry!;
+      await command(w.user.id, "stop", 60, { timeEntryId: a.id });
+      await command(w.user.id, "stop", 60, { timeEntryId: b.id });
+
+      const stats = await inSeededWorkspace(() => w.storage.getTimeStats({ userId: w.user.id, ...day }));
+      expect(stats.byProject).toEqual([expect.objectContaining({ crmProjectId: w.atlas.id, totalDuration: 3600 })]);
+      expect([stats.totalDuration, stats.simultaneousDuration]).toEqual([3600, 3600]);
+      const tasks = await inSeededWorkspace(() =>
+        w.storage.getTasksDurationToday(w.user.id, [w.ledger.id, w.audit.id], day.startDate, day.endDate),
+      );
+      expect(tasks).toEqual({ [w.ledger.id]: 3600, [w.audit.id]: 3600 });
+    });
+
+    it("counts no simultaneous time while one Timer is paused and the other runs", async () => {
+      const w = await seed();
+      await setOption(true);
+      const a = (await command(w.user.id, "start", 0, { crmProjectId: w.atlas.id, taskId: w.ledger.id })).timeEntry!;
+      await command(w.user.id, "pause", 10, { timeEntryId: a.id });
+      const b = (
+        await command(w.user.id, "start", 20, { crmProjectId: w.borealis.id, taskId: w.map.id, mode: "add" })
+      ).timeEntry!;
+      await command(w.user.id, "stop", 40, { timeEntryId: b.id });
+      await command(w.user.id, "resume", 50, { timeEntryId: a.id, discardIdleTime: true });
+      await command(w.user.id, "stop", 60, { timeEntryId: a.id });
+
+      const stats = await inSeededWorkspace(() => w.storage.getTimeStats({ userId: w.user.id, ...day }));
+      expect([stats.totalDuration, stats.simultaneousDuration]).toEqual([40 * 60, 0]);
+    });
+  });
 });
