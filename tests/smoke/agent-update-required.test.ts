@@ -117,7 +117,8 @@ describe("agent update required (#398)", () => {
     expect(gate.state).toEqual({ minProtocolVersion: 2 });
     expect(gate.blocksCapture).toBe(true);
     expect(p.stopCapture).toHaveBeenCalledTimes(1);
-    expect(p.save).toHaveBeenCalledWith({ minProtocolVersion: 2 });
+    // Saved with the version this build declared, so the next build ignores it.
+    expect(p.save).toHaveBeenCalledWith({ minProtocolVersion: 2, declaredProtocolVersion: AGENT_PROTOCOL_VERSION });
 
     await expect(client.getProjects()).rejects.toMatchObject({ code: "protocol_below_minimum" });
     expect(p.stopCapture).toHaveBeenCalledTimes(1);
@@ -218,7 +219,7 @@ describe("agent update required (#398)", () => {
 
   it("starts blocked from a saved state, and reset() clears without restarting capture", () => {
     const p = ports();
-    const gate = new UpdateRequiredGate(p, { minProtocolVersion: 3 });
+    const gate = new UpdateRequiredGate(p, { minProtocolVersion: 3, declaredProtocolVersion: AGENT_PROTOCOL_VERSION });
     expect(gate.blocksCapture).toBe(true);
     expect(gate.state).toEqual({ minProtocolVersion: 3 });
 
@@ -228,10 +229,23 @@ describe("agent update required (#398)", () => {
     expect(p.save).not.toHaveBeenCalled();
   });
 
+  it("ignores a state saved by a build that declared another version, so the updated agent starts unblocked", () => {
+    const p = ports();
+    // The refused build declared 1; the installed one declares 2 and finds the old file.
+    const updated = new UpdateRequiredGate(p, { minProtocolVersion: 2, declaredProtocolVersion: 1 }, 2);
+    expect(updated.blocksCapture).toBe(false);
+    expect(updated.state).toBeNull();
+
+    // A file written before the version was saved alongside the state.
+    const legacy = new UpdateRequiredGate(p, { minProtocolVersion: 2 } as never);
+    expect(legacy.blocksCapture).toBe(false);
+  });
+
   it("persists the state across a new AgentStore and clearSession resets it", () => {
     expect(store.getUpdateRequired()).toBeNull();
-    store.setUpdateRequired({ minProtocolVersion: 2 });
-    expect(new AgentStore().getUpdateRequired()).toEqual({ minProtocolVersion: 2 });
+    const saved = { minProtocolVersion: 2, declaredProtocolVersion: AGENT_PROTOCOL_VERSION };
+    store.setUpdateRequired(saved);
+    expect(new AgentStore().getUpdateRequired()).toEqual(saved);
 
     store.clearSession();
     expect(store.getUpdateRequired()).toBeNull();

@@ -17,6 +17,12 @@ export const AGENT_PROTOCOL_HEADERS: Readonly<Record<string, string>> = {
 
 export type UpdateRequired = { minProtocolVersion: number | null };
 
+/**
+ * The state as saved on the Device, with the version the refused build declared.
+ * The file outlives an install, so the updated build must not read it as its own.
+ */
+export type SavedUpdateRequired = UpdateRequired & { declaredProtocolVersion: number };
+
 /** What ApiClient tells about the server's verdict on this agent's protocol version. */
 export interface ProtocolListener {
   refused(state: UpdateRequired): void;
@@ -35,7 +41,7 @@ export function protocolRefusal(body: unknown): UpdateRequired | null {
 export interface UpdateRequiredPorts {
   stopCapture(): void;
   startCapture(): void;
-  save(state: UpdateRequired | null): void;
+  save(state: SavedUpdateRequired | null): void;
   changed(): void;
 }
 
@@ -50,8 +56,23 @@ export interface UpdateRequiredPorts {
 export class UpdateRequiredGate implements ProtocolListener {
   private current: UpdateRequired | null;
 
-  constructor(private ports: UpdateRequiredPorts, saved: UpdateRequired | null) {
-    this.current = saved;
+  /**
+   * `saved` blocks from the start only when this build declares the version
+   * that was refused: the Member who installed the new build is not shown
+   * "no longer supported" (offline, for as long as the server is unreachable).
+   */
+  constructor(
+    private ports: UpdateRequiredPorts,
+    saved: SavedUpdateRequired | null,
+    private declared: number = AGENT_PROTOCOL_VERSION,
+  ) {
+    this.current = saved && saved.declaredProtocolVersion === declared
+      ? { minProtocolVersion: saved.minProtocolVersion }
+      : null;
+  }
+
+  private save(state: UpdateRequired | null): void {
+    this.ports.save(state && { ...state, declaredProtocolVersion: this.declared });
   }
 
   get state(): UpdateRequired | null {
@@ -66,14 +87,14 @@ export class UpdateRequiredGate implements ProtocolListener {
   refused(state: UpdateRequired): void {
     if (this.current === null) {
       this.current = state;
-      this.ports.save(state);
+      this.save(state);
       this.ports.stopCapture();
       this.ports.changed();
       return;
     }
     if (this.current.minProtocolVersion !== state.minProtocolVersion) {
       this.current = state;
-      this.ports.save(state);
+      this.save(state);
       this.ports.changed();
     }
   }
@@ -81,7 +102,7 @@ export class UpdateRequiredGate implements ProtocolListener {
   accepted(): void {
     if (this.current === null) return;
     this.current = null;
-    this.ports.save(null);
+    this.save(null);
     this.ports.startCapture();
     this.ports.changed();
   }
