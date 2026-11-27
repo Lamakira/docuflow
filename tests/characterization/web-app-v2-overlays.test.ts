@@ -267,14 +267,44 @@ describe("controls have hover, focus-visible, and disabled states (#249)", () =>
     expect(tokensCss).toMatch(/\[role="menuitemradio"\][\s\S]*?padding-left:\s*var\(--df-space-7\)/);
   });
 
-  it("rings the palette's search row, not the bare input inside it", () => {
+  it("rings the search row of every cmdk list, not the bare input inside it", () => {
     // `.df-v2 :focus-visible` outranks shadcn's `outline-none` on the input, so
     // without this the amber sat inside the row, with the magnifier outside it,
     // clipped at the top by the palette's overflow.
-    expect(rule(tokensCss, ".df-v2.df-command-palette [cmdk-input]:focus-visible")).toMatch(/outline:\s*none/);
-    expect(
-      rule(tokensCss, ".df-v2.df-command-palette [cmdk-input-wrapper]:has([cmdk-input]:focus-visible)"),
-    ).toMatch(/box-shadow:\s*inset 0 -2px 0 var\(--df-amber\)/);
+    expect(rule(tokensCss, ".df-v2 [cmdk-input]:focus-visible")).toMatch(/outline:\s*none/);
+    expect(rule(tokensCss, ".df-v2 [cmdk-input]:focus-visible")).toMatch(/box-shadow:\s*none/);
+    expect(rule(tokensCss, ".df-v2 [cmdk-input-wrapper]:has([cmdk-input]:focus-visible)")).toMatch(
+      /box-shadow:\s*inset 0 -2px 0 var\(--df-amber\)/,
+    );
+    // `.df-v2 input:not([class*="cl-"]) { font: inherit }` weighs (0,2,1): the size rule
+    // names `input` to weigh as much and comes later, or the field stays at 16px.
+    expect(rule(tokensCss, ".df-v2 input[cmdk-input]")).toMatch(/font-size:\s*var\(--df-text-3\)/);
+    expect(tokensCss.indexOf(".df-v2 input[cmdk-input] {")).toBeGreaterThan(tokensCss.indexOf('.df-v2 input:not([class*="cl-"])'));
+  });
+
+  it("blends the scrollbar of every cmdk list, in one rule", () => {
+    expect(rule(tokensCss, ".df-v2 [cmdk-list]")).toMatch(/scrollbar-gutter:\s*stable/);
+    expect(rule(tokensCss, ".df-v2 [cmdk-list]::-webkit-scrollbar")).toMatch(/width:\s*8px/);
+    expect(rule(tokensCss, ".df-v2 [cmdk-list]::-webkit-scrollbar-button")).toMatch(/display:\s*none/);
+    expect(rule(tokensCss, ".df-v2 [cmdk-list]::-webkit-scrollbar-track")).toMatch(/background:\s*transparent/);
+    expect(rule(tokensCss, ".df-v2 [cmdk-list]:hover::-webkit-scrollbar-thumb")).toMatch(/color-mix/);
+  });
+
+  it("keeps a search list's field bare inside a form field", () => {
+    // `.df-daily-field input` boxes every input in a field; the time zone list's
+    // search sat in a second box inside its own row.
+    expect(rule(tokensCss, ".df-daily-field input[cmdk-input]")).toMatch(/border:\s*0/);
+    expect(tokensCss.indexOf(".df-daily-field input[cmdk-input] {")).toBeGreaterThan(
+      tokensCss.indexOf(".df-daily-field input,"),
+    );
+  });
+
+  it("holds no cmdk focus or scrollbar rule scoped to one picker", () => {
+    // The ring, the font size and the scrollbar were fixed picker by picker, and
+    // the next picker (the time zone one) got none of them.
+    expect(tokensCss).not.toMatch(/\.df-(?!v2\b)[a-z-]+[^{},]*\[cmdk-(input|list)\][^{},]*(focus-visible|webkit-scrollbar)/);
+    // A picker may size its own list; its scrollbar stays the shared one.
+    expect(tokensCss).not.toMatch(/\.df-(?!v2\b)[a-z-]+[^{},]*\[cmdk-list\]\s*\{[^}]*scrollbar/);
   });
 
   it("anchors the command palette to the top of a phone viewport", () => {

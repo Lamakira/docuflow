@@ -1046,10 +1046,20 @@ describe("Low-activity threshold and Workspace time zone (#341)", () => {
     expect(workspaceTimeZoneChoices("Etc/Unknown-Saved")[0]).toBe("Etc/Unknown-Saved");
     expect(workspaceTimeZoneChoices("Europe/Paris").filter((zone) => zone === "Europe/Paris")).toHaveLength(1);
     // The combobox is the only control: no free-text field, no button beside it.
-    const card = workspaceSource.slice(workspaceSource.indexOf("function WorkspaceTimeZoneCard("));
-    expect(card).toContain("<TimeZoneCombobox");
+    const card = workspaceSource.slice(workspaceSource.indexOf("function WorkspaceTimeZoneFact("));
+    expect(card).toContain("<TimeZoneList");
     expect(card).toContain('<span id="df-workspace-zone-label">Time zone</span>');
+    // The list sits in the dialog itself, not in a popover over it: a popover
+    // opened over the dialog's title, and the dialog's scroll lock froze its list.
+    const list = workspaceSource.slice(workspaceSource.indexOf("function TimeZoneList("));
+    expect(list).toContain('<Command\n      className="df-timezone-list"');
+    expect(workspaceSource).not.toContain("<Popover");
     expect(card).not.toContain('placeholder="Europe/Paris"');
+    expect(workspaceSource).toContain('data-testid="v2-administration-workspace-timezone-change"');
+    expect(workspaceSource).toContain('title="Change time zone"');
+    expect(workspaceSource).toContain('testId="v2-administration-workspace-timezone-dialog"');
+    expect(workspaceSource).not.toContain("No change to save.");
+    expect(workspaceSource).not.toContain("function WorkspaceTimeZoneCard(");
     expect(pageSource).not.toContain("Choose from list");
     expect(pageSource).not.toContain("IANA timezone");
   });
