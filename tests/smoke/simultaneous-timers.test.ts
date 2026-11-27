@@ -386,6 +386,14 @@ describe("Simultaneous Timers through the Time module (#400)", () => {
         w.storage.getTasksDurationToday(w.user.id, [w.ledger.id, w.audit.id], day.startDate, day.endDate),
       );
       expect(tasks).toEqual({ [w.ledger.id]: 3600, [w.audit.id]: 3600 });
+
+      // The budget meter and the Project Dossier count the Project once too (ADR-0031).
+      expect(await inSeededWorkspace(() => w.storage.getCrmProjectTrackedSeconds(w.atlas.id))).toBe(3600);
+      const listed = await inSeededWorkspace(() =>
+        w.storage.getCrmProjects(w.user.id, { page: 1, pageSize: 50, withTrackedTime: true }),
+      );
+      const atlas = listed.data.find((row) => row.id === w.atlas.id) as { trackedSeconds?: number } | undefined;
+      expect(atlas?.trackedSeconds).toBe(3600);
     });
 
     it("counts no simultaneous time while one Timer is paused and the other runs", async () => {

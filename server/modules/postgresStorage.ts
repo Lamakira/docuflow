@@ -146,7 +146,7 @@ import {
   projectStatusFromCombined,
   WON_STATUSES,
 } from "@shared/projectLifecycle";
-import { STALE_THRESHOLD_MS, timeEntrySpan, timePortion } from "@shared/timePortion";
+import { STALE_THRESHOLD_MS, timeEntrySpan, timePortion, type TimeSpan } from "@shared/timePortion";
 import type { TaskBatchPlan } from "@shared/taskBatch";
 import { isUploadedFile } from "@shared/documentFile";
 import { BUILT_IN_LISTS, defaultFieldOptions, type OptionRename } from "@shared/pipelineLists";
@@ -176,7 +176,7 @@ import type { ScreenshotCoverageReport } from "./activity/persistence";
 import { getAllowedTimezones, upsertAllowedTimezones, upsertWorkspaceTimeZone } from "./time/schedule";
 import { applyTimerCommand, listTimerCommands } from "./time/commands";
 import { dayCalendar, dayPortions, nextCalendarDay } from "./time/dayCalendar";
-import { countTime, overlappingEntryIds, runningIntervals, type CountedEntry, type TimeCount } from "./time/workedTime";
+import { countTime, overlappingEntryIds, runningIntervals, type CountedEntry, type Interval, type TimeCount } from "./time/workedTime";
 import type { TimeExportRow } from "./time/timeExport";
 import type {
   AnalyticsOptions,
@@ -1152,6 +1152,13 @@ export class DatabaseStorage implements IStorage {
       .limit(pageSize)
       .offset(offset)
       .then((rows) => rows.map((row) => (withTrackedTime ? { ...row.crmProject, trackedSeconds: Number(row.trackedSeconds) } : row.crmProject)));
+    if (withTrackedTime) {
+      // Counted once where two Tasks of a Project ran together (ADR-0031); the budget sort reads the raw sum.
+      const overlap = await this.projectOverlapSeconds(crmProjectRows.map((row) => row.id));
+      for (const row of crmProjectRows as Array<CrmProject & { trackedSeconds?: number }>) {
+        if (row.trackedSeconds !== undefined) row.trackedSeconds = Math.max(0, row.trackedSeconds - (overlap.get(row.id) ?? 0));
+      }
+    }
 
     // Get all related data
     const projectMap = new Map(allProjects.map((p) => [p.id, p]));
@@ -1318,7 +1325,8 @@ export class DatabaseStorage implements IStorage {
       .select({ seconds: sql<number>`coalesce(sum(${timeEntries.duration}), 0)::int` })
       .from(timeEntries)
       .where(and(eq(timeEntries.crmProjectId, crmProjectId), inWorkspace(timeEntries)));
-    return Number(tracked?.seconds ?? 0);
+    const overlap = await this.projectOverlapSeconds([crmProjectId]);
+    return Math.max(0, Number(tracked?.seconds ?? 0) - (overlap.get(crmProjectId) ?? 0));
   }
 
   async getCrmProjectByProjectId(projectId: string): Promise<CrmProject | undefined> {
@@ -2935,27 +2943,86 @@ export class DatabaseStorage implements IStorage {
     window: { start?: Date; end?: Date },
   ): Promise<{ count: TimeCount; entries: CountedEntry[]; overlapping: Set<string> }> {
     const overlapping = overlappingEntryIds(rows.filter((row) => row.provenance === "command"));
-    const commandsByEntry = new Map<string, Array<{ kind: string; at: Date }>>();
-    if (overlapping.size > 0) {
-      const commands = await db
-        .select({ timeEntryId: timerCommands.timeEntryId, kind: timerCommands.kind, at: timerCommands.claimedEffectiveAt })
-        .from(timerCommands)
-        .where(and(inArray(timerCommands.timeEntryId, Array.from(overlapping)), inWorkspace(timerCommands)))
-        .orderBy(asc(timerCommands.claimedEffectiveAt), asc(timerCommands.receivedAt), asc(timerCommands.sequence));
-      for (const command of commands) {
-        const id = command.timeEntryId!;
-        commandsByEntry.set(id, [...(commandsByEntry.get(id) ?? []), { kind: command.kind, at: command.at }]);
-      }
-    }
+    const intervals = await this.runningIntervalsOf(rows.filter((row) => overlapping.has(row.id)));
     const entries: CountedEntry[] = rows.map((row) => ({
       id: row.id,
       userId: row.userId,
       crmProjectId: row.crmProjectId,
       seconds: row.seconds,
       // No intervals: an entry that ran beside nothing has nothing to take off.
-      intervals: overlapping.has(row.id) ? runningIntervals(row.span, commandsByEntry.get(row.id) ?? []) : [],
+      intervals: intervals.get(row.id) ?? [],
     }));
     return { count: countTime(entries, window), entries, overlapping };
+  }
+
+  /** When each entry's Timer ran, from its Timer Commands in order (ADR-0031). */
+  private async runningIntervalsOf(rows: Array<{ id: string; span: TimeSpan }>): Promise<Map<string, Interval[]>> {
+    const intervals = new Map<string, Interval[]>();
+    if (rows.length === 0) return intervals;
+    const commands = await db
+      .select({ timeEntryId: timerCommands.timeEntryId, kind: timerCommands.kind, at: timerCommands.claimedEffectiveAt })
+      .from(timerCommands)
+      .where(and(inArray(timerCommands.timeEntryId, rows.map((row) => row.id)), inWorkspace(timerCommands)))
+      .orderBy(asc(timerCommands.claimedEffectiveAt), asc(timerCommands.receivedAt), asc(timerCommands.sequence));
+    for (const row of rows) {
+      const own = commands.filter((command) => command.timeEntryId === row.id);
+      intervals.set(row.id, runningIntervals(row.span, own));
+    }
+    return intervals;
+  }
+
+  /**
+   * The seconds two of one Member's Timers on the same Project ran together:
+   * what the raw sum of the Project's entries counts twice. The budget meter
+   * and the Project Dossier take it off, so a Project counts an hour once
+   * (ADR-0031). Only entries recorded by Timer Commands can overlap.
+   */
+  private async projectOverlapSeconds(crmProjectIds: string[]): Promise<Map<string, number>> {
+    const overlap = new Map<string, number>();
+    if (crmProjectIds.length === 0) return overlap;
+    const now = new Date();
+    const at = sql`${now.toISOString()}::timestamp`;
+    const candidates = await db
+      .select({
+        id: timeEntries.id,
+        userId: timeEntries.userId,
+        crmProjectId: timeEntries.crmProjectId,
+        startTime: timeEntries.startTime,
+        endTime: timeEntries.endTime,
+        duration: timeEntries.duration,
+        idleTime: timeEntries.idleTime,
+        status: timeEntries.status,
+        lastActivityAt: timeEntries.lastActivityAt,
+      })
+      .from(timeEntries)
+      .where(and(
+        inArray(timeEntries.crmProjectId, crmProjectIds),
+        eq(timeEntries.provenance, "command"),
+        inWorkspace(timeEntries),
+        // Another of the same Member's entries on the same Project whose wall time meets this one.
+        sql`exists (select 1 from time_entries o
+          where o.user_id = ${timeEntries.userId} and o.crm_project_id = ${timeEntries.crmProjectId}
+            and o.workspace_id = ${timeEntries.workspaceId} and o.id <> ${timeEntries.id} and o.provenance = 'command'
+            and o.start_time < coalesce(${timeEntries.endTime}, ${at})
+            and ${timeEntries.startTime} < coalesce(o.end_time, ${at}))`,
+      ));
+    if (candidates.length === 0) return overlap;
+    const rows = candidates.map((row) => ({ ...row, span: timeEntrySpan(row, now) }));
+    const intervals = await this.runningIntervalsOf(rows);
+    const counted = countTime(rows.map((row) => ({
+      id: row.id,
+      userId: row.userId,
+      crmProjectId: row.crmProjectId,
+      seconds: row.span.seconds,
+      intervals: intervals.get(row.id) ?? [],
+    })));
+    for (const row of rows) overlap.set(row.crmProjectId, (overlap.get(row.crmProjectId) ?? 0) + row.span.seconds);
+    for (const projects of Array.from(counted.projectByUser.values())) {
+      for (const [crmProjectId, once] of Array.from(projects.entries())) {
+        overlap.set(crmProjectId, (overlap.get(crmProjectId) ?? 0) - once);
+      }
+    }
+    return overlap;
   }
 
   async getTimeEntry(id: string): Promise<TimeEntryWithDetails | undefined> {
