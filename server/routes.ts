@@ -82,6 +82,7 @@ import { registerPublicApiV1 } from "./publicApi/http";
 import { getWorkspaceTimeZone } from "./modules/time";
 import { MAX_SIMULTANEOUS_TIMERS } from "@shared/schema";
 import { readStartMode, sendStartRefusal, startModePayload } from "./timerStartHttp";
+import { namedActiveTimers } from "./activeTimers";
 import { FieldListChangedError, saveOrgSettings } from "./modules/postgresStorage";
 import type { ScreenshotListOptions } from "./modules/activity/evidence";
 import { isLowActivityThreshold } from "@shared/activityEvidence";
@@ -4610,13 +4611,14 @@ Instructions:
   });
 
   /**
-   * Every active Timer of the caller, newest first (ADR-0031), each with its
-   * Task's stopped time today as `/active` gives it. `/active` stays the latest one.
+   * Every active Timer of the caller, newest first (ADR-0031), with its Project
+   * and Task names and its Task's stopped time today as `/active` gives it.
+   * `/active` stays the latest one.
    */
   app.get("/api/time-tracking/timers", isAuthenticated, async (req: any, res) => {
     try {
       const userId = getUserId(req)!;
-      const entries = await storage.getActiveTimeEntries(userId);
+      const entries = await namedActiveTimers(userId);
       const { startOfDay, endOfDay } = serverDayWindow(new Date());
       const timers = [];
       for (const entry of entries) {

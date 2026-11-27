@@ -17,6 +17,7 @@ import { config } from "./config";
 import { agentProtocolHandshake, allowAgentProtocol, declaredAgentProtocolVersion } from "./agentProtocol";
 import { MAX_SIMULTANEOUS_TIMERS } from "@shared/schema";
 import { readStartMode, sendStartRefusal, startModePayload } from "./timerStartHttp";
+import { namedActiveTimers } from "./activeTimers";
 import { issueAccessToken, verifyAccessToken } from "./desktopTokens";
 import { logInfo, logError, logTimeEvent } from "./logger";
 import { parseObjectPath, storagePort, workspaceScreenshotKey } from "./objectStorage";
@@ -234,33 +235,17 @@ const confirmSchema = z.object({
 
 /** The User's active Timers as a Device resyncs them, newest first, with their names. */
 async function syncedTimers(userId: string) {
-  const timers = [];
-  for (const entry of await storage.getActiveTimeEntries(userId)) {
-    let projectName: string | null = null;
-    let taskName: string | null = null;
-    try {
-      const crmProject = await storage.getCrmProject(entry.crmProjectId);
-      projectName = (crmProject as any)?.project?.name ?? null;
-    } catch { /* non-fatal */ }
-    if (entry.taskId) {
-      try {
-        const task = await storage.getTask(entry.taskId);
-        taskName = task?.name ?? null;
-      } catch { /* non-fatal */ }
-    }
-    timers.push({
-      entryId: entry.id,
-      status: entry.status,
-      duration: entry.duration ?? 0,
-      crmProjectId: entry.crmProjectId,
-      taskId: entry.taskId ?? null,
-      lastActivityAt: entry.lastActivityAt ?? null,
-      projectName,
-      taskName,
-      startTime: new Date(entry.startTime).toISOString(),
-    });
-  }
-  return timers;
+  return (await namedActiveTimers(userId)).map((entry) => ({
+    entryId: entry.id,
+    status: entry.status,
+    duration: entry.duration ?? 0,
+    crmProjectId: entry.crmProjectId,
+    taskId: entry.taskId ?? null,
+    lastActivityAt: entry.lastActivityAt ?? null,
+    projectName: entry.projectName,
+    taskName: entry.taskName,
+    startTime: new Date(entry.startTime).toISOString(),
+  }));
 }
 
 // ─── Route registration ───

@@ -1,4 +1,5 @@
 import { useStartTimer } from "./V2StartTimer";
+import { projectTasksQuery } from "@/lib/projectTasks";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useParams, useSearch } from "wouter";
 import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
@@ -218,11 +219,7 @@ function TimeEntriesPane() {
   // them does not move the running Timer's.
   const [anotherProjectId, setAnotherProjectId] = useState("");
   const [anotherTaskId, setAnotherTaskId] = useState("");
-  const { data: anotherTasks } = useQuery<TasksResponse>({
-    queryKey: ["/api/tasks", anotherProjectId],
-    queryFn: () => fetch(`/api/tasks?crmProjectId=${anotherProjectId}`, { credentials: "include" }).then((r) => r.json()),
-    enabled: Boolean(anotherProjectId),
-  });
+  const { data: anotherTasks } = useQuery(projectTasksQuery<ProjectTask>(anotherProjectId));
   useEffect(() => {
     setAnotherProjectId("");
     setAnotherTaskId("");

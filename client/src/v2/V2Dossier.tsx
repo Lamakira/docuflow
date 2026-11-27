@@ -1,4 +1,5 @@
 import { useStartTimer } from "./V2StartTimer";
+import { projectTasksQuery } from "@/lib/projectTasks";
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Link2, Pencil, PanelLeft, PanelLeftClose, Plus, RotateCcw, Trash2, Upload } from "lucide-react";
 import { Link, useLocation } from "wouter";
@@ -329,12 +330,7 @@ export function V2DossierPage() {
     },
   });
 
-  const { data: tasksResponse } = useQuery<{ data: Task[] }>({
-    queryKey: ["/api/tasks", projectId],
-    enabled: Boolean(projectId),
-    queryFn: () =>
-      fetch(`/api/tasks?crmProjectId=${projectId}`, { credentials: "include" }).then((res) => res.json()),
-  });
+  const { data: tasksResponse } = useQuery(projectTasksQuery(projectId));
 
   const projectRecordId = project?.project?.id;
   const { data: documents = [], isPending: documentsPending } = useQuery<Document[]>({

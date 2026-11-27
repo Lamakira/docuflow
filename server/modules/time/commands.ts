@@ -324,16 +324,7 @@ async function loadCommand(
   origin: string,
   sequence: number
 ): Promise<TimerCommand> {
-  const [existing] = await writer
-    .select()
-    .from(timerCommands)
-    .where(
-      and(
-        eq(timerCommands.origin, origin),
-        eq(timerCommands.sequence, sequence),
-        inWorkspace(timerCommands)
-      )
-    );
+  const existing = await findCommand(writer, origin, sequence);
   if (!existing) {
     throw new Error(`Timer Command ${origin}#${sequence} was not stored`);
   }

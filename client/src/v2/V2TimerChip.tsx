@@ -1,7 +1,5 @@
 import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
-import { useQuery } from "@tanstack/react-query";
-import type { Task } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useTimeTracker } from "@/contexts/TimeTrackerContext";
@@ -94,9 +92,9 @@ export function V2TimerChip({
   }
 
   const extraTimers = timers.length - 1;
-  const projectNamesOf = (crmProjectId: string) => {
+  const projectNamesOf = (crmProjectId: string, serverName?: string | null) => {
     const row = projects.find((item) => item.id === crmProjectId);
-    return { projectName: row?.project?.name || "Project", clientName: row?.client?.name || null };
+    return { projectName: serverName || row?.project?.name || "Project", clientName: row?.client?.name || null };
   };
 
   const strip = variant === "strip";
@@ -189,7 +187,7 @@ export function V2TimerChip({
                 <TimerRow
                   key={timer.id}
                   timer={timer}
-                  {...projectNamesOf(timer.crmProjectId)}
+                  {...projectNamesOf(timer.crmProjectId, timer.projectName)}
                   onPause={async () => {
                     if (await handlePauseTimer(timer.id)) notify.success("Timer paused");
                   }}
@@ -248,11 +246,8 @@ function TimerRow({
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
   }, [running]);
-  const { data: tasks } = useQuery<{ data: Task[] }>({
-    queryKey: ["/api/tasks", timer.crmProjectId],
-    queryFn: () => fetch(`/api/tasks?crmProjectId=${timer.crmProjectId}`).then((r) => r.json()),
-  });
-  const taskName = tasks?.data?.find((item) => item.id === timer.taskId)?.name ?? null;
+  // Read by the server with the Timer: no load of its own that could fail here.
+  const taskName = timer.taskName ?? null;
   const elapsed =
     (timer.duration || 0) +
     (running && timer.lastActivityAt ? Math.max(0, Math.floor((now - new Date(timer.lastActivityAt).getTime()) / 1000)) : 0);

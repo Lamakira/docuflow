@@ -94,6 +94,11 @@ describe("Simultaneous Timers over HTTP (#400)", () => {
 
     const timers = await admin.agent.get("/api/time-tracking/timers");
     expect(timers.body.data.map((t: { taskId: string }) => t.taskId)).toEqual([w.map, w.ledger]);
+    // The names come with the Timers, so the chip's list loads nothing of its own.
+    expect(timers.body.data.map((t: { projectName: string; taskName: string }) => [t.projectName, t.taskName])).toEqual([
+      ["Borealis", "Map"],
+      ["Atlas", "Ledger"],
+    ]);
     expect((await admin.agent.get("/api/time-tracking/active")).body.id).toBe(added.body.id);
 
     const stopped = await admin.agent.post("/api/time-tracking/stop-all");

@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo, type ReactNode } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { projectTasksQuery } from "@/lib/projectTasks";
 import { useToast } from "@/hooks/use-toast";
 import { MultiTabCoordinator, type TabRole, type TimeTrackingSyncPayload } from "@/lib/MultiTabCoordinator";
 import { ScreenCaptureWebService } from "@/lib/ScreenCaptureWebService";
@@ -9,8 +10,8 @@ import type { TimeEntry, CrmProjectWithDetails, Task } from "@shared/schema";
 /** The active entry as `GET /api/time-tracking/active` serves it. */
 type ActiveTimeEntry = TimeEntry & { taskAccumulatedToday?: number };
 
-/** Every running or paused Timer of the caller, newest first. */
-type TimerEntry = ActiveTimeEntry;
+/** Every running or paused Timer of the caller, newest first, with the names the server read. */
+type TimerEntry = ActiveTimeEntry & { projectName?: string | null; taskName?: string | null };
 
 /** How Start meets a Timer already running (ADR-0031): add beside it, or switch to the new one. */
 export type StartMode = "add" | "switch";
@@ -148,14 +149,7 @@ export function TimeTrackerProvider({ children, report }: { children: ReactNode;
     return queryClient.invalidateQueries({ queryKey: ["/api/time-tracking/active"] });
   }, []);
 
-  const { data: tasksResponse, isLoading: isTasksListLoading } = useQuery<{ data: Task[] }>({
-    queryKey: ["/api/tasks", selectedProjectId],
-    queryFn: () =>
-      selectedProjectId
-        ? fetch(`/api/tasks?crmProjectId=${selectedProjectId}`).then((r) => r.json())
-        : Promise.resolve({ data: [] }),
-    enabled: !!selectedProjectId,
-  });
+  const { data: tasksResponse, isLoading: isTasksListLoading } = useQuery(projectTasksQuery(selectedProjectId));
 
   const tasks = tasksResponse?.data ?? [];
 
