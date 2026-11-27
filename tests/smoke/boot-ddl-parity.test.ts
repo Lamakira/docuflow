@@ -125,14 +125,30 @@ function indexDefinitions(rows: { table_name: string; index_name: string; defini
     .sort();
 }
 
+/**
+ * #400's Simultaneous Timer indexes are later than boot. Both name `task_id`,
+ * which this suite drops and boot adds back, so the scratch side loses them.
+ */
+const LATER_THAN_BOOT_INDEXES = [
+  "idx_time_entries_one_active_timer_per_task",
+  "idx_time_entries_one_taskless_timer_per_project",
+];
+
+/** #400's `devices.agent_protocol_version` is later than boot too. */
+const LATER_THAN_BOOT_COLUMNS = ["agent_protocol_version"];
+
 /** #94's Workspace stamp is later than boot; drop it so the boot shape still compares. */
-function withoutWorkspaceStamp<T extends { columns: { column_name: string }[]; indexes: { definition: string }[]; constraints: { definition: string }[] }>(
+function withoutWorkspaceStamp<T extends { columns: { column_name: string }[]; indexes: { index_name: string; definition: string }[]; constraints: { definition: string }[] }>(
   snapshot: T
 ): T {
   return {
     ...snapshot,
-    columns: snapshot.columns.filter((row) => row.column_name !== "workspace_id"),
-    indexes: snapshot.indexes.filter((row) => !row.definition.includes("workspace_id")),
+    columns: snapshot.columns.filter(
+      (row) => row.column_name !== "workspace_id" && !LATER_THAN_BOOT_COLUMNS.includes(row.column_name),
+    ),
+    indexes: snapshot.indexes.filter(
+      (row) => !row.definition.includes("workspace_id") && !LATER_THAN_BOOT_INDEXES.includes(row.index_name),
+    ),
     constraints: snapshot.constraints.filter((row) => !row.definition.includes("workspace_id")),
   };
 }

@@ -14,6 +14,7 @@ import { db } from "../../db";
 import { inWorkspace, requireWorkspaceContext, stampWorkspace } from "../../workspaceContext";
 import { planStanding } from "../billing/entitlements";
 import { PlanFeatureNotIncludedError } from "../billing/featureGate";
+import { simultaneousTimersLaunched } from "../../simultaneousTimersLaunch";
 
 /** Handshake-facing revision of Tracking Policy. v1 is the current capture rules. */
 export const TRACKING_POLICY_VERSION = 1;
@@ -38,6 +39,21 @@ export type DeliveredTrackingPolicy = ScreenshotPolicy & {
   screenshotProjectCapacity: number | null;
 };
 
+/**
+ * Whether a Member of the current Workspace may add a Timer beside a running
+ * one (ADR-0031): the option is on, the launch has passed, and the Plan has
+ * Tasks (Starter has one Project and no Tasks, so it never runs two).
+ */
+export async function simultaneousTimersAllowed(): Promise<boolean> {
+  if (!simultaneousTimersLaunched()) return false;
+  const [policy, { entitlements }] = await Promise.all([getScreenshotPolicy(), planStanding()]);
+  return simultaneousTimersOn(policy, entitlements.features.projectManagement);
+}
+
+function simultaneousTimersOn(policy: ScreenshotPolicy, projectManagement: boolean): boolean {
+  return policy.simultaneousTimersEnabled && projectManagement && simultaneousTimersLaunched();
+}
+
 export async function deliveredTrackingPolicy(
   runningCrmProjectId?: string | null
 ): Promise<DeliveredTrackingPolicy> {
@@ -53,6 +69,7 @@ export async function deliveredTrackingPolicy(
     ...policy,
     screenshotsEnabled: policy.screenshotsEnabled && onChosenProject,
     screenshotProjectIds,
+    simultaneousTimersEnabled: simultaneousTimersOn(policy, entitlements.features.projectManagement),
     activityCaptureEnabled: entitlements.features.activityCapture,
     screenshotProjectCapacity: capacity,
   };

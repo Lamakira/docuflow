@@ -1484,9 +1484,16 @@ export const timeEntries = pgTable("time_entries", {
   // Named as the boot-time DDL named it, which is the name production already
   // carries. Declared here so the journal produces it too — see migration 0004.
   index("idx_time_entries_task_id").on(table.taskId),
-  uniqueIndex("idx_time_entries_one_active_timer_per_user")
-    .on(table.userId)
-    .where(sql`${table.status} IN ('running', 'paused')`),
+  // Simultaneous Timers (ADR-0031): at most one active Timer per User per Task,
+  // and per Project for a Timer without a Task. The cap of three, the whole
+  // Project a task-less Timer occupies and the single Workspace are checked at
+  // start, under the User's lock (server/modules/time/commands.ts).
+  uniqueIndex("idx_time_entries_one_active_timer_per_task")
+    .on(table.userId, table.taskId)
+    .where(sql`${table.status} IN ('running', 'paused') AND ${table.taskId} IS NOT NULL`),
+  uniqueIndex("idx_time_entries_one_taskless_timer_per_project")
+    .on(table.userId, table.crmProjectId)
+    .where(sql`${table.status} IN ('running', 'paused') AND ${table.taskId} IS NULL`),
   idInWorkspace(table, "time_entries"),
   workspaceScopedFk("time_entries_project_workspace_fk", [table.crmProjectId, table.workspaceId], crmProjects),
 ]);
@@ -1527,7 +1534,19 @@ export interface TimerCommandPayload {
   timeEntryId?: string;
   clientCommandId?: string;
   discardIdleTime?: boolean;
+  /**
+   * A start's effect on the Timers already running (ADR-0031): `add` keeps
+   * them, `switch` stops them. Absent is `switch`, as every start was before.
+   * Recorded so a replay applies what was asked, whatever the policy is now.
+   */
+  mode?: TimerStartMode;
 }
+
+export const timerStartModes = ["add", "switch"] as const;
+export type TimerStartMode = (typeof timerStartModes)[number];
+
+/** The most Timers one User runs at once (ADR-0031). */
+export const MAX_SIMULTANEOUS_TIMERS = 3;
 
 export const timerCommands = pgTable(
   "timer_commands",
@@ -1648,6 +1667,24 @@ export const insertTimeEntryScreenshotSchema = createInsertSchema(timeEntryScree
   createdAt: true,
 });
 
+/**
+ * The other Timers a capture was taken under (ADR-0031). The screenshot row
+ * keeps the first; every other Timer running at `capturedAt` gets a row here,
+ * so the capture shows in each Project's activity and still counts once.
+ */
+export const timeEntryScreenshotTimers = pgTable("time_entry_screenshot_timers", {
+  screenshotId: varchar("screenshot_id").notNull().references(() => timeEntryScreenshots.id, { onDelete: "cascade" }),
+  timeEntryId: varchar("time_entry_id").notNull(),
+  crmProjectId: varchar("crm_project_id").notNull(),
+  workspaceId: workspaceIdColumn(),
+}, (table) => [
+  primaryKey({ columns: [table.screenshotId, table.timeEntryId] }),
+  index("idx_screenshot_timers_time_entry").on(table.timeEntryId),
+  index("idx_screenshot_timers_project").on(table.crmProjectId),
+  workspaceScopedFk("screenshot_timers_time_entry_workspace_fk", [table.timeEntryId, table.workspaceId], timeEntries),
+  workspaceScopedFk("screenshot_timers_project_workspace_fk", [table.crmProjectId, table.workspaceId], crmProjects),
+]);
+
 export type TimeEntryScreenshot = typeof timeEntryScreenshots.$inferSelect;
 export type InsertTimeEntryScreenshot = z.infer<typeof insertTimeEntryScreenshotSchema>;
 
@@ -1659,6 +1696,11 @@ export const devices = pgTable("devices", {
   name: varchar("name", { length: 255 }).notNull(),
   os: varchar("os", { length: 100 }),
   clientVersion: varchar("client_version", { length: 50 }),
+  /**
+   * The protocol version the Device last declared on a heartbeat (ADR-0031).
+   * Null: it never declared one, as agents before 0.2.8 did not.
+   */
+  agentProtocolVersion: integer("agent_protocol_version"),
   /** SHA-256 hash of the device token (never store raw) */
   deviceTokenHash: varchar("device_token_hash", { length: 64 }).notNull(),
   lastSeenAt: timestamp("last_seen_at"),
@@ -1761,6 +1803,11 @@ export interface ScreenshotPolicy {
    * minute before it are below this percentage (#341). Integer, 0–100.
    */
   lowActivityThresholdPercent: number;
+  /**
+   * Whether a Member may run up to three Timers at once (ADR-0031). Off by
+   * default; the Owner or an Administrator turns it on. Never on Starter.
+   */
+  simultaneousTimersEnabled: boolean;
 }
 
 /** A Tracking Policy clock time: 24-hour "HH:mm". */
@@ -1780,6 +1827,7 @@ export const DEFAULT_SCREENSHOT_POLICY: ScreenshotPolicy = {
   idleCountdownSeconds: 60,
   screenshotProjectIds: null,
   lowActivityThresholdPercent: DEFAULT_LOW_ACTIVITY_THRESHOLD_PERCENT,
+  simultaneousTimersEnabled: false,
 };
 
 /** The Workspace time zone before an Administrator picks one: the zone every nudge ran on before #341. */

@@ -126,6 +126,7 @@ import {
 } from "../workspaceContext";
 import {
   activeTimeEntryForUser,
+  activeTimeEntriesForUser,
   membershipsForUser,
   notificationWorkspaceForUser,
   workspaceForPairingCode,
@@ -2937,6 +2938,20 @@ export class DatabaseStorage implements IStorage {
       const [entry] = await db.select().from(timeEntries).where(eq(timeEntries.id, located.id)).limit(1);
       return entry;
     });
+  }
+
+  async getActiveTimeEntries(userId: string): Promise<TimeEntry[]> {
+    // Simultaneous Timers run in one Workspace (ADR-0031); located the same way.
+    const located = await activeTimeEntriesForUser(userId);
+    const found: TimeEntry[] = [];
+    for (const { id, workspaceId } of located) {
+      const entry = await runWithWorkspaceContext({ workspaceId, userId }, async () => {
+        const [row] = await db.select().from(timeEntries).where(eq(timeEntries.id, id)).limit(1);
+        return row;
+      });
+      if (entry) found.push(entry);
+    }
+    return found;
   }
 
   async getStaleRunningEntries(staleThreshold: Date): Promise<TimeEntry[]> {

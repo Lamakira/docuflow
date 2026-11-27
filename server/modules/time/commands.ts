@@ -7,20 +7,52 @@
  */
 
 import { createHash, randomUUID } from "node:crypto";
-import { and, asc, desc, eq, ne, or } from "drizzle-orm";
+import { and, asc, desc, eq, ne, or, sql } from "drizzle-orm";
 import {
+  MAX_SIMULTANEOUS_TIMERS,
   timeEntries,
   timerCommands,
   type TimeEntry,
   type TimerCommand,
   type TimerCommandKind,
   type TimerCommandPayload,
+  type TimerStartMode,
 } from "@shared/schema";
 import { db, type Db } from "../../db";
 import { inWorkspace, requireWorkspaceContext, runWithWorkspaceContext, stampWorkspace } from "../../workspaceContext";
 import { timeEntryWorkspaceForUser } from "../../workspaceLocators";
+import { simultaneousTimersAllowed } from "../activity/policy";
 
 export type TimeWriter = Pick<Db, "insert" | "select" | "update" | "delete">;
+type TimeTransaction = TimeWriter & Pick<Db, "execute">;
+
+/** Why a start was refused (ADR-0031). Nothing is recorded for a refused start. */
+export type TimerStartRefusal =
+  | "simultaneous_timers_off"
+  | "timer_limit"
+  | "task_has_timer"
+  | "project_has_timer"
+  | "timer_in_other_workspace";
+
+const REFUSAL_MESSAGES: Record<TimerStartRefusal, string> = {
+  simultaneous_timers_off: "This Workspace runs one Timer at a time. Switch to this Timer instead.",
+  timer_limit: `You already run ${MAX_SIMULTANEOUS_TIMERS} Timers. Stop one before adding another.`,
+  task_has_timer: "A Timer already runs on this Task.",
+  project_has_timer: "A Timer without a Task already occupies this Project, or this Project already has a Timer.",
+  timer_in_other_workspace: "A Timer runs in another Workspace. Stop it before starting one here.",
+};
+
+export class TimerStartRefusedError extends Error {
+  readonly statusCode = 409;
+  constructor(readonly code: TimerStartRefusal) {
+    super(REFUSAL_MESSAGES[code]);
+    this.name = "TimerStartRefusedError";
+  }
+}
+
+export function startModeOf(payload: TimerCommandPayload): TimerStartMode {
+  return payload.mode === "add" ? "add" : "switch";
+}
 
 export interface ApplyTimerCommandInput {
   userId: string;
@@ -31,10 +63,12 @@ export interface ApplyTimerCommandInput {
   receivedAt?: Date;
   payload: TimerCommandPayload;
   /**
-   * Floor the claim at the target entry's start and at this User's latest
-   * Timer Command (#333, ADR-0030). A device dates a pause or stop when the
-   * Member left; the floor keeps that claim from reaching back across a start
-   * or resume the server already applied, and keeps it an incremental apply.
+   * Floor the claim at the target entry's start and at that Timer's latest
+   * Timer Command (#333, ADR-0030, ADR-0031). A device dates a pause or stop
+   * when the Member left; the floor keeps that claim from reaching back across
+   * a start or resume the server already applied to that Timer, and keeps it an
+   * incremental apply. Another Timer's later start does not raise it. Without a
+   * target entry, the floor is the User's latest command, as before.
    */
   floorAtLastCommand?: boolean;
 }
@@ -82,22 +116,27 @@ export async function listTimerCommands(userId: string): Promise<TimerCommand[]>
     .orderBy(asc(timerCommands.claimedEffectiveAt), asc(timerCommands.sequence));
 }
 
-/** The partial unique index that allows one running or paused Timer per User. */
-const ONE_ACTIVE_TIMER_INDEX = "idx_time_entries_one_active_timer_per_user";
+/** The partial unique indexes that allow one active Timer per Task, and per Project without a Task. */
+const ACTIVE_TIMER_INDEXES = [
+  "idx_time_entries_one_active_timer_per_task",
+  "idx_time_entries_one_taskless_timer_per_project",
+];
 
 /** A race with another start of the same User's Timer (#307). */
 function isActiveTimerRace(error: unknown): boolean {
   for (let current = error as { code?: string; constraint?: string; cause?: unknown } | undefined; current; ) {
-    if (current.code === "23505" && current.constraint === ONE_ACTIVE_TIMER_INDEX) return true;
+    if (current.code === "23505" && ACTIVE_TIMER_INDEXES.includes(current.constraint ?? "")) return true;
     current = current.cause as typeof current;
   }
   return false;
 }
 
 /**
- * Two starts can race: each reads that no Timer runs, and the second insert
- * then meets the first's running Time Entry on the one-active-Timer index.
- * The loser runs again, and supersedes the winner like any later start (#307).
+ * Every Timer Command of one User applies under that User's lock, across
+ * Workspaces: the cap of three, a task-less Timer occupying its Project and the
+ * single Workspace cannot be an index (ADR-0031), so two starts must not both
+ * read "room for one more" (#307). The indexes stay as the last guard; a start
+ * that still meets one runs again and is checked again.
  */
 const TIMER_RACE_ATTEMPTS = 3;
 
@@ -127,6 +166,15 @@ async function applyTimerCommandOnce(
   }
 
   return db.transaction(async (tx) => {
+    await lockUserTimers(tx, input.userId);
+
+    const stored = await findCommand(tx, input.origin, input.sequence);
+    if (stored) {
+      const timeEntry = await loadTimeEntry(tx, stored.timeEntryId);
+      return { duplicate: true, command: stored, timeEntry };
+    }
+    if (input.kind === "start") await assertStartAllowed(tx, input);
+
     if (input.floorAtLastCommand) {
       const floor = await claimFloor(tx, input);
       if (floor && claimedEffectiveAt.getTime() < floor.getTime()) {
@@ -174,15 +222,75 @@ async function applyTimerCommandOnce(
   });
 }
 
-/** The earliest a floored claim may take effect: the entry's start, or this User's latest Timer Command. */
+async function lockUserTimers(tx: TimeTransaction, userId: string): Promise<void> {
+  await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${`docuflow:timer:${userId}`}, 0))`);
+}
+
+async function findCommand(writer: TimeWriter, origin: string, sequence: number): Promise<TimerCommand | undefined> {
+  const [existing] = await writer
+    .select()
+    .from(timerCommands)
+    .where(and(eq(timerCommands.origin, origin), eq(timerCommands.sequence, sequence), inWorkspace(timerCommands)));
+  return existing;
+}
+
+/**
+ * Refuses a start the Timers already active forbid (ADR-0031): one running in
+ * another Workspace, whatever the mode; and for `add`, the option off, a fourth
+ * Timer, a second on the same Task, or one beside a Timer that occupies the
+ * whole Project. Checked at ingest only: a replay applies what was recorded.
+ */
+async function assertStartAllowed(tx: TimeTransaction, input: ApplyTimerCommandInput): Promise<void> {
+  const { workspaceId } = requireWorkspaceContext();
+  const located = await tx.execute(sql`SELECT * FROM app_active_time_entries_for_user(${input.userId})`);
+  const rows = located.rows as Array<{ workspace_id: string }>;
+  if (rows.some((row) => row.workspace_id !== workspaceId)) {
+    throw new TimerStartRefusedError("timer_in_other_workspace");
+  }
+  if (startModeOf(input.payload) !== "add") return;
+  if (!(await simultaneousTimersAllowed())) throw new TimerStartRefusedError("simultaneous_timers_off");
+
+  const active = await loadActiveTimers(tx, input.userId);
+  if (active.length >= MAX_SIMULTANEOUS_TIMERS) throw new TimerStartRefusedError("timer_limit");
+  const taskId = input.payload.taskId ?? null;
+  if (taskId !== null && active.some((entry) => entry.taskId === taskId)) {
+    throw new TimerStartRefusedError("task_has_timer");
+  }
+  const projectId = input.payload.crmProjectId;
+  if (active.some((entry) => occupiesSameProject(entry, projectId, taskId))) {
+    throw new TimerStartRefusedError("project_has_timer");
+  }
+}
+
+/** A Timer without a Task occupies its whole Project; so does a new one without a Task. */
+function occupiesSameProject(
+  entry: { crmProjectId: string; taskId: string | null },
+  crmProjectId: string | undefined,
+  taskId: string | null,
+): boolean {
+  return entry.crmProjectId === crmProjectId && (entry.taskId === null || taskId === null);
+}
+
+function conflictsWith(
+  entry: { crmProjectId: string; taskId: string | null },
+  crmProjectId: string | undefined,
+  taskId: string | null,
+): boolean {
+  return (taskId !== null && entry.taskId === taskId) || occupiesSameProject(entry, crmProjectId, taskId);
+}
+
+/** The earliest a floored claim may take effect: the entry's start, or that Timer's latest Timer Command. */
 async function claimFloor(writer: TimeWriter, input: ApplyTimerCommandInput): Promise<Date | undefined> {
+  const entry = await loadTimeEntry(writer, input.payload.timeEntryId ?? null);
+  const scope = entry
+    ? and(eq(timerCommands.userId, input.userId), eq(timerCommands.timeEntryId, entry.id), inWorkspace(timerCommands))
+    : and(eq(timerCommands.userId, input.userId), inWorkspace(timerCommands));
   const [latest] = await writer
     .select({ at: timerCommands.claimedEffectiveAt })
     .from(timerCommands)
-    .where(and(eq(timerCommands.userId, input.userId), inWorkspace(timerCommands)))
+    .where(scope)
     .orderBy(desc(timerCommands.claimedEffectiveAt))
     .limit(1);
-  const entry = await loadTimeEntry(writer, input.payload.timeEntryId ?? null);
   const candidates = [latest?.at, entry?.startTime].filter((d): d is Date => !!d);
   if (candidates.length === 0) return undefined;
   return new Date(Math.max(...candidates.map((d) => d.getTime())));
@@ -237,6 +345,12 @@ function commandOrder(a: TimerCommand, b: TimerCommand): number {
   return a.sequence - b.sequence;
 }
 
+/**
+ * Late when a command already applied comes after it and touches the same
+ * Timer (ADR-0031): a command on that Timer, or a switch, which stops every
+ * Timer. A switch is late behind any later command; an add only behind a later
+ * switch. A command that names no Timer is judged against every command.
+ */
 async function isLateArrival(writer: TimeWriter, command: TimerCommand): Promise<boolean> {
   const others = await writer
     .select()
@@ -248,7 +362,17 @@ async function isLateArrival(writer: TimeWriter, command: TimerCommand): Promise
         inWorkspace(timerCommands)
       )
     );
-  return others.some((other) => commandOrder(command, other) < 0);
+  const later = others.filter((other) => commandOrder(command, other) < 0);
+  if (later.length === 0) return false;
+  const isSwitch = (other: TimerCommand) => other.kind === "start" && startModeOf(other.payload) === "switch";
+  if (command.kind === "start") {
+    return startModeOf(command.payload) === "switch" || later.some(isSwitch);
+  }
+  const target = command.payload.timeEntryId ?? command.timeEntryId;
+  if (!target) return true;
+  return later.some(
+    (other) => isSwitch(other) || other.timeEntryId === target || other.payload.timeEntryId === target,
+  );
 }
 
 async function applyIncremental(writer: TimeWriter, command: TimerCommand): Promise<void> {
@@ -355,13 +479,17 @@ async function adjustFromCommand(writer: TimeWriter, command: TimerCommand): Pro
 
 async function startFromCommand(writer: TimeWriter, command: TimerCommand): Promise<TimeEntry> {
   const at = command.claimedEffectiveAt;
-  const active = await loadActiveTimer(writer, command.userId);
-  if (active) {
-    await stopEntry(writer, active, at);
+  const payload = command.payload;
+  const taskId = payload.taskId ?? null;
+  const switching = startModeOf(payload) === "switch";
+  // An add was checked at ingest; a conflict left is stopped so the indexes hold.
+  for (const active of await loadActiveTimers(writer, command.userId)) {
+    if (switching || conflictsWith(active, payload.crmProjectId, taskId)) {
+      await stopEntry(writer, active, at);
+    }
   }
 
   const entryId = command.timeEntryId ?? randomUUID();
-  const payload = command.payload;
   const [entry] = await writer
     .insert(timeEntries)
     .values(
@@ -390,8 +518,15 @@ async function startFromCommand(writer: TimeWriter, command: TimerCommand): Prom
   return entry;
 }
 
+/** The latest active Timer: the one a command that names none addresses. */
 async function loadActiveTimer(writer: TimeWriter, userId: string): Promise<TimeEntry | undefined> {
-  const [entry] = await writer
+  const [entry] = await loadActiveTimers(writer, userId);
+  return entry;
+}
+
+/** This User's running and paused Timers in the current Workspace, newest first. */
+async function loadActiveTimers(writer: TimeWriter, userId: string): Promise<TimeEntry[]> {
+  return writer
     .select()
     .from(timeEntries)
     .where(
@@ -401,9 +536,7 @@ async function loadActiveTimer(writer: TimeWriter, userId: string): Promise<Time
         inWorkspace(timeEntries)
       )
     )
-    .orderBy(desc(timeEntries.startTime))
-    .limit(1);
-  return entry;
+    .orderBy(desc(timeEntries.startTime), desc(timeEntries.id));
 }
 
 async function stopEntry(writer: TimeWriter, entry: TimeEntry, at: Date): Promise<void> {
@@ -435,9 +568,9 @@ async function rematerializeUser(writer: TimeWriter, userId: string): Promise<vo
     .orderBy(asc(timerCommands.claimedEffectiveAt), asc(timerCommands.receivedAt), asc(timerCommands.sequence));
 
   const { entries: desired, commandEntryIds } = replayCommands(commands);
-  const desiredActiveId = desired.find(
-    (row) => row.status === "running" || row.status === "paused"
-  )?.id;
+  const desiredActiveIds = new Set(
+    desired.filter((row) => row.status === "running" || row.status === "paused").map((row) => row.id)
+  );
   const closeAt = commands[commands.length - 1]?.claimedEffectiveAt ?? new Date();
 
   const leftoverActives = await writer
@@ -451,7 +584,7 @@ async function rematerializeUser(writer: TimeWriter, userId: string): Promise<vo
       )
     );
   for (const row of leftoverActives) {
-    if (row.id === desiredActiveId) continue;
+    if (desiredActiveIds.has(row.id)) continue;
     await stopEntry(writer, row, closeAt);
   }
 
@@ -521,30 +654,30 @@ function replayCommands(commands: TimerCommand[]): {
 } {
   const completed: DesiredEntry[] = [];
   const commandEntryIds = new Map<string, string>();
-  let active: DesiredEntry | undefined;
+  // Newest last; several when Timers were added beside one another (ADR-0031).
+  let active: DesiredEntry[] = [];
 
-  const closeActive = (at: Date, status: "stopped" | "paused") => {
-    if (!active) return;
-    let duration = active.duration;
+  const close = (entry: DesiredEntry, at: Date, status: "stopped" | "paused") => {
+    let duration = entry.duration;
     // A paused entry ends at its pause time (#330); lastActivityAt stays the pause time.
-    const wasPaused = active.status === "paused";
-    if (active.status === "running") {
-      duration += Math.floor((at.getTime() - active.lastActivityAt.getTime()) / 1000);
+    const wasPaused = entry.status === "paused";
+    if (entry.status === "running") {
+      duration += Math.floor((at.getTime() - entry.lastActivityAt.getTime()) / 1000);
     }
     if (status === "paused") {
-      active.status = "paused";
-      active.duration = duration;
-      active.lastActivityAt = at;
-      active.endTime = null;
+      entry.status = "paused";
+      entry.duration = duration;
+      entry.lastActivityAt = at;
+      entry.endTime = null;
       return;
     }
-    active.status = "stopped";
-    active.duration = duration;
-    const endAt = wasPaused ? active.lastActivityAt : at;
-    active.endTime = endAt;
-    active.lastActivityAt = endAt;
-    completed.push(active);
-    active = undefined;
+    entry.status = "stopped";
+    entry.duration = duration;
+    const endAt = wasPaused ? entry.lastActivityAt : at;
+    entry.endTime = endAt;
+    entry.lastActivityAt = endAt;
+    completed.push(entry);
+    active = active.filter((other) => other !== entry);
   };
 
   for (const command of commands) {
@@ -552,12 +685,16 @@ function replayCommands(commands: TimerCommand[]): {
     const payload = command.payload;
     switch (command.kind) {
       case "start": {
-        closeActive(at, "stopped");
-        active = {
+        const taskId = payload.taskId ?? null;
+        const switching = startModeOf(payload) === "switch";
+        for (const entry of [...active]) {
+          if (switching || conflictsWith(entry, payload.crmProjectId, taskId)) close(entry, at, "stopped");
+        }
+        const started: DesiredEntry = {
           id: command.timeEntryId ?? command.id,
           userId: command.userId,
           crmProjectId: payload.crmProjectId!,
-          taskId: payload.taskId ?? null,
+          taskId,
           description: payload.description ?? null,
           startTime: at,
           endTime: null,
@@ -569,31 +706,32 @@ function replayCommands(commands: TimerCommand[]): {
           timerCommandId: command.id,
           clientCommandId: payload.clientCommandId ?? null,
         };
-        commandEntryIds.set(command.id, active.id);
+        active.push(started);
+        commandEntryIds.set(command.id, started.id);
         break;
       }
       case "pause": {
         const target = replayTarget(payload, active, completed);
         if (target) commandEntryIds.set(command.id, target.id);
-        if (target && active && target.id === active.id) closeActive(at, "paused");
+        if (target && active.includes(target) && target.status === "running") close(target, at, "paused");
         break;
       }
       case "resume": {
         const target = replayTarget(payload, active, completed);
         if (target) commandEntryIds.set(command.id, target.id);
-        if (target && active && target.id === active.id && active.status === "paused") {
+        if (target && active.includes(target) && target.status === "paused") {
           if (!payload.discardIdleTime) {
-            active.idleTime += Math.floor((at.getTime() - active.lastActivityAt.getTime()) / 1000);
+            target.idleTime += Math.floor((at.getTime() - target.lastActivityAt.getTime()) / 1000);
           }
-          active.status = "running";
-          active.lastActivityAt = at;
+          target.status = "running";
+          target.lastActivityAt = at;
         }
         break;
       }
       case "stop": {
         const target = replayTarget(payload, active, completed);
         if (target) commandEntryIds.set(command.id, target.id);
-        if (target && active && target.id === active.id) closeActive(at, "stopped");
+        if (target && active.includes(target)) close(target, at, "stopped");
         break;
       }
       case "adjust": {
@@ -608,17 +746,17 @@ function replayCommands(commands: TimerCommand[]): {
     }
   }
 
-  if (active) completed.push(active);
+  completed.push(...active);
   return { entries: completed, commandEntryIds };
 }
 
+/** The named Timer; a command that names none addresses the latest active one. */
 function replayTarget(
   payload: TimerCommandPayload,
-  active: DesiredEntry | undefined,
+  active: DesiredEntry[],
   completed: DesiredEntry[]
 ): DesiredEntry | undefined {
   const id = payload.timeEntryId;
-  if (!id) return active;
-  if (active?.id === id) return active;
-  return completed.find((entry) => entry.id === id);
+  if (!id) return active[active.length - 1];
+  return active.find((entry) => entry.id === id) ?? completed.find((entry) => entry.id === id);
 }
