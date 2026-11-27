@@ -437,6 +437,9 @@ export class AgentStore {
         this.runtime.workedTodayServerBase += this.getActiveEntryWorkedTodaySeconds();
       }
       this.closeActiveSessions();
+      // Nothing runs here for the new entry yet: below, a running one gets its
+      // session even when the old entry was running (its clock froze otherwise).
+      this.data.timerStatus = "stopped";
       this.data.activeEntryId = entry.id;
       this.data.entryServerBase = 0;
       this.data.entryTaskHistoryToday = 0;
