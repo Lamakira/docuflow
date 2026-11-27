@@ -264,6 +264,19 @@ Request:
 
 Response `200`: `{ "ok": true }`
 
+#### `GET /api/agent/screenshots/deleted`
+
+Captures of this Member that an admin deleted on the web, so the agent can drop
+its local copies. Query: `since` (ISO date; default now − 30 days, never earlier
+than now − 31 days). Up to 1000 entries, newest first.
+
+Response `200`:
+```json
+{ "data": [{ "id": "uuid", "capturedAt": "2026-02-28T12:04:15.000Z" }] }
+```
+
+The agent matches `capturedAt` to its local captures by instant, not by string.
+
 ---
 
 ## 5. Event Model

@@ -11,6 +11,7 @@ import {
   getTimeEntryScreenshotById,
   getTimeEntryScreenshots,
   isAgentBatchProcessed,
+  listDeletedScreenshotsForUser,
   markAgentBatchProcessed,
   softDeleteTimeEntryScreenshot,
   updateTimeEntryScreenshot,
@@ -77,6 +78,8 @@ export interface ActivityPersistence {
     deletedBy: string,
     reason?: string
   ): Promise<TimeEntryScreenshot | undefined>;
+
+  listDeletedScreenshotsForUser(userId: string, since: Date, limit?: number): Promise<{ id: string; capturedAt: Date }[]>;
 
   getScreenshotPolicy(): Promise<ScreenshotPolicy>;
   upsertScreenshotPolicy(policy: Partial<ScreenshotPolicy>): Promise<void>;
@@ -166,6 +169,7 @@ export const activityPersistence = {
   updateTimeEntryScreenshot,
   deleteTimeEntryScreenshot,
   softDeleteTimeEntryScreenshot,
+  listDeletedScreenshotsForUser,
   getScreenshotPolicy,
   upsertScreenshotPolicy,
   isAgentBatchProcessed,
