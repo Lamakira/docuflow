@@ -112,6 +112,12 @@ interface PersistedData {
   uiMode: 'v1' | 'v2' | null;
   /** The server refused this agent's protocol version (#398); survives a restart so capture stays off at launch. */
   updateRequired: SavedUpdateRequired | null;
+  /**
+   * The Timers a switch not yet taken by the server stopped here (#400). The
+   * server stops them only when it takes the switch: if it refuses, they come
+   * back as they were rather than showing stopped until the next heartbeat.
+   */
+  switchedFrom: { entryId: string; timers: ActiveTimer[] } | null;
 }
 
 /** Fields of the single-Timer file (before #400), read once by the migration. */
@@ -220,6 +226,7 @@ export class AgentStore {
       noTimerReminderEnabled: true,
       uiMode: null,
       updateRequired: null,
+      switchedFrom: null,
     };
     try {
       if (!fs.existsSync(this.configPath)) return empty;
@@ -407,7 +414,10 @@ export class AgentStore {
       return;
     }
     if (opts.mode !== "add") {
-      // The server stops the other Timers on a switch.
+      // The server stops the other Timers on a switch; kept until it answers.
+      this.data.switchedFrom = this.data.timers.length > 0
+        ? { entryId: opts.entryId, timers: this.data.timers.map((t) => ({ ...t })) }
+        : null;
       this.closeSessions();
       this.data.timers = [];
     }
@@ -519,6 +529,23 @@ export class AgentStore {
   discardTimer(entryId: string): void {
     this.data.timers = this.data.timers.filter((t) => t.entryId !== entryId);
     this.data.sessions = this.data.sessions.filter((s) => s.entryId !== entryId);
+    const switched = this.data.switchedFrom;
+    if (switched && switched.entryId === entryId) {
+      // A refused switch stopped nothing on the server: its Timers run on from now.
+      this.data.timers = [...switched.timers, ...this.data.timers];
+      const now = new Date().toISOString();
+      for (const t of switched.timers) {
+        if (t.status === "running") this.openSession(t.entryId, t.taskId, now);
+      }
+    }
+    this.data.switchedFrom = null;
+    this.saveToDisk();
+  }
+
+  /** The server took this start: a switch's Timers are stopped for good. */
+  startTaken(entryId: string): void {
+    if (!this.data.switchedFrom || this.data.switchedFrom.entryId !== entryId) return;
+    this.data.switchedFrom = null;
     this.saveToDisk();
   }
 

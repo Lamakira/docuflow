@@ -136,6 +136,7 @@ export class SyncWorker {
             cmd.clientCommandId,
             cmd.mode,
           );
+          if (cmd.entryId) this.store.startTaken(cmd.entryId);
           // Propagate real server ID to store + subsequent pending commands
           if (cmd.entryId && cmd.entryId !== entry.id) {
             this.store.updateActiveEntryId(cmd.entryId, entry.id);

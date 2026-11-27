@@ -548,6 +548,31 @@ describe("queued starts carry their mode, and a refused start is dropped", () =>
     expect(store.getTimers().map((t) => t.entryId)).toEqual([E1]);
     expect(store.getSessions().some((s) => s.entryId === "local-b")).toBe(false);
   });
+
+  it("gives back the Timers a refused switch had stopped here, still running", async () => {
+    run(E1, "a");
+    run(E2, "b");
+    store.pauseTimer(E2);
+    run("local-c", "c", "switch");
+    expect(store.getTimers().map((t) => t.entryId)).toEqual(["local-c"]);
+    queue.enqueueTimerCommand({ clientCommandId: "c1", type: "start", entryId: "local-c", crmProjectId: "project-c", taskId: "c" });
+    const startTimer = vi.fn(async () => {
+      throw Object.assign(new Error("A Timer runs in another Workspace. Stop it before starting one here."), { status: 409 });
+    });
+    await drain({ startTimer });
+    expect(store.getTimers().map((t) => [t.entryId, t.status])).toEqual([[E1, "running"], [E2, "paused"]]);
+    expect(store.getSessions().some((s) => s.entryId === E1 && s.endTime === null)).toBe(true);
+  });
+
+  it("forgets what a switch stopped once the server took it", async () => {
+    run(E1, "a");
+    run("local-c", "c", "switch");
+    queue.enqueueTimerCommand({ clientCommandId: "c1", type: "start", entryId: "local-c", crmProjectId: "project-c", taskId: "c" });
+    await drain({ startTimer: vi.fn(async () => ({ id: E3, taskAccumulatedToday: 0 })) });
+    // A refusal of a later start must not bring back E1.
+    store.discardTimer(E3);
+    expect(store.getTimers()).toEqual([]);
+  });
 });
 
 describe("wiring (source)", () => {
