@@ -4,8 +4,11 @@
  * Pure: no electron import, so the gate is testable on its own.
  */
 
-/** Must equal server/agentProtocol.ts; a test pins the two together. */
-export const AGENT_PROTOCOL_VERSION = 1;
+/**
+ * Must equal server/agentProtocol.ts; a test pins the two together.
+ * v2 (#400): the agent runs beside several Timers (ADR-0031).
+ */
+export const AGENT_PROTOCOL_VERSION = 2;
 export const AGENT_PROTOCOL_VERSION_HEADER = "x-agent-protocol-version";
 /** The server's 403 code for an agent below the minimum protocol version. */
 export const PROTOCOL_BELOW_MINIMUM = "protocol_below_minimum";

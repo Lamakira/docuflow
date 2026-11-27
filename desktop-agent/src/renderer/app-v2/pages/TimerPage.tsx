@@ -18,6 +18,7 @@ import { useUi } from '../ui/UiContext';
 import { activeKey, useActiveTask } from '../ui/useActiveTask';
 import { formatElapsed, formatHM } from '../format';
 import { CheckIcon, ClockIcon } from '../icons';
+import { WorkedTimeStat } from '../components/WorkedTimeStat';
 
 export function TimerPage() {
   const { state, pauseTimer, resumeTimer, stopTimer, startTimer } = useAgent();
@@ -41,6 +42,8 @@ export function TimerPage() {
   }
 
   const running = active.status === 'running';
+  /** The Timer on screen (the latest running one); the panel lists the others (#400). */
+  const entryId = active.status !== 'stopped' ? timer.entryId ?? undefined : undefined;
   const taskLabel = active.taskName ?? 'Untitled task';
 
   /** Start again after a stop: TimerState has the name, not the id. */
@@ -72,7 +75,7 @@ export function TimerPage() {
     setBusy(true);
     try {
       if (running) {
-        const result = await pauseTimer();
+        const result = await pauseTimer(entryId);
         showToast(
           result.ok ? `Timer paused at ${formatElapsed(active!.seconds)}` : result.error ?? 'Could not pause',
           result.ok ? 'now' : 'error',
@@ -80,7 +83,7 @@ export function TimerPage() {
         return;
       }
       if (active!.status === 'paused') {
-        const result = await resumeTimer();
+        const result = await resumeTimer(entryId);
         showToast(result.ok ? 'Timer resumed' : result.error ?? 'Could not resume', result.ok ? 'now' : 'error');
         return;
       }
@@ -100,7 +103,7 @@ export function TimerPage() {
     setBusy(true);
     const logged = active!.seconds;
     try {
-      const result = await stopTimer();
+      const result = await stopTimer(entryId);
       if (!result.ok) { showToast(result.error ?? 'Could not stop the timer', 'error'); return; }
       if (complete) {
         markCompleted(activeKey(active!.taskId, active!.projectName));
@@ -163,10 +166,7 @@ export function TimerPage() {
           <span className="v2-stat__label">Session progress</span>
           <p className="v2-stat__value">{formatHM(active.seconds)}</p>
         </div>
-        <div className="v2-card v2-stat">
-          <span className="v2-stat__label">Worked today</span>
-          <p className="v2-stat__value">{formatHM(timer.workedToday)}</p>
-        </div>
+        <WorkedTimeStat label="Worked time" total={timer.workedToday} simultaneous={timer.simultaneousToday ?? 0} />
       </div>
     </div>
   );

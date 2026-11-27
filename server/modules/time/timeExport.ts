@@ -15,9 +15,15 @@ export interface TimeExportRow {
   /** Inside the range. */
   seconds: number;
   idleSeconds: number;
+  /**
+   * This entry's part of its Member's Worked Time (ADR-0031): time it ran
+   * beside other Timers is shared between them, so a Member's lines add up to
+   * their Worked Time. Equal to `seconds` when nothing overlapped.
+   */
+  workedSeconds: number;
 }
 
-const COLUMNS = "Date,Start,End,Member,Client,Project,Task,Description,Status,Tracked (h),Idle (h)";
+const COLUMNS = "Date,Start,End,Member,Client,Project,Task,Description,Status,Tracked (h),Idle (h),Worked (h)";
 
 /** A cell that starts like a formula is kept as text, or a spreadsheet would run it. */
 export function csvText(value: string | null): string {
@@ -43,6 +49,7 @@ export function timeExportCsv(rows: TimeExportRow[], calendar: DayCalendar): str
       csvText(row.status),
       hours(row.seconds),
       hours(row.idleSeconds),
+      hours(row.workedSeconds),
     ].join(",")
   );
   return "﻿" + [COLUMNS, ...lines].join("\r\n");

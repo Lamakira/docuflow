@@ -58,6 +58,7 @@ export interface IdentityPersistence extends UserImportPersistence, WebSessionPe
   getDevice(id: string): Promise<Device | undefined>;
   getDeviceByTokenHash(deviceId: string, tokenHash: string): Promise<Device | undefined>;
   updateDeviceLastSeen(id: string): Promise<void>;
+  recordDeviceAgent(id: string, agent: { clientVersion: string; protocolVersion: number | null }): Promise<void>;
   revokeDevice(id: string): Promise<void>;
   revokeDevicesByMachine(userId: string, name: string, os: string | null): Promise<void>;
   getUserDevices(userId: string): Promise<Device[]>;

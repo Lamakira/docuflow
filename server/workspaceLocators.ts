@@ -150,6 +150,12 @@ export async function activeTimeEntryForUser(userId: string): Promise<LocatedTim
   return row && { id: row.id as string, workspaceId: row.workspace_id as string };
 }
 
+/** Every running or paused Time Entry of the User, newest first, whichever Workspace it is in (ADR-0031). */
+export async function activeTimeEntriesForUser(userId: string): Promise<LocatedTimeEntry[]> {
+  const rows = await call("app_active_time_entries_for_user", userId);
+  return rows.map((row) => ({ id: row.id as string, workspaceId: row.workspace_id as string }));
+}
+
 /** The Workspace of a Time Entry, only when it belongs to this User. */
 export async function timeEntryWorkspaceForUser(id: string, userId: string): Promise<string | undefined> {
   const result = await db.execute(sql`SELECT * FROM app_time_entry_workspace_for_user(${id}, ${userId})`);

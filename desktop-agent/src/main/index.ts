@@ -87,6 +87,14 @@ import { isWaylandSession, shouldSkipWaylandCaptures } from "../lib/platform";
 import { IdleFlow } from "../lib/idleFlow";
 import { droppedIdleCommands, pauseCommandAt, pauseForSystemAway, stopCommandAt, type TimerCommandDraft } from "../lib/systemAway";
 import { timerSyncApplies } from "../lib/timerResync";
+import {
+  awayResumeTargets,
+  forgetAwayPause,
+  MAX_SIMULTANEOUS_TIMERS,
+  TIMER_LIMIT_MESSAGE,
+  type StartMode,
+} from "../lib/simultaneousTimers";
+import type { ServerTimerSummary } from "../lib/ApiClient";
 import { removeDeletedCaptures } from "../lib/deletedCaptures";
 import {
   DEFAULT_TRACKING_POLICY,
@@ -276,6 +284,10 @@ let unlockScreenMainHandler: (() => void) | null = null;
 let linuxScreenLockWatcher: LinuxScreenLockWatcher | null = null;
 /** True when timer was paused locally for a Wayland screenshot portal dialog. */
 let pausedForScreenshotPortal = false;
+/** The Timers the portal consent paused; resumed when it is granted (#400). */
+let portalPausedEntryIds: string[] = [];
+/** The Timers an idle, sleep or lock pause stopped; one resume brings back these and no others (#400). */
+let idlePausedEntryIds: string[] = [];
 
 // ─── Window ───
 
@@ -558,12 +570,13 @@ function rebuildTrayMenu(): void {
   if (isPaired) {
     if (timerStatus === "running") {
       timerItems.push({
-        label: "Pause timer",
+        label: store.getRunningEntryIds().length > 1 ? "Pause all timers" : "Pause timer",
         click: async () => {
-          const entryId = store.getActiveEntryId();
-          if (!entryId) return;
-          store.setTimerPaused();
-          queue.enqueueTimerCommand({ clientCommandId: randomUUID(), type: "pause", entryId });
+          const paused = store.pauseRunningTimers();
+          if (paused.length === 0) return;
+          for (const entryId of paused) {
+            queue.enqueueTimerCommand({ clientCommandId: randomUUID(), type: "pause", entryId });
+          }
           pushStateToRenderer();
           syncWorker?.triggerSync();
         },
@@ -572,19 +585,11 @@ function rebuildTrayMenu(): void {
       timerItems.push({
         label: "Resume timer",
         click: async () => {
-          if (stopPausedEntryFromPreviousDay("tray-resume")) return;
-          const entryId = store.getActiveEntryId();
-          if (!entryId) return;
-          store.setTimerRunning(
-            entryId,
-            store.getActiveProjectName(),
-            store.getActiveTaskId(),
-            store.getActiveTaskName(),
-            store.getActiveDescription(),
-          );
-          queue.enqueueTimerCommand({ clientCommandId: randomUUID(), type: "resume", entryId });
-          pushStateToRenderer();
-          syncWorker?.triggerSync();
+          stopPausedEntryFromPreviousDay("tray-resume");
+          // Every Timer an away or idle pause stopped; otherwise the latest
+          // paused Timer, as the tooltip and the widget show it.
+          if (awayResumeTargets(idlePausedEntryIds, store.getTimers()).length > 0) resumeTimerAfterIdle();
+          else resumeActiveTimer();
         },
       });
     } else {
@@ -653,7 +658,10 @@ function receiveTrackingPolicy(raw: unknown): void {
     refreshFailedAt: null,
     refreshError: null,
   };
+  const simultaneousChanged = policy.simultaneousTimersEnabled !== trackingPolicy.simultaneousTimersEnabled;
   applyTrackingPolicy(policy);
+  // Start asks Add or Switch only while the option is on (#400): the renderer learns it now, not at the next push.
+  if (simultaneousChanged) pushStateToRenderer();
 }
 
 /** Logged once per failing streak; Settings shows it until a refresh succeeds. */
@@ -686,19 +694,20 @@ function startCaptureWorkers(): void {
   screenshotWorker.setCaptureLifecycleHooks({
     onBeforePortalDialog: () => {
       if (store.getTimerStatus() !== "running" || idleFlow.active) return;
-      const entryId = store.getActiveEntryId();
-      if (!entryId) return;
 
-      store.setTimerPaused();
-      queue.enqueueTimerCommand({ clientCommandId: randomUUID(), type: "pause", entryId });
+      const paused = store.pauseRunningTimers();
+      enqueueTimerCommands(...paused.map((entryId) => ({ type: "pause" as const, entryId })));
       syncWorker?.triggerSync();
       pausedForScreenshotPortal = true;
+      portalPausedEntryIds = paused;
       pushStateToRenderer();
       console.log("[Main] Wayland screenshot portal — timer paused (waiting for screen-share consent)");
     },
     onAfterPortalDialog: (granted) => {
       if (!pausedForScreenshotPortal) return;
       pausedForScreenshotPortal = false;
+      const paused = portalPausedEntryIds;
+      portalPausedEntryIds = [];
 
       if (!granted) {
         console.log("[Main] Wayland screenshot portal — consent denied or dismissed; timer stays paused");
@@ -706,16 +715,9 @@ function startCaptureWorkers(): void {
         return;
       }
 
-      const entryId = store.getActiveEntryId();
-      if (entryId && store.getTimerStatus() === "paused" && !idleFlow.active) {
-        store.setTimerRunning(
-          entryId,
-          store.getActiveProjectName(),
-          store.getActiveTaskId(),
-          store.getActiveTaskName(),
-          store.getActiveDescription(),
-        );
-        queue.enqueueTimerCommand({ clientCommandId: randomUUID(), type: "resume", entryId });
+      const resumed = idleFlow.active ? [] : store.resumeTimers(paused);
+      if (resumed.length > 0) {
+        enqueueTimerCommands(...resumed.map((entryId) => ({ type: "resume" as const, entryId })));
         syncWorker?.triggerSync();
         pushStateToRenderer();
         console.log("[Main] Wayland screenshot portal — consent granted, timer resumed");
@@ -766,10 +768,16 @@ function startWorkers(): void {
   heartbeatWorker.start();
 
   syncWorker = new SyncWorker(apiClient, queue, store);
-  syncWorker.setOnTimerCommandSynced((type) => {
-    // A stop adds the entry to the server total; a start auto-stops the previous entry.
-    if (type !== "stop" && type !== "start") return;
+  syncWorker.setOnTimerCommandSynced(() => {
+    // The server total includes running Timers (#400), so every command moves it:
+    // a dated pause takes time back, a start or resume adds a Timer.
     refreshWorkedTodayServerBase().then(() => pushStateToRenderer()).catch(() => { /* non-fatal */ });
+  });
+  syncWorker.setOnTimerStartRefused((message) => {
+    // The server refused a start and recorded nothing; its local Timer is already gone.
+    pushStateToRenderer();
+    refreshWorkedTodayServerBase().then(() => pushStateToRenderer()).catch(() => { /* non-fatal */ });
+    mainWindow?.webContents.send("agent:timer-refused", { message });
   });
   syncWorker.start();
 
@@ -923,23 +931,12 @@ if (!app.isPackaged && launchParentPid > 1) {
 /**
  * Apply server-authoritative timer state to local store.
  *
- * The server is authoritative for status and entryId. Elapsed is derived from
- * local sessions, seeded from server base when no local sessions exist yet.
- * Triggers a renderer push only when status or entryId actually diverged.
+ * The server is authoritative for which Timers are active and their status
+ * (#400: every Timer, newest first). Elapsed is derived from local sessions,
+ * seeded from server base when no local sessions exist yet.
+ * Triggers a renderer push only when the Timers or their status diverged.
  */
-function applyServerTimerSync(
-  timerSync: {
-    entryId: string;
-    status: string;
-    duration: number;
-    taskId?: string | null;
-    lastActivityAt?: string | null;
-    projectName?: string | null;
-    taskName?: string | null;
-    startTime?: string | null;
-  } | null,
-  requestedAtMono: number,
-): void {
+function applyServerTimerSync(timers: ServerTimerSummary[], requestedAtMono: number): void {
   // Don't override locally-applied state while commands are waiting to sync, nor
   // with a snapshot requested before the last command synced (it predates the
   // command and would briefly undo it). The queue is the source of truth until then.
@@ -949,39 +946,19 @@ function applyServerTimerSync(
     lastCommandSyncedMono: queue.lastTimerCommandSyncedMono(),
   })) return;
 
-  const localStatus = store.getTimerStatus();
-  const localEntryId = store.getActiveEntryId();
-  const serverEntryId = timerSync?.entryId ?? null;
-  const serverStatus = timerSync?.status ?? "stopped";
+  const listed = timers.filter((t) => t.status === "running" || t.status === "paused");
+  const local = store.getTimers().map((t) => `${t.entryId}/${t.status}`).join(",");
+  const server = [...listed].reverse().map((t) => `${t.entryId}/${t.status}`).join(",");
+  if (local === server) return;
 
-  if (localEntryId === serverEntryId && localStatus === serverStatus) return;
-
-  console.log(
-    `[Main] Timer resync: local=${localStatus}/${localEntryId ?? "none"} → server=${serverStatus}/${serverEntryId ?? "none"}`
-  );
-  const wasStopped = localStatus === "stopped";
-  store.syncFromServer(
-    timerSync
-      ? {
-          id: timerSync.entryId,
-          status: timerSync.status,
-          duration: timerSync.duration,
-          taskId: timerSync.taskId,
-          lastActivityAt: timerSync.lastActivityAt,
-          projectName: timerSync.projectName,
-          taskName: timerSync.taskName,
-          startTime: timerSync.startTime ?? null,
-        }
-      : null
-  );
+  console.log(`[Main] Timer resync: local=${local || "none"} → server=${server || "none"}`);
+  store.applyServerTimers(listed);
   pushStateToRenderer();
-  // Stopped elsewhere (or a stale local timer): the server total now includes that entry.
-  if (serverStatus === "stopped" && !wasStopped) {
-    refreshWorkedTodayServerBase().then(() => pushStateToRenderer()).catch(() => { /* non-fatal */ });
-  }
+  // Started, paused or stopped elsewhere: the server's Worked Time moved with it.
+  refreshWorkedTodayServerBase().then(() => pushStateToRenderer()).catch(() => { /* non-fatal */ });
 }
 
-/** Fetch server's stopped-entries total for today and cache in store. Non-fatal on error. */
+/** Fetch the server's Worked Time today (running Timers included, #400) and cache it in store. Non-fatal on error. */
 async function refreshWorkedTodayServerBase(): Promise<void> {
   if (!store.isPaired()) return;
   // Until a stop reaches the server its total lacks the stopped entry and would
@@ -991,40 +968,28 @@ async function refreshWorkedTodayServerBase(): Promise<void> {
     // A GET sent before a local stop can land after the stop folded into the base;
     // its lower total would overwrite it. Same rule as a timer snapshot.
     const requestedAtMono = performance.now();
-    const total = await apiClient.getWorkedToday();
+    const { total, simultaneous } = await apiClient.getWorkedToday();
     if (!timerSyncApplies({
       requestedAtMono,
       pendingCommands: queue.pendingTimerCommandCount(),
       lastCommandSyncedMono: queue.lastTimerCommandSyncedMono(),
     })) return;
-    store.setWorkedTodayServerBase(total);
+    store.setWorkedTodayServerBase(total, simultaneous);
   } catch (err: any) {
     console.warn(`[Main] worked-today refresh failed: ${err.message}`);
   }
 }
 
-/** Fetch active entry from server and reconcile local state. */
+/** Fetch every active Timer from the server and reconcile local state. */
 async function syncTimerFromServer(): Promise<void> {
   if (!store.isPaired()) return;
   // Blocked (#398): every read is refused. The heartbeat checks once a minute and clears the state.
   if (updateGate.state) return;
   try {
     const requestedAtMono = performance.now();
-    const active = await apiClient.getActiveEntry();
-    const timerSync =
-      active && active.status !== "stopped"
-        ? {
-            entryId: active.id,
-            status: active.status,
-            duration: active.duration ?? 0,
-            taskId: active.taskId ?? null,
-            lastActivityAt: active.lastActivityAt ?? null,
-            projectName: active.projectName ?? null,
-            taskName: active.taskName ?? null,
-            startTime: active.startTime ?? null,
-          }
-        : null;
-    applyServerTimerSync(timerSync, requestedAtMono);
+    // Every Timer (#400): /timer/active answers one, which would drop the others here.
+    const timers = await apiClient.getTimers();
+    applyServerTimerSync(timers, requestedAtMono);
   } catch (err: any) {
     console.warn(`[Main] Timer resync failed: ${err.message}`);
   }
@@ -1068,6 +1033,8 @@ function rendererState() {
     apiBaseSource: API_BASE_SOURCE,
     timer: store.getTimerState(),
     timerRequiresTask: agentTimerRequiresTask,
+    /** Start asks Add or Switch while a Timer is active (#400). */
+    simultaneousTimersEnabled: trackingPolicy.simultaneousTimersEnabled === true,
     updateRequired: updateGate.state
       ? { minProtocolVersion: updateGate.state.minProtocolVersion, downloadUrl: downloadUrl() }
       : null,
@@ -1260,28 +1227,39 @@ ipcMain.handle("agent:create-task", async (_event, { crmProjectId, name }) => {
 
 // ─── IPC: Timer ───
 
-ipcMain.handle("agent:timer-start", async (_event, { crmProjectId, taskId, taskName, projectName, description, taskDurationToday }) => {
+ipcMain.handle("agent:timer-start", async (_event, { crmProjectId, taskId, taskName, projectName, description, taskDurationToday, mode }) => {
   // When the server has the tasks migration, task-less starts are invalid (matches POST /api/agent/timer/start).
   if (agentTimerRequiresTask && !taskId) {
     console.warn("[Main] timer.start rejected — taskId is required for this workspace");
     return { ok: false, error: "Select a task to start tracking." };
   }
 
+  // Add keeps the other Timers (#400, ADR-0031); anything else switches, as with one Timer.
+  const startMode: StartMode = mode === "add" ? "add" : "switch";
+  if (startMode === "add" && !trackingPolicy.simultaneousTimersEnabled) {
+    return { ok: false, error: "This Workspace runs one Timer at a time. Switch to this Timer instead." };
+  }
+  if (startMode === "add" && store.getTimers().length >= MAX_SIMULTANEOUS_TIMERS) {
+    return { ok: false, error: TIMER_LIMIT_MESSAGE };
+  }
+
   // Local-first: apply state immediately, enqueue for background sync.
   const clientCommandId = randomUUID();
   const localEntryId = `local-${randomUUID()}`;
 
-  store.setTimerRunning(
-    localEntryId,
-    projectName || null,
-    taskId || null,
-    taskName || null,
-    description || null,
+  store.startTimer({
+    entryId: localEntryId,
+    crmProjectId: crmProjectId || null,
+    projectName: projectName || null,
+    taskId: taskId || null,
+    taskName: taskName || null,
+    description: description || null,
     // Seed entryServerBase from the renderer's already-known task total so that
     // elapsedToday displays correctly from the first tick, without waiting for
     // the ~30s server sync response (avoids the 0→jump UX regression).
-    typeof taskDurationToday === "number" ? taskDurationToday : 0,
-  );
+    taskAccumulatedToday: typeof taskDurationToday === "number" ? taskDurationToday : 0,
+    mode: startMode,
+  });
   queue.enqueueTimerCommand({
     clientCommandId,
     type: "start",
@@ -1289,58 +1267,66 @@ ipcMain.handle("agent:timer-start", async (_event, { crmProjectId, taskId, taskN
     crmProjectId,
     taskId: taskId || null,
     description: description || null,
+    // No mode is a switch on the server, as before #400.
+    ...(startMode === "add" ? { mode: "add" as const } : {}),
   });
   widgetDismissed = false;
-  console.log(`[Main] timer.start (local) — localEntryId=${localEntryId} project="${projectName || ""}" task="${taskName || ""}"`);
+  console.log(`[Main] timer.start (local, ${startMode}) — localEntryId=${localEntryId} project="${projectName || ""}" task="${taskName || ""}"`);
   pushStateToRenderer();
   syncWorker?.triggerSync();
   return { ok: true };
 });
 
-ipcMain.handle("agent:timer-pause", async () => {
-  const entryId = store.getActiveEntryId();
+/** The Timer an IPC call names; without one (widget, v1 screens), the Timer they show. */
+function timerFor(args: { entryId?: string } | undefined): string | null {
+  const entryId = args?.entryId ?? store.getActiveEntryId();
+  return entryId && store.getTimer(entryId) ? entryId : null;
+}
+
+ipcMain.handle("agent:timer-pause", async (_event, args?: { entryId?: string }) => {
+  const entryId = timerFor(args);
   if (!entryId) return { ok: false, error: "No active timer" };
+  if (store.getTimer(entryId)?.status !== "running") return { ok: true };
 
   const clientCommandId = randomUUID();
-  store.setTimerPaused();
+  store.pauseTimer(entryId);
+  idlePausedEntryIds = forgetAwayPause(idlePausedEntryIds, entryId);
   queue.enqueueTimerCommand({ clientCommandId, type: "pause", entryId });
   pushStateToRenderer();
   syncWorker?.triggerSync();
   return { ok: true };
 });
 
-/** Resume the active timer (IPC handler + paused-reminder notification click). */
-function resumeActiveTimer(): { ok: boolean; error?: string } {
-  if (stopPausedEntryFromPreviousDay("resume")) {
+/** Resume a paused Timer, the latest one by default (IPC handler, tray, paused-reminder notification click). */
+function resumeActiveTimer(entryId?: string): { ok: boolean; error?: string } {
+  const target = entryId ?? store.getTimers().filter((t) => t.status === "paused").pop()?.entryId ?? null;
+  if (stopPausedEntryFromPreviousDay("resume") && (!target || !store.getTimer(target))) {
     return {
       ok: false,
       error: "This timer was paused since a previous day and has been stopped. Start the task again.",
     };
   }
-  const entryId = store.getActiveEntryId();
-  if (!entryId) return { ok: false, error: "No active timer" };
+  if (!target || !store.getTimer(target)) return { ok: false, error: "No active timer" };
+  if (store.getTimer(target)?.status !== "paused") return { ok: true };
 
   const clientCommandId = randomUUID();
-  store.setTimerRunning(
-    entryId,
-    store.getActiveProjectName(),
-    store.getActiveTaskId(),
-    store.getActiveTaskName(),
-    store.getActiveDescription(),
-  );
-  queue.enqueueTimerCommand({ clientCommandId, type: "resume", entryId });
+  store.resumeTimer(target);
+  idlePausedEntryIds = forgetAwayPause(idlePausedEntryIds, target);
+  queue.enqueueTimerCommand({ clientCommandId, type: "resume", entryId: target });
   pushStateToRenderer();
   syncWorker?.triggerSync();
   return { ok: true };
 }
 
-ipcMain.handle("agent:timer-resume", async () => resumeActiveTimer());
+ipcMain.handle("agent:timer-resume", async (_event, args?: { entryId?: string }) => resumeActiveTimer(args?.entryId));
 
-/** Stop the active timer locally and queue the stop command. Shared by agent:timer-stop and the previous-day stop. */
+/** Stop one Timer locally and queue the stop command. Shared by agent:timer-stop, stop-all and the previous-day stop. */
 function stopActiveTimer(entryId: string): void {
-  store.clearTimer();
+  store.stopTimer(entryId);
+  idlePausedEntryIds = forgetAwayPause(idlePausedEntryIds, entryId);
   queue.enqueueTimerCommand({ clientCommandId: randomUUID(), type: "stop", entryId });
-  if (idleFlow.active) {
+  // The idle prompt is about the Timers that ran: it ends with the last one.
+  if (idleFlow.active && store.getTimers().length === 0) {
     idleFlow.cancel();
     clearIdleActivityCheck();
     releaseIdleOnTop();
@@ -1350,8 +1336,8 @@ function stopActiveTimer(entryId: string): void {
   syncWorker?.triggerSync();
 }
 
-ipcMain.handle("agent:timer-stop", async () => {
-  const entryId = store.getActiveEntryId();
+ipcMain.handle("agent:timer-stop", async (_event, args?: { entryId?: string }) => {
+  const entryId = timerFor(args);
   if (!entryId) return { ok: false, error: "No active timer" };
 
   console.log(`[Main] timer.stop (local) — entry=${entryId}`);
@@ -1359,23 +1345,34 @@ ipcMain.handle("agent:timer-stop", async () => {
   return { ok: true };
 });
 
+/** Stop every Timer (#400): one stop command each. */
+ipcMain.handle("agent:timer-stop-all", async () => {
+  const entryIds = store.getTimers().map((t) => t.entryId);
+  if (entryIds.length === 0) return { ok: false, error: "No active timer" };
+
+  console.log(`[Main] timer.stop-all (local) — entries=${entryIds.join(",")}`);
+  for (const entryId of entryIds) stopActiveTimer(entryId);
+  return { ok: true };
+});
+
 /**
  * A paused entry must not survive into a new local day: stop it (same as agent:timer-stop).
- * The server records endTime = pause time for paused entries.
+ * Each paused Timer on its own (#400). The server records endTime = pause time for paused entries.
  * Returns true when an entry was stopped.
  */
 function stopPausedEntryFromPreviousDay(reason: string): boolean {
-  if (store.getTimerStatus() !== "paused") return false;
-  const entryId = store.getActiveEntryId();
-  if (!entryId) return false;
+  let stopped = false;
+  for (const timer of store.getTimers()) {
+    if (timer.status !== "paused") continue;
+    const pausedSince = store.getPausedSince(timer.entryId);
+    if (!pausedSince) continue;
+    if (!pausedFromPreviousDay(pausedSince.getTime(), Date.now())) continue;
 
-  const pausedSince = store.getPausedSince();
-  if (!pausedSince) return false;
-  if (!pausedFromPreviousDay(pausedSince.getTime(), Date.now())) return false;
-
-  stopActiveTimer(entryId);
-  console.log(`[Main] ${reason} — paused entry from a previous day stopped (entry=${entryId})`);
-  return true;
+    stopActiveTimer(timer.entryId);
+    console.log(`[Main] ${reason} — paused entry from a previous day stopped (entry=${timer.entryId})`);
+    stopped = true;
+  }
+  return stopped;
 }
 
 /** Notify the Member when they are active while the timer sits paused. */
@@ -1704,30 +1701,22 @@ ipcMain.handle("agent:today-breakdown", async () => {
   if (!store.isPaired()) return { ok: false, rows: [] };
   try {
     const rows = await apiClient.getTodayBreakdown();
-    // Overlay live elapsed for the active entry onto its matching row
-    const timerState = store.getTimerState();
-    if (timerState.status !== "stopped" && timerState.taskId) {
-      const activeRow = rows.find((r) => r.taskId === timerState.taskId);
+    // Overlay live elapsed for each active Timer onto its matching row (#400: a
+    // Task counts its time in full, Simultaneous Time included).
+    for (const timer of store.getTimerState().timers) {
+      const activeRow = timer.taskId ? rows.find((r) => r.taskId === timer.taskId) : undefined;
       if (activeRow) {
-        (activeRow as any).activeSeconds = timerState.elapsedToday;
+        (activeRow as any).activeSeconds = timer.elapsedToday;
       } else {
+        // No row yet, or a Timer with no task: its own row
         rows.push({
-          projectName: timerState.projectName ?? "Unknown Project",
-          taskId: timerState.taskId,
-          taskName: timerState.taskName,
+          projectName: timer.projectName ?? "Unknown Project",
+          taskId: timer.taskId,
+          taskName: timer.taskName,
           stoppedSeconds: 0,
-          activeSeconds: timerState.elapsedToday,
+          activeSeconds: timer.elapsedToday,
         } as any);
       }
-    } else if (timerState.status !== "stopped" && !timerState.taskId) {
-      // Timer running with no task — show as its own row
-      rows.push({
-        projectName: timerState.projectName ?? "Unknown Project",
-        taskId: null,
-        taskName: null,
-        stoppedSeconds: 0,
-        activeSeconds: timerState.elapsedToday,
-      } as any);
     }
     return { ok: true, rows };
   } catch (err: any) {
@@ -1753,16 +1742,6 @@ function enqueueTimerCommands(...drafts: TimerCommandDraft[]): void {
   }
 }
 
-function resumeTimerLocally(entryId: string): void {
-  store.setTimerRunning(
-    entryId,
-    store.getActiveProjectName(),
-    store.getActiveTaskId(),
-    store.getActiveTaskName(),
-    store.getActiveDescription(),
-  );
-}
-
 /** Idle pause and prompt (lib/idleFlow.ts); these ports are its only reach into the app. */
 const idleFlow = new IdleFlow({
   now: () => Date.now(),
@@ -1770,22 +1749,22 @@ const idleFlow = new IdleFlow({
   clearTimeout: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
   timerStatus: () => (store.getActiveEntryId() ? store.getTimerStatus() : "stopped"),
   pauseAt: (at) => {
-    const entryId = store.getActiveEntryId();
-    if (!entryId) return;
-    // Closing the session at `at` keeps the idle time out of Worked Today.
-    store.setTimerPaused(at);
-    enqueueTimerCommands(pauseCommandAt(entryId, at));
+    // Every running Timer pauses where the idle time began (ADR-0031); closing
+    // the sessions at `at` keeps the idle time out of Worked Today.
+    const paused = store.pauseRunningTimers(at);
+    if (paused.length === 0) return;
+    idlePausedEntryIds = paused;
+    enqueueTimerCommands(...paused.map((entryId) => pauseCommandAt(entryId, at)));
     syncWorker?.triggerSync();
     pushStateToRenderer();
   },
   dropIdleSince: (at) => {
-    const entryId = store.getActiveEntryId();
-    if (!entryId) return;
-    // The server is told too: a pause where the idle time began and a resume
-    // now, so both totals agree (#333).
-    store.setTimerPaused(at);
-    resumeTimerLocally(entryId);
-    enqueueTimerCommands(...droppedIdleCommands(entryId, at));
+    // The server is told too: for each running Timer, a pause where the idle
+    // time began and a resume now, so both totals agree (#333).
+    const dropped = store.pauseRunningTimers(at);
+    if (dropped.length === 0) return;
+    store.resumeTimers(dropped);
+    enqueueTimerCommands(...dropped.flatMap((entryId) => droppedIdleCommands(entryId, at)));
     syncWorker?.triggerSync();
     pushStateToRenderer();
   },
@@ -1800,21 +1779,26 @@ const idleFlow = new IdleFlow({
   log: (message) => console.log(`[Main] ${message}`),
 });
 
+/** "I'm back": resume the Timers the idle pause stopped, not one paused by hand (#400). */
 function resumeTimerAfterIdle(): void {
-  const entryId = store.getActiveEntryId();
-  if (!entryId) return;
-  resumeTimerLocally(entryId);
-  queue.enqueueTimerCommand({ clientCommandId: randomUUID(), type: "resume", entryId });
+  // None recorded (a stale prompt): the latest paused Timer, as before.
+  const latestPaused = store.getTimers().filter((t) => t.status === "paused").pop()?.entryId;
+  const awayPaused = awayResumeTargets(idlePausedEntryIds, store.getTimers());
+  const entryIds = awayPaused.length > 0 ? awayPaused : latestPaused ? [latestPaused] : [];
+  idlePausedEntryIds = [];
+  const resumed = store.resumeTimers(entryIds);
+  if (resumed.length === 0) return;
+  enqueueTimerCommands(...resumed.map((entryId) => ({ type: "resume" as const, entryId })));
   pushStateToRenderer();
   syncWorker?.triggerSync();
 }
 
+/** "I'm not working": stop every Timer, each closed where the idle time began (#400). */
 function stopTimerAfterIdle(at: Date): void {
-  const entryId = store.getActiveEntryId();
-  if (!entryId) return;
-  if (store.getTimerStatus() === "running") store.setTimerPaused(at);
-  store.clearTimer();
-  enqueueTimerCommands(stopCommandAt(entryId, at));
+  idlePausedEntryIds = [];
+  const stopped = store.stopAllTimers(at);
+  if (stopped.length === 0) return;
+  enqueueTimerCommands(...stopped.map((entryId) => stopCommandAt(entryId, at)));
   pushStateToRenderer();
   syncWorker?.triggerSync();
 }
@@ -1833,11 +1817,13 @@ function dismissIdlePrompt(): void {
  * Wake still leaves the Timer paused until the Member resumes.
  */
 function pauseTimerForSystemAway(reason: string): void {
-  const entryId = store.getActiveEntryId();
+  const entryIds = store.getRunningEntryIds();
   const at = pauseForSystemAway({
     now: () => new Date(),
     timerStatus: () => store.getTimerStatus(),
     activeEntryId: () => store.getActiveEntryId(),
+    // Every running Timer pauses, one dated command each (ADR-0031).
+    runningEntryIds: () => store.getRunningEntryIds(),
     cancelIdle: () => {
       const idleSince = idleFlow.cancel();
       clearIdleActivityCheck();
@@ -1849,9 +1835,12 @@ function pauseTimerForSystemAway(reason: string): void {
     enqueue: (draft) => enqueueTimerCommands(draft),
   });
   if (!at) return;
+  // Remembered like an idle pause, so one resume brings back every Timer the
+  // sleep or lock paused, and none the Member had paused by hand (ADR-0031).
+  idlePausedEntryIds = entryIds;
   syncWorker?.triggerSync();
   pushStateToRenderer();
-  console.log(`[Main] ${reason} — timer paused at ${at.toISOString()} (entry=${entryId})`);
+  console.log(`[Main] ${reason} — timers paused at ${at.toISOString()} (entries=${entryIds.join(",")})`);
 }
 
 /** Bring mainWindow above all other windows for the duration of the idle prompt. */
@@ -1943,36 +1932,25 @@ ipcMain.handle("agent:idle-break", () => {
  * commands already synced before shutdown but timer was still active).
  */
 function autoResumeFromQueue(): void {
-  const entryId = store.getActiveEntryId();
-  if (!entryId) {
-    // Defensive: if entryId is gone but timerStatus is stale (e.g. external disk
-    // corruption), clear it so the store stays consistent.
-    if (store.getTimerStatus() !== "stopped") store.clearTimer();
-    return;
-  }
+  // Each Timer on its own (#400).
+  for (const timer of store.getTimers()) {
+    // Use pending queue intent when available (offline case — commands not yet synced).
+    // Fall back to the persisted status when the queue is empty, which is the common
+    // case after a clean PC restart: the start command already synced before shutdown,
+    // leaving the queue empty, but the timer was still active.
+    const queueIntent = queue.getTimerIntent(timer.entryId);
+    const intent = queueIntent !== "stopped" ? queueIntent : timer.status;
 
-  // Use pending queue intent when available (offline case — commands not yet synced).
-  // Fall back to persisted timerStatus when the queue is empty, which is the common
-  // case after a clean PC restart: the start command already synced before shutdown,
-  // leaving the queue empty, but the timer was still active.
-  const queueIntent = queue.getTimerIntent();
-  const intent = queueIntent !== "stopped" ? queueIntent : store.getTimerStatus();
-
-  if (intent === "running") {
-    // Create a fresh session starting now — the PC-off gap is excluded because
-    // reconcileOrphanSessions() already closed the previous session at lastActivityAt.
-    store.setTimerRunning(
-      entryId,
-      store.getActiveProjectName(),
-      store.getActiveTaskId(),
-      store.getActiveTaskName(),
-      null,
-    );
-    console.log(`[Main] timer.autoResume (running) — entry=${entryId}`);
-  } else if (intent === "paused") {
-    // The last command was pause — no open sessions to reconcile. Just restore status.
-    store.setTimerPaused();
-    console.log(`[Main] timer.autoResume (paused) — entry=${entryId}`);
+    if (intent === "running") {
+      // Create a fresh session starting now — the PC-off gap is excluded because
+      // reconcileOrphanSessions() already closed the previous session at lastActivityAt.
+      store.resumeTimer(timer.entryId);
+      console.log(`[Main] timer.autoResume (running) — entry=${timer.entryId}`);
+    } else if (intent === "paused") {
+      // The last command was pause — no open sessions to reconcile. Just restore status.
+      store.pauseTimer(timer.entryId);
+      console.log(`[Main] timer.autoResume (paused) — entry=${timer.entryId}`);
+    }
   }
 }
 

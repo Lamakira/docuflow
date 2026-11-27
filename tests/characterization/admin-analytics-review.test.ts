@@ -193,7 +193,7 @@ describe("CSV cells", () => {
 
   it("is the header alone when there is no entry", () => {
     expect(timeExportCsv([], dayCalendar("UTC"))).toBe(
-      "﻿Date,Start,End,Member,Client,Project,Task,Description,Status,Tracked (h),Idle (h)",
+      "﻿Date,Start,End,Member,Client,Project,Task,Description,Status,Tracked (h),Idle (h),Worked (h)",
     );
   });
 });
@@ -641,9 +641,9 @@ describe("the export is what the page shows (F98)", () => {
     expect(res.headers["content-disposition"]).toBe('attachment; filename="docuflow-time-2026-03-10-to-2026-03-11.csv"');
     expect(res.text.charCodeAt(0)).toBe(0xfeff);
     expect(res.text.slice(1).split("\r\n")).toEqual([
-      "Date,Start,End,Member,Client,Project,Task,Description,Status,Tracked (h),Idle (h)",
-      '2026-03-10,13:00,,"Ada Min","Société Générale","Delivery","","","running",0.50,0.00',
-      `2026-03-10,00:00,02:00,"Mel Ber","Société Générale","Delivery","'=HYPERLINK(1)","Café, ""noir""","stopped",0.50,0.50`,
+      "Date,Start,End,Member,Client,Project,Task,Description,Status,Tracked (h),Idle (h),Worked (h)",
+      '2026-03-10,13:00,,"Ada Min","Société Générale","Delivery","","","running",0.50,0.00,0.50',
+      `2026-03-10,00:00,02:00,"Mel Ber","Société Générale","Delivery","'=HYPERLINK(1)","Café, ""noir""","stopped",0.50,0.50,0.50`,
     ]);
   });
 });

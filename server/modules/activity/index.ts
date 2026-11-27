@@ -34,6 +34,7 @@ export {
 
 export const ACTIVITY_TABLES = [
   "time_entry_screenshots",
+  "time_entry_screenshot_timers",
   "agent_activity_events",
   "agent_processed_batches",
 ] as const;

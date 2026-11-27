@@ -86,6 +86,8 @@ describe("notifications and org settings (characterization)", () => {
       idleCountdownSeconds: 60,
       screenshotProjectIds: null,
       lowActivityThresholdPercent: 10,
+      // One Timer at a time until an Administrator allows Simultaneous Timers (#400).
+      simultaneousTimersEnabled: false,
     });
     expect(res.body.allowedTimezones).toEqual([]);
     expect(res.body.timeZone).toBe("America/Toronto");

@@ -1,8 +1,12 @@
+import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
+import { Button } from "@/components/ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useTimeTracker } from "@/contexts/TimeTrackerContext";
 import { PlayIcon, PauseIcon, StopIcon } from "./icons";
 import { timerChipCommands } from "./chrome";
-import { timerChipModel } from "./presentation";
+import { formatElapsedClock, timerChipModel } from "./presentation";
+import { useStartTimer } from "./V2StartTimer";
 import { notify } from "./notify";
 import { isTimerProject, projectTasksHref } from "./time";
 
@@ -24,11 +28,18 @@ export function V2TimerChip({
     tasks,
     selectedProjectId,
     taskStartBlockedReason,
-    handleStart,
+    timers,
     handlePause,
     handleResume,
     handleStop,
+    handlePauseTimer,
+    handleResumeTimer,
+    handleStopTimer,
+    handleStopAll,
   } = useTimeTracker();
+  // Start asks add or switch first (ADR-0031); it answers true only once the server took the Timer.
+  const { start: handleStart, dialog: startDialog } = useStartTimer();
+  const [timersOpen, setTimersOpen] = useState(false);
 
   const project = projects.find((item) => item.id === activeEntry?.crmProjectId);
   const projectName = project?.project?.name || null;
@@ -79,6 +90,12 @@ export function V2TimerChip({
   async function onStop() {
     if (await handleStop()) notify.success("Timer stopped");
   }
+
+  const extraTimers = timers.length - 1;
+  const projectNamesOf = (crmProjectId: string, serverName?: string | null) => {
+    const row = projects.find((item) => item.id === crmProjectId);
+    return { projectName: serverName || row?.project?.name || "Project", clientName: row?.client?.name || null };
+  };
 
   const strip = variant === "strip";
   if (strip && model.appearance === "idle") return null;
@@ -150,7 +167,119 @@ export function V2TimerChip({
           <StopIcon />
         </button>
       ) : null}
+      {/* After Stop, not between Pause and Stop: a click meant for the list stopped a Timer. */}
+      {extraTimers > 0 ? (
+        <Popover open={timersOpen} onOpenChange={setTimersOpen}>
+          <PopoverTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              className="df-chip-count"
+              aria-label={`Show all ${timers.length} Timers`}
+              data-testid="v2-timer-count"
+            >
+              +{extraTimers}
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="end" className="df-v2 df-timers-popover" data-testid="v2-timers-popover">
+            <ul className="df-timers-list">
+              {timers.map((timer) => (
+                <TimerRow
+                  key={timer.id}
+                  timer={timer}
+                  {...projectNamesOf(timer.crmProjectId, timer.projectName)}
+                  onPause={async () => {
+                    if (await handlePauseTimer(timer.id)) notify.success("Timer paused");
+                  }}
+                  onResume={async () => {
+                    if (await handleResumeTimer(timer.id)) notify.success("Timer resumed");
+                  }}
+                  onStop={async () => {
+                    if (await handleStopTimer(timer.id)) notify.success("Timer stopped");
+                  }}
+                />
+              ))}
+            </ul>
+            <Button
+              variant="outline"
+              type="button"
+              className="df-btn df-timers-stop-all"
+              onClick={async () => {
+                if (await handleStopAll()) {
+                  setTimersOpen(false);
+                  notify.success("Timers stopped");
+                }
+              }}
+            >
+              Stop all
+            </Button>
+          </PopoverContent>
+        </Popover>
+      ) : null}
+      {startDialog}
     </div>
+  );
+}
+
+type ChipTimer = ReturnType<typeof useTimeTracker>["timers"][number];
+
+/** One Timer in the list: its Project, Task and clock, with its own pause or resume and stop. */
+function TimerRow({
+  timer,
+  projectName,
+  clientName,
+  onPause,
+  onResume,
+  onStop,
+}: {
+  timer: ChipTimer;
+  projectName: string;
+  clientName: string | null;
+  onPause: () => void;
+  onResume: () => void;
+  onStop: () => void;
+}) {
+  const running = timer.status === "running";
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!running) return;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [running]);
+  // Read by the server with the Timer: no load of its own that could fail here.
+  const taskName = timer.taskName ?? null;
+  const elapsed =
+    (timer.duration || 0) +
+    (running && timer.lastActivityAt ? Math.max(0, Math.floor((now - new Date(timer.lastActivityAt).getTime()) / 1000)) : 0);
+  return (
+    <li className="df-timers-row" data-status={timer.status}>
+      {/* The Project on one line and its Task under it: in one line both ended in an ellipsis. */}
+      <span className="df-timers-label" title={[clientName, projectName, taskName].filter(Boolean).join(" · ")}>
+        <span className="df-timers-name">{projectName}</span>
+        <span className="df-timers-task">{taskName ?? clientName ?? "No Task"}</span>
+      </span>
+      <span className="df-mono df-timers-clock">{formatElapsedClock(elapsed)}</span>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className="df-timers-action"
+        onClick={running ? onPause : onResume}
+        aria-label={`${running ? "Pause" : "Resume"} Timer on ${taskName ?? projectName}`}
+      >
+        {running ? <PauseIcon /> : <PlayIcon />}
+      </Button>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className="df-timers-action"
+        onClick={onStop}
+        aria-label={`Stop Timer on ${taskName ?? projectName}`}
+      >
+        <StopIcon />
+      </Button>
+    </li>
   );
 }
 

@@ -42,6 +42,7 @@ export interface TimeSpanRow extends Omit<TimePortionRow, "projectName"> {
   clientName: string | null;
   description: string | null;
   status: string;
+  provenance: string;
   span: TimeSpan;
 }
 
@@ -54,7 +55,8 @@ export interface TimeEntryPage {
   data: Array<TimeEntryWithDetails & { secondsInPeriod: number }>;
   total: number;
   /** Inside the period, over every match and not the page alone. */
-  totals: { duration: number; idle: number };
+  /** `duration` is Worked Time: each Member's hours once (ADR-0031). */
+  totals: { duration: number; simultaneous: number; idle: number };
 }
 
 export interface TimePersistence {
@@ -71,7 +73,10 @@ export interface TimePersistence {
   getTimePortions(options: TimePortionOptions): Promise<TimePortionRow[]>;
   getTimeEntry(id: string): Promise<TimeEntryWithDetails | undefined>;
   getTimeEntryByClientCommandId(clientCommandId: string): Promise<TimeEntry | undefined>;
+  /** The latest active Timer, whichever Workspace it is in. */
   getActiveTimeEntry(userId: string): Promise<TimeEntry | undefined>;
+  /** Every active Timer of the User, newest first (ADR-0031). */
+  getActiveTimeEntries(userId: string): Promise<TimeEntry[]>;
   getStaleRunningEntries(staleThreshold: Date): Promise<TimeEntry[]>;
   getExpiredPausedEntries(pausedBefore: Date): Promise<TimeEntry[]>;
   createTimeEntry(entry: InsertTimeEntry): Promise<TimeEntry>;
@@ -84,7 +89,9 @@ export interface TimePersistence {
     endDate?: Date;
     includeActive?: boolean;
   }): Promise<{
+    /** Worked Time: each Member's hours once; `byProject` once per Member (ADR-0031). */
     totalDuration: number;
+    simultaneousDuration: number;
     totalIdleTime: number;
     entriesCount: number;
     screenshotCount: number;

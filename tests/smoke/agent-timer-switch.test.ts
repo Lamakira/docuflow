@@ -54,8 +54,10 @@ describe("Timer switched on the server", () => {
 
     vi.advanceTimersByTime(60_000);
     expect(store.getElapsedSeconds()).toBe(180);
-    // The old entry's 600 s are folded in, the new one counts on top.
-    expect(store.getWorkedTodaySeconds()).toBe(1000 + 600 + 180);
+    // Worked Time counts once (#400): the 600 s entry-a ran here since the read,
+    // then the 60 s entry-b ran. Its 120 s before the switch reached this
+    // device reach the total at the next read of the server, which includes it.
+    expect(store.getWorkedTodaySeconds()).toBe(1000 + 600 + 60);
   });
 
   it("keeps counting the new entry when the old one was paused here", () => {

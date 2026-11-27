@@ -20,12 +20,20 @@ contextBridge.exposeInMainWorld("agentBridge", {
   createTask: (data: { crmProjectId: string; name: string }) => ipcRenderer.invoke("agent:create-task", data),
 
   // Timer
-  timerStart: (data: { crmProjectId: string; taskId?: string; taskName?: string; projectName: string; description?: string; taskDurationToday?: number }) =>
+  timerStart: (data: { crmProjectId: string; taskId?: string; taskName?: string; projectName: string; description?: string; taskDurationToday?: number; mode?: "add" | "switch" }) =>
     ipcRenderer.invoke("agent:timer-start", data),
-  timerPause: () => ipcRenderer.invoke("agent:timer-pause"),
-  timerResume: () => ipcRenderer.invoke("agent:timer-resume"),
-  timerStop: () => ipcRenderer.invoke("agent:timer-stop"),
+  // Without an entry id: the Timer the screen shows (#400).
+  timerPause: (data?: { entryId?: string }) => ipcRenderer.invoke("agent:timer-pause", data),
+  timerResume: (data?: { entryId?: string }) => ipcRenderer.invoke("agent:timer-resume", data),
+  timerStop: (data?: { entryId?: string }) => ipcRenderer.invoke("agent:timer-stop", data),
+  timerStopAll: () => ipcRenderer.invoke("agent:timer-stop-all"),
   timerState: () => ipcRenderer.invoke("agent:timer-state"),
+  // The server refused a start (#400): its Timer is gone, the message says why.
+  onTimerRefused: (callback: (data: { message: string }) => void) => {
+    const handler = (_event: any, data: { message: string }) => callback(data);
+    ipcRenderer.on("agent:timer-refused", handler);
+    return () => ipcRenderer.off("agent:timer-refused", handler);
+  },
 
   // Open URL in default browser
   openExternal: (url: string) => ipcRenderer.invoke("agent:open-external", url),

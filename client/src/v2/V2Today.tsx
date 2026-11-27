@@ -41,6 +41,7 @@ import { V2PageHead } from "./V2PageHead";
 type ProjectsResponse = { data: CrmProjectWithDetails[]; total?: number };
 type TimeStats = {
   totalDuration: number;
+  simultaneousDuration?: number;
   byProject: Array<{ crmProjectId: string; totalDuration: number }>;
   byUser: Array<{ userId: string; totalDuration: number }>;
 };
@@ -280,6 +281,8 @@ export function V2TodayPage() {
       email: member.email,
       isArchived: member.isArchived,
     })),
+    // The stats span the team for a reader who sees it; the line is the reader's own day.
+    simultaneousSeconds: canViewTeam ? 0 : (todayStats?.simultaneousDuration ?? 0),
     todaySecondsByUser: todayStats?.byUser ?? [],
     monthSecondsByProject: monthStats?.byProject ?? [],
     missingDailyUpdates: todayStatus ? todayStatus.missing : null,
@@ -514,6 +517,9 @@ export function V2TodayPage() {
               </span>
             ) : null}
           </div>
+          {workdayReady && today.workday.workedTime ? (
+            <p className="df-today-timer" data-testid="v2-today-worked-time">{today.workday.workedTime}</p>
+          ) : null}
           {workdayReady && today.workday.openTimerSince ? (
             <p className="df-today-timer">{today.workday.openTimerSince}</p>
           ) : null}

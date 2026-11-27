@@ -7,6 +7,8 @@ import {
   composeTrackingPolicyEditor,
   normalizeScreenshotPolicy,
   pruneEdits,
+  simultaneousTimersOption,
+  type SimultaneousTimersSetting,
   workspaceSettingsPath,
   type PolicyEdits,
   type PolicyNumberKey,
@@ -28,6 +30,7 @@ import {
 
 type WorkspaceSettingsResponse = {
   screenshotPolicy: ScreenshotPolicy | null;
+  simultaneousTimers?: SimultaneousTimersSetting;
 };
 
 /**
@@ -99,6 +102,7 @@ export function V2AdministrationTrackingPolicy({
   }
 
   const form = policy.form;
+  const simultaneous = simultaneousTimersOption(settings.data?.simultaneousTimers);
   const editable = policy.editable;
 
   function edit(patch: PolicyEdits) {
@@ -226,6 +230,20 @@ export function V2AdministrationTrackingPolicy({
               {numberField("idleCountdownSeconds", "Prompt countdown (seconds)", "Idle countdown")}
             </div>
           </div>
+        ) : null}
+        {/* After the idle settings, not inside them: it is about Timers, not idle time. */}
+        {simultaneous.visible ? (
+          <>
+            <CheckRow
+              id="df-policy-simultaneous-timers"
+              label={simultaneous.label}
+              checked={form.simultaneousTimersEnabled}
+              disabled={!editable || (simultaneous.disabled && !form.simultaneousTimersEnabled)}
+              onChange={(next) => edit({ simultaneousTimersEnabled: next })}
+            />
+            <p className="df-policy-hint">{simultaneous.hint}</p>
+            {simultaneous.note ? <p className="df-policy-hint">{simultaneous.note}</p> : null}
+          </>
         ) : null}
       </div>
       <div className="df-form-actions">

@@ -18,6 +18,7 @@ import { MONTHS } from "./dates";
 import { DEFAULT_REGISTER_PAGE_SIZE, readPage, readPageSize, writePaging } from "./paging";
 import { fullProjectName, type ProjectTaskProject } from "./tasks";
 import { isDeliveryProject, projectHasOpportunity } from "@shared/projectLifecycle";
+import { STALE_THRESHOLD_MS } from "@shared/timePortion";
 
 export type TimeEntryRowInput = {
   id: string;
@@ -49,6 +50,10 @@ export type TimeTrackingInput = {
   activeEntryId: string | null;
   entries: TimeEntryRowInput[];
   workdaySeconds: number;
+  /** Simultaneous Time in the reader's day, from the same stats; 0 or omitted when none. */
+  simultaneousSeconds?: number;
+  /** The clock the running rows tick on; `now` when omitted. */
+  nowMs?: number;
   /** Seconds since the register was read, for the running row's part of the period. */
   liveSeconds?: number;
   /** Where the register's period starts; null or omitted for all time. */
@@ -371,11 +376,26 @@ function widenTimeLabel(range: "today" | "week" | "all"): string | null {
   return `Show ${label.charAt(0).toLowerCase()}${label.slice(1)}`;
 }
 
+/**
+ * A running row the Timer does not show (another of the reader's Simultaneous
+ * Timers, another Member's) still ticks: its seconds since its last sign of
+ * life, as the server counts them, and none once it has gone silent.
+ */
+function liveSecondsOf(entry: Pick<TimeEntryRowInput, "status" | "lastActivityAt">, nowMs: number): number {
+  if (entry.status !== "running") return 0;
+  const last = parseDate(entry.lastActivityAt);
+  if (!last) return 0;
+  const silentMs = nowMs - last.getTime();
+  return silentMs > STALE_THRESHOLD_MS ? 0 : Math.max(0, Math.floor(silentMs / 1000));
+}
+
 export function composeTimeTracking(input: TimeTrackingInput): TimeTrackingModel {
   const rows = input.entries.map((entry) => {
     const running = entry.status === "running" || entry.id === input.activeEntryId;
     const seconds =
-      running && entry.id === input.activeEntryId ? input.displayDuration : entry.duration || 0;
+      running && entry.id === input.activeEntryId
+        ? input.displayDuration
+        : (entry.duration || 0) + liveSecondsOf(entry, input.nowMs ?? input.now.getTime());
     const canDelete =
       entry.status === "stopped" && (input.isAdmin || entry.userId === input.currentUserId);
     return {
@@ -399,7 +419,10 @@ export function composeTimeTracking(input: TimeTrackingInput): TimeTrackingModel
   const window = input.range === "today" ? "today" : input.range === "week" ? "this week" : null;
   const widenLabel = input.range ? widenTimeLabel(input.range) : null;
   return {
-    workdayHours: `You today ${formatHours(input.workdaySeconds)}`,
+    workdayHours:
+      (input.simultaneousSeconds ?? 0) > 0
+        ? workedTimeLabel(input.workdaySeconds, input.simultaneousSeconds ?? 0)
+        : `You today ${formatHours(input.workdaySeconds)}`,
     empty,
     emptyState: emptyModelOf(
       emptyKindOf(empty, Boolean(input.facetsActive), window !== null, input.everRecorded ?? null),
@@ -461,6 +484,60 @@ export function formatSpan(seconds: number): string {
   const hours = Math.floor(safe / 3600);
   const minutes = Math.floor((safe % 3600) / 60);
   return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
+}
+
+/**
+ * The reader's day as ADR-0031 words it: Worked Time (each hour once) and, when
+ * two or more Timers ran at once, the Simultaneous Time inside it.
+ */
+export function workedTimeLabel(workedSeconds: number, simultaneousSeconds: number): string {
+  const worked = `Worked time ${formatSpan(workedSeconds)}`;
+  return simultaneousSeconds > 0 ? `${worked} · ${formatSpan(simultaneousSeconds)} simultaneous` : worked;
+}
+
+export type StartChoice =
+  /** Start switches at once, as with one Timer at a time (no mode sent). */
+  | { kind: "switch" }
+  /** Ask: `canAdd` is false at the limit, and `limitLine` says why. */
+  | { kind: "ask"; canAdd: boolean; limitLine: string | null };
+
+/**
+ * Why this Timer cannot be added beside the active ones, as the server would
+ * refuse it (ADR-0031): its Task already has a Timer, or a Timer without a
+ * Task occupies the whole Project. Null when it can be.
+ */
+export function addConflictLine(
+  timers: ReadonlyArray<{ crmProjectId: string; taskId: string | null }>,
+  crmProjectId: string,
+  taskId: string | null,
+): string | null {
+  if (taskId !== null && timers.some((timer) => timer.taskId === taskId)) return "A Timer already runs on this Task.";
+  const sameProject = timers.filter((timer) => timer.crmProjectId === crmProjectId);
+  if (taskId === null && sameProject.length > 0) return "This Project already has a Timer.";
+  if (sameProject.some((timer) => timer.taskId === null)) return "A Timer without a Task already runs on this Project.";
+  return null;
+}
+
+/** ADR-0031 "Starting": with the option on and a Timer active, Start asks add or switch. */
+export function startChoice(input: {
+  simultaneousTimers: boolean;
+  maxTimers: number;
+  activeCount: number;
+  /** From `addConflictLine` for the Project and Task asked for. */
+  conflictLine?: string | null;
+}): StartChoice {
+  if (!input.simultaneousTimers || input.activeCount < 1) return { kind: "switch" };
+  if (input.activeCount >= input.maxTimers) {
+    return { kind: "ask", canAdd: false, limitLine: `You run ${input.maxTimers} Timers. Stop one to add another.` };
+  }
+  if (input.conflictLine) return { kind: "ask", canAdd: false, limitLine: input.conflictLine };
+  return { kind: "ask", canAdd: true, limitLine: null };
+}
+
+/** What Switch stops, named in the add-or-switch dialog. */
+export function switchStopsLine(timerLabels: string[]): string {
+  if (timerLabels.length === 1) return `Switch stops the Timer on ${timerLabels[0]}.`;
+  return `Switch stops your ${timerLabels.length} Timers, paused ones included.`;
 }
 
 /** One local day boundary, shared by every surface that filters on a date. */

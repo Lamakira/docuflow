@@ -19,6 +19,7 @@ import {
 import { inWorkspace, requireWorkspaceContext } from "../../workspaceContext";
 import {
   createAgentActivityEvents,
+  attachOtherRunningTimers,
   createTimeEntryScreenshot,
   getActivityEvidence,
   markAgentBatchProcessed,
@@ -161,6 +162,7 @@ export async function ingestActivityScreenshot(input: {
     if (existing) return existing;
 
     const row = await createTimeEntryScreenshot(input.screenshot, writer);
+    await attachOtherRunningTimers(row, writer);
     // Two-phase upload: a pending-* row is only a slot. Attribution waits
     // until commitActivityScreenshot replaces that key with committed bytes.
     if (!isPendingStorageKey(row.storageKey)) {

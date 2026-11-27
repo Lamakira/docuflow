@@ -187,7 +187,7 @@ describe("agent update required (#398)", () => {
     expect(calls.some((c) => c.method === "PUT")).toBe(true);
     expect(calls.length).toBeGreaterThan(4);
     for (const c of calls) {
-      expect(c.headers["x-agent-protocol-version"], `${c.method} ${c.url}`).toBe("1");
+      expect(c.headers["x-agent-protocol-version"], `${c.method} ${c.url}`).toBe(String(AGENT_PROTOCOL_VERSION));
     }
   });
 

@@ -47,7 +47,8 @@
     "evidence:export": "tsx --env-file-if-exists=.env scripts/evidence-export.ts export",
     "evidence:verify": "tsx --env-file-if-exists=.env scripts/evidence-export.ts verify",
     "evidence:decrypt": "tsx --env-file-if-exists=.env scripts/evidence-export.ts decrypt",
-    "db:seed:demo": "tsx --env-file-if-exists=.env scripts/seed-demo.ts"
+    "db:seed:demo": "tsx --env-file-if-exists=.env scripts/seed-demo.ts",
+    "agents:warn-outdated": "tsx --env-file-if-exists=.env scripts/warn-outdated-agents.ts"
   },
   "dependencies": {
     "@clerk/backend": "^3.17.0",

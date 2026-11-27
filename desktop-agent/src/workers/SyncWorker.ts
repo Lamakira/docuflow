@@ -35,6 +35,7 @@ export class SyncWorker {
   private totalEventsSynced = 0;
   private totalScreenshotsSynced = 0;
   private onTimerCommandSynced: ((type: PendingTimerCommand["type"]) => void) | null = null;
+  private onTimerStartRefused: ((message: string) => void) | null = null;
 
   constructor(apiClient: ApiClient, queue: SqliteQueue, store: AgentStore) {
     this.apiClient = apiClient;
@@ -45,6 +46,11 @@ export class SyncWorker {
   /** Called after each timer command reaches the server (conflicts count as synced). */
   setOnTimerCommandSynced(cb: (type: PendingTimerCommand["type"]) => void): void {
     this.onTimerCommandSynced = cb;
+  }
+
+  /** Called when the server refuses a start (409, #400); the local Timer is already gone. */
+  setOnTimerStartRefused(cb: (message: string) => void): void {
+    this.onTimerStartRefused = cb;
   }
 
   private markSynced(cmd: PendingTimerCommand, resolvedEntryId?: string): void {
@@ -128,7 +134,9 @@ export class SyncWorker {
             cmd.taskId ?? undefined,
             cmd.description ?? undefined,
             cmd.clientCommandId,
+            cmd.mode,
           );
+          if (cmd.entryId) this.store.startTaken(cmd.entryId);
           // Propagate real server ID to store + subsequent pending commands
           if (cmd.entryId && cmd.entryId !== entry.id) {
             this.store.updateActiveEntryId(cmd.entryId, entry.id);
@@ -136,7 +144,7 @@ export class SyncWorker {
           // Seed elapsed from server's accumulated task history today so the UI
           // shows e.g. 30:00 instead of 0:00 when the user restarts a task mid-day.
           if (entry.taskAccumulatedToday) {
-            this.store.applyTaskAccumulatedToday(entry.taskAccumulatedToday);
+            this.store.applyTaskAccumulatedToday(entry.taskAccumulatedToday, entry.id);
           }
           this.markSynced(cmd, entry.id);
           console.log(`[SyncWorker] timer.start synced → serverEntryId=${entry.id} taskAccumulatedToday=${entry.taskAccumulatedToday ?? 0}s`);
@@ -158,6 +166,16 @@ export class SyncWorker {
         }
       } catch (error: any) {
         const msg: string = error.message ?? "";
+        // A refused start (409: option off, three Timers, task already tracked…) is
+        // not recorded on the server (#400): drop it and its local Timer, never retry.
+        // Commands queued behind it on its placeholder fail in turn above.
+        if (cmd.type === "start" && error?.status === 409) {
+          if (cmd.entryId) this.store.discardTimer(cmd.entryId);
+          this.queue.failTimerCommand(cmd.clientCommandId, msg);
+          this.onTimerStartRefused?.(msg);
+          console.warn(`[SyncWorker] timer.start refused: ${msg}`);
+          continue;
+        }
         const failure = timerCommandFailure(error);
         // Semantic conflicts (entry already in desired state) → treat as success
         if (failure === "conflict") {

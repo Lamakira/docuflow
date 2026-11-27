@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo, type ReactNode } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { projectTasksQuery } from "@/lib/projectTasks";
 import { useToast } from "@/hooks/use-toast";
 import { MultiTabCoordinator, type TabRole, type TimeTrackingSyncPayload } from "@/lib/MultiTabCoordinator";
 import { ScreenCaptureWebService } from "@/lib/ScreenCaptureWebService";
@@ -9,7 +10,19 @@ import type { TimeEntry, CrmProjectWithDetails, Task } from "@shared/schema";
 /** The active entry as `GET /api/time-tracking/active` serves it. */
 type ActiveTimeEntry = TimeEntry & { taskAccumulatedToday?: number };
 
+/** Every running or paused Timer of the caller, newest first, with the names the server read. */
+type TimerEntry = ActiveTimeEntry & { projectName?: string | null; taskName?: string | null };
+
+/** How Start meets a Timer already running (ADR-0031): add beside it, or switch to the new one. */
+export type StartMode = "add" | "switch";
+
 interface TimeTrackerState {
+  /** Every running or paused Timer (Simultaneous Timers); `activeEntry` stays the latest. */
+  timers: TimerEntry[];
+  /** Whether the Workspace lets a Member run several Timers at once. */
+  simultaneousTimers: boolean;
+  /** How many Timers a Member may run at once (1 when Simultaneous Timers are off). */
+  maxTimers: number;
   activeEntry: ActiveTimeEntry | null;
   isLoadingActive: boolean;
   displayDuration: number;
@@ -44,11 +57,15 @@ interface TimeTrackerActions {
   setSelectedTaskId: (id: string) => void;
   setDescription: (desc: string) => void;
   // Each answers whether the server took it; a failure is already reported.
-  handleStart: (projectId?: string, taskId?: string) => Promise<boolean>;
+  handleStart: (projectId?: string, taskId?: string, mode?: StartMode) => Promise<boolean>;
   handlePause: () => Promise<boolean>;
   handleResume: () => Promise<boolean>;
   handleStop: () => Promise<boolean>;
   handleToggleCapture: () => void;
+  handlePauseTimer: (id: string) => Promise<boolean>;
+  handleResumeTimer: (id: string) => Promise<boolean>;
+  handleStopTimer: (id: string) => Promise<boolean>;
+  handleStopAll: () => Promise<boolean>;
 }
 
 type TimeTrackerContextType = TimeTrackerState & TimeTrackerActions;
@@ -64,6 +81,7 @@ export function useTimeTracker() {
 }
 
 const HEARTBEAT_INTERVAL_SECONDS = 60;
+const EMPTY_TIMERS: TimerEntry[] = [];
 
 /** How the timer reports a refused or failed command: v1's toast unless the host passes its own. */
 export type TimeTrackerReport = { failure: (title: string, description: string) => void };
@@ -96,6 +114,12 @@ export function TimeTrackerProvider({ children, report }: { children: ReactNode;
     refetchInterval: 10000,
   });
 
+  const { data: timersResponse } = useQuery<{ data: TimerEntry[] }>({
+    queryKey: ["/api/time-tracking/timers"],
+    refetchInterval: 10000,
+  });
+  const timers = timersResponse?.data ?? EMPTY_TIMERS;
+
   const { data: projectsResponse } = useQuery<{ data: CrmProjectWithDetails[] }>({
     queryKey: ["/api/crm/projects", { pageSize: 500 }],
     // A refusal must not be cached as a list: the screens sharing this key could not tell.
@@ -108,28 +132,24 @@ export function TimeTrackerProvider({ children, report }: { children: ReactNode;
 
   const projects = projectsResponse?.data || [];
 
-  const { data: capabilities } = useQuery<{ requiresTask: boolean }>({
+  const { data: capabilities } = useQuery<{ requiresTask: boolean; simultaneousTimers?: boolean; maxTimers?: number }>({
     queryKey: ["/api/time-tracking/capabilities"],
     queryFn: () => apiRequest("GET", "/api/time-tracking/capabilities"),
     staleTime: 60_000,
   });
   const requiresTaskForStart = capabilities?.requiresTask ?? false;
+  const simultaneousTimers = capabilities?.simultaneousTimers === true;
+  const maxTimers = simultaneousTimers ? (capabilities?.maxTimers ?? 1) : 1;
 
   /** Resolves once the active entry is read again, so a command stays pending until the screen shows it. */
   const invalidateAll = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ["/api/time-tracking/entries"] });
     queryClient.invalidateQueries({ queryKey: ["/api/time-tracking/stats"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/time-tracking/timers"] });
     return queryClient.invalidateQueries({ queryKey: ["/api/time-tracking/active"] });
   }, []);
 
-  const { data: tasksResponse, isLoading: isTasksListLoading } = useQuery<{ data: Task[] }>({
-    queryKey: ["/api/tasks", selectedProjectId],
-    queryFn: () =>
-      selectedProjectId
-        ? fetch(`/api/tasks?crmProjectId=${selectedProjectId}`).then((r) => r.json())
-        : Promise.resolve({ data: [] }),
-    enabled: !!selectedProjectId,
-  });
+  const { data: tasksResponse, isLoading: isTasksListLoading } = useQuery(projectTasksQuery(selectedProjectId));
 
   const tasks = tasksResponse?.data ?? [];
 
@@ -144,7 +164,7 @@ export function TimeTrackerProvider({ children, report }: { children: ReactNode;
   }, [requiresTaskForStart, selectedProjectId, isTasksListLoading, tasks, selectedTaskId]);
 
   const startMutation = useMutation({
-    mutationFn: async (data: { crmProjectId: string; taskId?: string; description?: string }) => {
+    mutationFn: async (data: { crmProjectId: string; taskId?: string; description?: string; mode?: StartMode }) => {
       return apiRequest("POST", "/api/time-tracking/start", data);
     },
     onSuccess: () => {
@@ -183,10 +203,13 @@ export function TimeTrackerProvider({ children, report }: { children: ReactNode;
     mutationFn: async (id: string) => {
       return apiRequest("POST", `/api/time-tracking/${id}/stop`);
     },
-    onSuccess: () => {
-      setSelectedProjectId("");
-      setSelectedTaskId("");
-      screenCaptureRef.current?.stop();
+    onSuccess: (_data, id) => {
+      // Another Timer may still run: only the last one to stop ends the capture and the selection.
+      if (timers.every((timer) => timer.id === id)) {
+        setSelectedProjectId("");
+        setSelectedTaskId("");
+        screenCaptureRef.current?.stop();
+      }
       return invalidateAll();
     },
     onError: (err: unknown) => reportFailure("stop", err),
@@ -213,6 +236,21 @@ export function TimeTrackerProvider({ children, report }: { children: ReactNode;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/time-tracking/active"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/time-tracking/timers"] });
+    },
+  });
+
+  const stopAllMutation = useMutation({
+    mutationFn: async () => apiRequest("POST", "/api/time-tracking/stop-all"),
+    onSuccess: () => {
+      setSelectedProjectId("");
+      setSelectedTaskId("");
+      screenCaptureRef.current?.stop();
+      return invalidateAll();
+    },
+    onError: (err: unknown) => {
+      const message = err instanceof Error && err.message ? err.message : "Failed to stop the timers";
+      notify.failure("Could not stop the timers", message);
     },
   });
 
@@ -310,11 +348,19 @@ export function TimeTrackerProvider({ children, report }: { children: ReactNode;
 
   // ─── Heartbeat (LEADER ONLY) ───
   // Keeps lastActivityAt fresh on the server so duration display stays accurate.
+  // Every running Timer is beaten: the server counts one without a heartbeat
+  // for 10 minutes as stale (ADR-0031).
   // Idle/machine-activity detection is the desktop agent's responsibility.
+  const runningTimerIds = useMemo(() => {
+    const ids = new Set(timers.filter((timer) => timer.status === "running").map((timer) => timer.id));
+    if (activeEntry?.id && activeEntry.status === "running") ids.add(activeEntry.id);
+    return [...ids].sort().join(",");
+  }, [timers, activeEntry?.id, activeEntry?.status]);
+
   useEffect(() => {
     if (!isTabLeader) return;
 
-    if (!activeEntry?.id || activeEntry.status !== "running") {
+    if (!runningTimerIds) {
       if (heartbeatIntervalRef.current) {
         clearInterval(heartbeatIntervalRef.current);
         heartbeatIntervalRef.current = null;
@@ -323,9 +369,7 @@ export function TimeTrackerProvider({ children, report }: { children: ReactNode;
     }
 
     heartbeatIntervalRef.current = setInterval(() => {
-      if (activeEntry?.id && activeEntry.status === "running") {
-        activityMutation.mutate(activeEntry.id);
-      }
+      for (const id of runningTimerIds.split(",")) activityMutation.mutate(id);
     }, HEARTBEAT_INTERVAL_SECONDS * 1000);
 
     return () => {
@@ -334,7 +378,7 @@ export function TimeTrackerProvider({ children, report }: { children: ReactNode;
         heartbeatIntervalRef.current = null;
       }
     };
-  }, [activeEntry?.id, activeEntry?.status, isTabLeader]);
+  }, [runningTimerIds, isTabLeader]);
 
   // ─── Visibility change: resync only ───
   // A tab coming back resyncs with the server, and nothing more. It used to
@@ -368,7 +412,7 @@ export function TimeTrackerProvider({ children, report }: { children: ReactNode;
   }, [isRunning, activeEntry?.id, activeEntry?.crmProjectId]);
 
   // ─── Actions ───
-  const handleStart = useCallback(async (projectId?: string, taskId?: string) => {
+  const handleStart = useCallback(async (projectId?: string, taskId?: string, mode?: StartMode) => {
     const pid = projectId || selectedProjectId;
     // What is chosen in the Timer is about its own Project, not one named by the caller.
     const inTimer = pid === selectedProjectId;
@@ -397,6 +441,7 @@ export function TimeTrackerProvider({ children, report }: { children: ReactNode;
         crmProjectId: pid,
         taskId: requiresTaskForStart ? tid : tid || undefined,
         description: description || undefined,
+        ...(mode ? { mode } : {}),
       }),
     );
   }, [
@@ -425,6 +470,23 @@ export function TimeTrackerProvider({ children, report }: { children: ReactNode;
     return runCommand(() => stopMutation.mutateAsync(activeEntry.id));
   }, [activeEntry, stopMutation, runCommand]);
 
+  const handlePauseTimer = useCallback(
+    (id: string) => runCommand(() => pauseMutation.mutateAsync(id)),
+    [pauseMutation, runCommand],
+  );
+
+  const handleResumeTimer = useCallback(
+    (id: string) => runCommand(() => resumeMutation.mutateAsync({ id, discardIdleTime: false })),
+    [resumeMutation, runCommand],
+  );
+
+  const handleStopTimer = useCallback(
+    (id: string) => runCommand(() => stopMutation.mutateAsync(id)),
+    [stopMutation, runCommand],
+  );
+
+  const handleStopAll = useCallback(() => runCommand(() => stopAllMutation.mutateAsync()), [stopAllMutation, runCommand]);
+
   const handleToggleCapture = useCallback(() => {
     const service = screenCaptureRef.current;
     if (!service) return;
@@ -445,6 +507,9 @@ export function TimeTrackerProvider({ children, report }: { children: ReactNode;
   );
 
   const value: TimeTrackerContextType = {
+    timers,
+    simultaneousTimers,
+    maxTimers,
     activeEntry: activeEntry ?? null,
     isLoadingActive,
     displayDuration,
@@ -475,6 +540,10 @@ export function TimeTrackerProvider({ children, report }: { children: ReactNode;
     handleResume,
     handleStop,
     handleToggleCapture,
+    handlePauseTimer,
+    handleResumeTimer,
+    handleStopTimer,
+    handleStopAll,
   };
 
   return (

@@ -401,6 +401,9 @@ describe("workspace RLS", () => {
     expect(await call("SELECT * FROM app_active_time_entry_for_user($1)", "u-loc")).toEqual([
       { id: "te-loc", workspace_id: OTHER_WORKSPACE_ID },
     ]);
+    expect(await call("SELECT * FROM app_active_time_entries_for_user($1)", "u-loc")).toEqual([
+      { id: "te-loc", workspace_id: OTHER_WORKSPACE_ID },
+    ]);
     const entryWorkspace = (id: string, userId: string) =>
       withClient(app, async (client) =>
         (await client.query("SELECT * FROM app_time_entry_workspace_for_user($1, $2)", [id, userId])).rows
@@ -449,6 +452,7 @@ describe("workspace RLS", () => {
       return rows;
     });
     expect(rows.map((row) => row.proname)).toEqual([
+      "app_active_time_entries_for_user",
       "app_active_time_entry_for_user",
       "app_enrollment_for_device",
       "app_invitation_for_token",

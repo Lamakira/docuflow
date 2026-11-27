@@ -28,6 +28,7 @@ import {
   audioRecordings,
   tasks,
   timeEntries,
+  timerCommands,
   timeEntryScreenshots,
   type Task,
   type InsertTask,
@@ -126,6 +127,7 @@ import {
 } from "../workspaceContext";
 import {
   activeTimeEntryForUser,
+  activeTimeEntriesForUser,
   membershipsForUser,
   notificationWorkspaceForUser,
   workspaceForPairingCode,
@@ -144,7 +146,7 @@ import {
   projectStatusFromCombined,
   WON_STATUSES,
 } from "@shared/projectLifecycle";
-import { STALE_THRESHOLD_MS, timeEntrySpan, timePortion } from "@shared/timePortion";
+import { STALE_THRESHOLD_MS, timeEntrySpan, timePortion, type TimeSpan } from "@shared/timePortion";
 import type { TaskBatchPlan } from "@shared/taskBatch";
 import { isUploadedFile } from "@shared/documentFile";
 import { BUILT_IN_LISTS, defaultFieldOptions, type OptionRename } from "@shared/pipelineLists";
@@ -155,6 +157,7 @@ import {
 } from "./intelligence/indexArtifacts";
 import {
   createAgentActivityEvents,
+  captureOnProject,
   createTimeEntryScreenshot,
   deleteTimeEntryScreenshot,
   getTimeEntryScreenshotById,
@@ -172,7 +175,8 @@ import { getScreenshotPolicy, upsertScreenshotPolicy } from "./activity/policy";
 import type { ScreenshotCoverageReport } from "./activity/persistence";
 import { getAllowedTimezones, upsertAllowedTimezones, upsertWorkspaceTimeZone } from "./time/schedule";
 import { applyTimerCommand, listTimerCommands } from "./time/commands";
-import { dayCalendar, dayPortions } from "./time/dayCalendar";
+import { dayCalendar, dayPortions, nextCalendarDay } from "./time/dayCalendar";
+import { countTime, overlappingEntryIds, runningIntervals, type CountedEntry, type Interval, type TimeCount } from "./time/workedTime";
 import type { TimeExportRow } from "./time/timeExport";
 import type {
   AnalyticsOptions,
@@ -1148,6 +1152,13 @@ export class DatabaseStorage implements IStorage {
       .limit(pageSize)
       .offset(offset)
       .then((rows) => rows.map((row) => (withTrackedTime ? { ...row.crmProject, trackedSeconds: Number(row.trackedSeconds) } : row.crmProject)));
+    if (withTrackedTime) {
+      // Counted once where two Tasks of a Project ran together (ADR-0031); the budget sort reads the raw sum.
+      const overlap = await this.projectOverlapSeconds(crmProjectRows.map((row) => row.id));
+      for (const row of crmProjectRows as Array<CrmProject & { trackedSeconds?: number }>) {
+        if (row.trackedSeconds !== undefined) row.trackedSeconds = Math.max(0, row.trackedSeconds - (overlap.get(row.id) ?? 0));
+      }
+    }
 
     // Get all related data
     const projectMap = new Map(allProjects.map((p) => [p.id, p]));
@@ -1314,7 +1325,8 @@ export class DatabaseStorage implements IStorage {
       .select({ seconds: sql<number>`coalesce(sum(${timeEntries.duration}), 0)::int` })
       .from(timeEntries)
       .where(and(eq(timeEntries.crmProjectId, crmProjectId), inWorkspace(timeEntries)));
-    return Number(tracked?.seconds ?? 0);
+    const overlap = await this.projectOverlapSeconds([crmProjectId]);
+    return Math.max(0, Number(tracked?.seconds ?? 0) - (overlap.get(crmProjectId) ?? 0));
   }
 
   async getCrmProjectByProjectId(projectId: string): Promise<CrmProject | undefined> {
@@ -2816,7 +2828,8 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getTimeEntriesPage(options: TimeEntryPageOptions): Promise<TimeEntryPage> {
-    const portions = await this.getTimePortions(options);
+    const portions = await this.getTimeSpans(options);
+    const { count: tally } = await this.countSpans(portions, { start: options.startDate, end: options.endDate });
     const shown = portions.slice((options.page - 1) * options.pageSize, options.page * options.pageSize);
     const details = shown.length > 0
       ? await this.selectTimeEntriesWithDetails(
@@ -2828,7 +2841,8 @@ export class DatabaseStorage implements IStorage {
       data: details.map((entry) => ({ ...entry, secondsInPeriod: portionById.get(entry.id) ?? 0 })),
       total: portions.length,
       totals: {
-        duration: portions.reduce((sum, row) => sum + row.seconds, 0),
+        duration: Array.from(tally.workedByUser.values()).reduce((sum, seconds) => sum + seconds, 0),
+        simultaneous: Array.from(tally.simultaneousByUser.values()).reduce((sum, seconds) => sum + seconds, 0),
         idle: portions.reduce((sum, row) => sum + row.idleSeconds, 0),
       },
     };
@@ -2879,6 +2893,7 @@ export class DatabaseStorage implements IStorage {
         idleTime: timeEntries.idleTime,
         status: timeEntries.status,
         lastActivityAt: timeEntries.lastActivityAt,
+        provenance: timeEntries.provenance,
         description: timeEntries.description,
         projectName: projects.name,
         clientName: crmClients.name,
@@ -2909,10 +2924,105 @@ export class DatabaseStorage implements IStorage {
         taskName: row.taskName,
         description: row.description,
         status: row.status,
+        provenance: row.provenance,
         span,
         ...timePortion(span, { start: options.startDate, end: options.endDate }),
       };
     });
+  }
+
+  /**
+   * Worked Time over these entries (ADR-0031). Only Timers that ran together
+   * overlap: entries recorded by Timer Commands whose wall time meets another
+   * of the same Member. Their running intervals come from those commands, so a
+   * paused Timer does not count as running. Legacy entries keep their seconds
+   * whole, as they always counted, even where old records overlap.
+   */
+  private async countSpans(
+    rows: TimeSpanRow[],
+    window: { start?: Date; end?: Date },
+  ): Promise<{ count: TimeCount; entries: CountedEntry[]; overlapping: Set<string> }> {
+    const overlapping = overlappingEntryIds(rows.filter((row) => row.provenance === "command"));
+    const intervals = await this.runningIntervalsOf(rows.filter((row) => overlapping.has(row.id)));
+    const entries: CountedEntry[] = rows.map((row) => ({
+      id: row.id,
+      userId: row.userId,
+      crmProjectId: row.crmProjectId,
+      seconds: row.seconds,
+      // No intervals: an entry that ran beside nothing has nothing to take off.
+      intervals: intervals.get(row.id) ?? [],
+    }));
+    return { count: countTime(entries, window), entries, overlapping };
+  }
+
+  /** When each entry's Timer ran, from its Timer Commands in order (ADR-0031). */
+  private async runningIntervalsOf(rows: Array<{ id: string; span: TimeSpan }>): Promise<Map<string, Interval[]>> {
+    const intervals = new Map<string, Interval[]>();
+    if (rows.length === 0) return intervals;
+    const commands = await db
+      .select({ timeEntryId: timerCommands.timeEntryId, kind: timerCommands.kind, at: timerCommands.claimedEffectiveAt })
+      .from(timerCommands)
+      .where(and(inArray(timerCommands.timeEntryId, rows.map((row) => row.id)), inWorkspace(timerCommands)))
+      .orderBy(asc(timerCommands.claimedEffectiveAt), asc(timerCommands.receivedAt), asc(timerCommands.sequence));
+    for (const row of rows) {
+      const own = commands.filter((command) => command.timeEntryId === row.id);
+      intervals.set(row.id, runningIntervals(row.span, own));
+    }
+    return intervals;
+  }
+
+  /**
+   * The seconds two of one Member's Timers on the same Project ran together:
+   * what the raw sum of the Project's entries counts twice. The budget meter
+   * and the Project Dossier take it off, so a Project counts an hour once
+   * (ADR-0031). Only entries recorded by Timer Commands can overlap.
+   */
+  private async projectOverlapSeconds(crmProjectIds: string[]): Promise<Map<string, number>> {
+    const overlap = new Map<string, number>();
+    if (crmProjectIds.length === 0) return overlap;
+    const now = new Date();
+    const at = sql`${now.toISOString()}::timestamp`;
+    const candidates = await db
+      .select({
+        id: timeEntries.id,
+        userId: timeEntries.userId,
+        crmProjectId: timeEntries.crmProjectId,
+        startTime: timeEntries.startTime,
+        endTime: timeEntries.endTime,
+        duration: timeEntries.duration,
+        idleTime: timeEntries.idleTime,
+        status: timeEntries.status,
+        lastActivityAt: timeEntries.lastActivityAt,
+      })
+      .from(timeEntries)
+      .where(and(
+        inArray(timeEntries.crmProjectId, crmProjectIds),
+        eq(timeEntries.provenance, "command"),
+        inWorkspace(timeEntries),
+        // Another of the same Member's entries on the same Project whose wall time meets this one.
+        sql`exists (select 1 from time_entries o
+          where o.user_id = ${timeEntries.userId} and o.crm_project_id = ${timeEntries.crmProjectId}
+            and o.workspace_id = ${timeEntries.workspaceId} and o.id <> ${timeEntries.id} and o.provenance = 'command'
+            and o.start_time < coalesce(${timeEntries.endTime}, ${at})
+            and ${timeEntries.startTime} < coalesce(o.end_time, ${at}))`,
+      ));
+    if (candidates.length === 0) return overlap;
+    const rows = candidates.map((row) => ({ ...row, span: timeEntrySpan(row, now) }));
+    const intervals = await this.runningIntervalsOf(rows);
+    const counted = countTime(rows.map((row) => ({
+      id: row.id,
+      userId: row.userId,
+      crmProjectId: row.crmProjectId,
+      seconds: row.span.seconds,
+      intervals: intervals.get(row.id) ?? [],
+    })));
+    for (const row of rows) overlap.set(row.crmProjectId, (overlap.get(row.crmProjectId) ?? 0) + row.span.seconds);
+    for (const projects of Array.from(counted.projectByUser.values())) {
+      for (const [crmProjectId, once] of Array.from(projects.entries())) {
+        overlap.set(crmProjectId, (overlap.get(crmProjectId) ?? 0) - once);
+      }
+    }
+    return overlap;
   }
 
   async getTimeEntry(id: string): Promise<TimeEntryWithDetails | undefined> {
@@ -2937,6 +3047,20 @@ export class DatabaseStorage implements IStorage {
       const [entry] = await db.select().from(timeEntries).where(eq(timeEntries.id, located.id)).limit(1);
       return entry;
     });
+  }
+
+  async getActiveTimeEntries(userId: string): Promise<TimeEntry[]> {
+    // Simultaneous Timers run in one Workspace (ADR-0031); located the same way.
+    const located = await activeTimeEntriesForUser(userId);
+    const found: TimeEntry[] = [];
+    for (const { id, workspaceId } of located) {
+      const entry = await runWithWorkspaceContext({ workspaceId, userId }, async () => {
+        const [row] = await db.select().from(timeEntries).where(eq(timeEntries.id, id)).limit(1);
+        return row;
+      });
+      if (entry) found.push(entry);
+    }
+    return found;
   }
 
   async getStaleRunningEntries(staleThreshold: Date): Promise<TimeEntry[]> {
@@ -3002,26 +3126,35 @@ export class DatabaseStorage implements IStorage {
     includeActive?: boolean;
   }): Promise<{
     totalDuration: number;
+    simultaneousDuration: number;
     totalIdleTime: number;
     entriesCount: number;
     screenshotCount: number;
     byProject: Array<{ crmProjectId: string; projectName: string; totalDuration: number }>;
     byUser: Array<{ userId: string; userName: string; totalDuration: number }>;
   }> {
-    const entries = await this.getTimePortions(options);
-    const totalDuration = entries.reduce((sum, e) => sum + e.seconds, 0);
+    // Worked Time: each Member's hours counted once, and each Project's once per Member (ADR-0031).
+    const entries = await this.getTimeSpans(options);
+    const { count: tally } = await this.countSpans(entries, { start: options.startDate, end: options.endDate });
     const totalIdleTime = entries.reduce((sum, e) => sum + e.idleSeconds, 0);
 
     const projectMap = new Map<string, { projectName: string; totalDuration: number }>();
     const userMap = new Map<string, { userName: string; totalDuration: number }>();
     for (const entry of entries) {
-      const project = projectMap.get(entry.crmProjectId) || { projectName: entry.projectName, totalDuration: 0 };
-      project.totalDuration += entry.seconds;
-      projectMap.set(entry.crmProjectId, project);
-      const user = userMap.get(entry.userId) || { userName: entry.userName, totalDuration: 0 };
-      user.totalDuration += entry.seconds;
-      userMap.set(entry.userId, user);
+      if (!projectMap.has(entry.crmProjectId)) {
+        projectMap.set(entry.crmProjectId, { projectName: entry.projectName ?? "Unknown Project", totalDuration: 0 });
+      }
+      if (!userMap.has(entry.userId)) {
+        userMap.set(entry.userId, { userName: entry.userName, totalDuration: tally.workedByUser.get(entry.userId) ?? 0 });
+      }
     }
+    for (const projects of Array.from(tally.projectByUser.values())) {
+      for (const [crmProjectId, seconds] of Array.from(projects.entries())) {
+        projectMap.get(crmProjectId)!.totalDuration += seconds;
+      }
+    }
+    const totalDuration = Array.from(userMap.values()).reduce((sum, user) => sum + user.totalDuration, 0);
+    const simultaneousDuration = Array.from(tally.simultaneousByUser.values()).reduce((sum, s) => sum + s, 0);
 
     // Count live (non-deleted, non-pending) screenshots in the same window
     const screenshotConditions = [inWorkspace(timeEntryScreenshots)];
@@ -3038,6 +3171,7 @@ export class DatabaseStorage implements IStorage {
 
     return {
       totalDuration,
+      simultaneousDuration,
       totalIdleTime,
       entriesCount: entries.length,
       screenshotCount,
@@ -3432,6 +3566,14 @@ export class DatabaseStorage implements IStorage {
       .where(eq(devices.id, id));
   }
 
+  /** What the Device's agent said on its last heartbeat (ADR-0031): to warn Members before the minimum rises. */
+  async recordDeviceAgent(id: string, agent: { clientVersion: string; protocolVersion: number | null }): Promise<void> {
+    await db
+      .update(devices)
+      .set({ clientVersion: agent.clientVersion.slice(0, 50), agentProtocolVersion: agent.protocolVersion })
+      .where(eq(devices.id, id));
+  }
+
   async revokeDevice(id: string): Promise<void> {
     await db
       .update(devices)
@@ -3540,7 +3682,7 @@ export class DatabaseStorage implements IStorage {
       isNull(timeEntryScreenshots.deletedAt),
     ];
     if (opts.userId) conditions.push(eq(timeEntryScreenshots.userId, opts.userId));
-    if (opts.crmProjectId) conditions.push(eq(timeEntryScreenshots.crmProjectId, opts.crmProjectId));
+    if (opts.crmProjectId) conditions.push(captureOnProject(opts.crmProjectId));
     return conditions;
   }
 
@@ -3554,7 +3696,7 @@ export class DatabaseStorage implements IStorage {
       notDuplicateCapture(),
     ];
     if (opts.userId) conditions.push(eq(timeEntryScreenshots.userId, opts.userId));
-    if (opts.crmProjectId) conditions.push(eq(timeEntryScreenshots.crmProjectId, opts.crmProjectId));
+    if (opts.crmProjectId) conditions.push(captureOnProject(opts.crmProjectId));
     const [row] = await db.select({ count: count() }).from(timeEntryScreenshots).where(and(...conditions));
     return row?.count ?? 0;
   }
@@ -3618,8 +3760,9 @@ export class DatabaseStorage implements IStorage {
       db.select({ count: count() }).from(devices).where(and(inArray(devices.id, enrolledDeviceIds()), isNotNull(devices.revokedAt))),
     ]);
 
+    const { count: tally } = await this.countSpans(entries, { start: opts.startDate, end: opts.endDate });
     return {
-      totalTrackedSeconds: entries.reduce((sum, e) => sum + e.seconds, 0),
+      totalTrackedSeconds: Array.from(tally.workedByUser.values()).reduce((sum, seconds) => sum + seconds, 0),
       totalIdleSeconds: entries.reduce((sum, e) => sum + e.idleSeconds, 0),
       entriesCount: entries.length,
       runningNow: running?.count ?? 0,
@@ -3643,18 +3786,22 @@ export class DatabaseStorage implements IStorage {
     const taskRows = new Map<string, { taskId: string; taskName: string; crmProjectId: string; projectName: string; clientName: string | null; totalSeconds: number }>();
     const days = new Map<string, number>();
 
-    for (const entry of await this.analyticsSpans(opts)) {
+    const spans = await this.analyticsSpans(opts);
+    // Members and Projects count Worked Time once; a Task counts its entries whole (ADR-0031).
+    const { count: tally, entries: counted, overlapping } = await this.countSpans(spans, period);
+    const overlapDays = new Map<string, CountedEntry[]>();
+
+    for (const entry of spans) {
       const { userId, userName, crmProjectId, taskId, clientName } = entry;
       const projectName = entry.projectName ?? "Unknown Project";
 
-      const person = people.get(userId) ?? { userId, userName, totalSeconds: 0, idleSeconds: 0, entriesCount: 0 };
-      person.totalSeconds += entry.seconds;
+      const person = people.get(userId)
+        ?? { userId, userName, totalSeconds: tally.workedByUser.get(userId) ?? 0, idleSeconds: 0, entriesCount: 0 };
       person.idleSeconds += entry.idleSeconds;
       person.entriesCount += 1;
       people.set(userId, person);
 
       const project = projectRows.get(crmProjectId) ?? { crmProjectId, projectName, clientName, totalSeconds: 0, entriesCount: 0 };
-      project.totalSeconds += entry.seconds;
       project.entriesCount += 1;
       projectRows.set(crmProjectId, project);
 
@@ -3667,7 +3814,25 @@ export class DatabaseStorage implements IStorage {
 
       for (const day of dayPortions(entry.span, period, calendar)) {
         if (day.seconds > 0) days.set(day.date, (days.get(day.date) ?? 0) + day.seconds);
+        if (day.seconds > 0 && overlapping.has(entry.id)) {
+          const intervals = counted.find((row) => row.id === entry.id)!.intervals;
+          overlapDays.set(day.date, [...(overlapDays.get(day.date) ?? []), { id: entry.id, userId, crmProjectId, seconds: day.seconds, intervals }]);
+        }
       }
+    }
+    for (const projects of Array.from(tally.projectByUser.values())) {
+      for (const [crmProjectId, seconds] of Array.from(projects.entries())) {
+        projectRows.get(crmProjectId)!.totalSeconds += seconds;
+      }
+    }
+    // Each day's Simultaneous Time counts once in that day.
+    for (const [date, onDay] of Array.from(overlapDays.entries())) {
+      const start = calendar.startOfDay(date);
+      const end = new Date(Math.min(calendar.startOfDay(nextCalendarDay(date)).getTime(), period.end.getTime()));
+      const worked = countTime(onDay, { start, end: end });
+      const held = onDay.reduce((sum, row) => sum + row.seconds, 0);
+      const once = Array.from(worked.workedByUser.values()).reduce((sum, seconds) => sum + seconds, 0);
+      days.set(date, (days.get(date) ?? 0) - (held - once));
     }
 
     return {
@@ -3679,10 +3844,13 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getTimeExport(opts: AnalyticsOptions): Promise<TimeExportRow[]> {
-    return (await this.analyticsSpans(opts)).map((entry) => ({
+    const spans = await this.analyticsSpans(opts);
+    const { count: tally } = await this.countSpans(spans, { start: opts.startDate, end: opts.endDate });
+    return spans.map((entry) => ({
       ...entry,
       startTime: entry.span.start,
       endTime: entry.status === "stopped" ? entry.span.end : null,
+      workedSeconds: tally.workedShareByEntry.get(entry.id) ?? entry.seconds,
     }));
   }
 

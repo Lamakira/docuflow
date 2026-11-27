@@ -50,6 +50,8 @@ export interface PendingTimerCommand {
   crmProjectId?: string;
   taskId?: string | null;
   description?: string | null;
+  /** Starts only (#400): `add` keeps the User's other Timers; absent or `switch` stops them. */
+  mode?: "add" | "switch";
   createdAt: number;        // epoch ms — sort key for FIFO ordering
   syncedAt: number | null;  // epoch ms — null = not yet synced
   failedAt: number | null;  // epoch ms — null = not failed
@@ -336,11 +338,12 @@ export class SqliteQueue {
   }
 
   /**
-   * Derive the user's intended timer state from the last unsynced command.
+   * Derive the user's intended timer state from the last unsynced command
+   * (for one entry when `entryId` is given).
    * Used to restore timer state on app restart without counting offline gaps.
    */
-  getTimerIntent(): "running" | "paused" | "stopped" {
-    const pending = this.getPendingTimerCommands();
+  getTimerIntent(entryId?: string): "running" | "paused" | "stopped" {
+    const pending = this.getPendingTimerCommands().filter((c) => entryId === undefined || c.entryId === entryId);
     if (pending.length === 0) return "stopped";
     const last = pending[pending.length - 1];
     if (last.type === "start" || last.type === "resume") return "running";

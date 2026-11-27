@@ -50,6 +50,7 @@ journal is not part of it and is never applied.
 | 0042 | `0042_workspace_time_zone.sql` | `org_settings.time_zone` (#341): the Workspace time zone the Daily Update Workday is counted in. Every existing row takes `America/Toronto`, the zone the nudge was hard-coded to. |
 | 0043 | `0043_screenshot_fingerprint.sql` | `time_entry_screenshots.perceptual_hash` (#341), a 64-bit difference hash as 16 hex digits, null until computed, and `idx_screenshots_user_captured` for the previous capture of the same Member. `scripts/backfill-screenshot-fingerprints.ts` fills existing captures. |
 | 0044 | `0044_daily_updates_grants.sql` | Data only (F86): a `membership_capabilities` row for every Membership, archived included, of an account with `users.can_view_daily_updates`, unless its Workspace Role already carries the Capability. Access reads the grant; the column stays for the platform console. |
+| 0045 | `0045_simultaneous_timers.sql` | Simultaneous Timers (#400, ADR-0031): replaces `idx_time_entries_one_active_timer_per_user` with one active Timer per User per Task (`idx_time_entries_one_active_timer_per_task`) and per Project for a task-less Timer (`idx_time_entries_one_taskless_timer_per_project`); adds `time_entry_screenshot_timers` (RLS) for a capture taken under several Timers, `devices.agent_protocol_version`, and the locator `app_active_time_entries_for_user`. Must run as the owner of `memberships`, like 0041. |
 
 `0000` is a squash, not the beginning of history. The schema it captures was
 built up by the hand-numbered files now in `legacy/` and by DDL that ran on
@@ -256,6 +257,14 @@ Two rules, from ADR-0017:
   the old one in a later deploy. Rollback is redeploying the previous image,
   never a down migration, so no migration may make the previous image unable to
   run.
+  One exception, deliberate: `0045` drops `idx_time_entries_one_active_timer_per_user`
+  in the deploy that adds its replacements (#400). The previous image still
+  runs; for the minutes of the publish it loses only its guard against two
+  starts of the same User in the same instant (#307), which could leave two
+  Timers active. The new image handles several active Timers, and the next
+  start switches them off. Waiting a deploy would have shipped #400 unable to
+  run a second Timer. No other migration may follow this precedent without its
+  own reason written here.
 
 Three things check this journal, and they check different things:
 

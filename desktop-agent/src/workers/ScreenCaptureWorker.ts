@@ -181,7 +181,9 @@ export class ScreenCaptureWorker {
         return;
       }
 
-      const entryId = this.store.getActiveEntryId();
+      // One capture however many Timers run (#400): presigned with the latest running
+      // Timer, the server attaches it to every other Timer running at capturedAt.
+      const entryId = this.store.getCaptureEntryId();
       if (!entryId) {
         this.scheduleNext();
         return;

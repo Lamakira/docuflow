@@ -7,6 +7,12 @@
  * Timer state uses session-based tracking: each start/resume creates a
  * TrackingSession with an ISO startTime. Elapsed time is derived from
  * session durations — never maintained as an incrementing counter.
+ *
+ * Up to three Timers can be active at once (#400, ADR-0031). Each keeps its
+ * own entry, status and sessions; the single-Timer getters (getActiveEntryId,
+ * getTimerStatus, getActiveProjectName…) describe the latest running Timer,
+ * else the latest one, so the widget, the tray and the v1 screens still read
+ * one Timer.
  */
 
 import { app } from "electron";
@@ -16,6 +22,13 @@ import crypto from "crypto";
 import { getLocalDayKey, getLocalDayWindowMs } from "./dayBoundary";
 import { pausedSince } from "./pausedTimer";
 import type { SavedUpdateRequired } from "./agentProtocol";
+import {
+  aggregateTimerStatus,
+  coveredSeconds,
+  isLocalEntryId,
+  type StartMode,
+  type TimerRunStatus,
+} from "./simultaneousTimers";
 
 /** One continuous run of the timer for a given time entry. */
 export interface TrackingSession {
@@ -26,32 +39,62 @@ export interface TrackingSession {
   endTime: string | null; // null = currently active
 }
 
+/** One active (running or paused) Timer. A stopped Timer is removed. */
+export interface ActiveTimer {
+  entryId: string;
+  status: TimerRunStatus;
+  crmProjectId: string | null;
+  projectName: string | null;
+  taskName: string | null;
+  taskId: string | null;
+  description: string | null;
+  // Server-side accumulated elapsed (seconds) at the moment we first synced this entry.
+  // Non-zero only when the entry was started on another device/client and we have no
+  // local sessions yet. Once local sessions exist, they are authoritative.
+  entryServerBase: number;
+  // The part of entryServerBase that is the task's STOPPED history today.
+  entryTaskHistoryToday: number;
+  /** Wall-clock start of the entry (ISO). Used to apportion its duration into "today" on cross-midnight entries. */
+  startTime: string | null;
+}
+
+/** A Timer as the server lists it (heartbeat `timers`, GET /api/agent/timers). */
+export interface ServerTimer {
+  entryId: string;
+  status: string;
+  duration: number;
+  crmProjectId?: string | null;
+  taskId?: string | null;
+  lastActivityAt?: string | null;
+  projectName?: string | null;
+  taskName?: string | null;
+  startTime?: string | Date | null;
+}
+
+/** What the renderer gets for each active Timer. */
+export interface TimerView {
+  entryId: string;
+  status: TimerRunStatus;
+  crmProjectId: string | null;
+  projectName: string | null;
+  taskName: string | null;
+  taskId: string | null;
+  description: string | null;
+  elapsed: number;
+  elapsedToday: number;
+}
+
 interface PersistedData {
   deviceId: string | null;
   deviceToken: string | null;
   deviceName: string | null;
   userEmail: string | null;
-  // Active entry context — persisted so names survive restarts
-  activeEntryId: string | null;
-  activeProjectName: string | null;
-  activeTaskName: string | null;
-  activeTaskId: string | null;
-  // Server-side accumulated elapsed (seconds) at the moment we first synced this entry.
-  // Non-zero only when the entry was started on another device/client and we have no
-  // local sessions yet. Once local sessions exist, they are authoritative.
-  entryServerBase: number;
-  // The part of entryServerBase that is the task's STOPPED history today (already inside
-  // the server's worked-today total). Excluded from the entry's own Worked Today share.
-  entryTaskHistoryToday: number;
+  /** Active Timers, oldest first. Persisted so names and status survive restarts. */
+  timers: ActiveTimer[];
   // Source of truth for elapsed / worked-today calculations
   sessions: TrackingSession[];
   // Updated on each heartbeat/state change — used to close orphan sessions after crash
   lastActivityAt: string | null;
-  // Persisted so autoResumeFromQueue() can restore the correct status on restart
-  // even when all timer commands were already synced before shutdown (queue empty).
-  timerStatus: "stopped" | "running" | "paused";
-  /** Wall-clock start of the active time entry (ISO). Used to apportion active duration into "today" without inflating Worked Today on cross-midnight entries. */
-  activeEntryStartTime: string | null;
   /** User-selected display timezone for week/month aggregate boundaries. 'local' = OS timezone (default). 'utc' = UTC. */
   displayTimezone: 'local' | 'utc';
   /** Device-local preference: nudge when working with no timer running (issue #351). On unless turned off. */
@@ -69,15 +112,39 @@ interface PersistedData {
   uiMode: 'v1' | 'v2' | null;
   /** The server refused this agent's protocol version (#398); survives a restart so capture stays off at launch. */
   updateRequired: SavedUpdateRequired | null;
+  /**
+   * The Timers a switch not yet taken by the server stopped here (#400). The
+   * server stops them only when it takes the switch: if it refuses, they come
+   * back as they were rather than showing stopped until the next heartbeat.
+   */
+  switchedFrom: { entryId: string; timers: ActiveTimer[] } | null;
 }
+
+/** Fields of the single-Timer file (before #400), read once by the migration. */
+const SINGLE_TIMER_KEYS = [
+  "activeEntryId",
+  "activeProjectName",
+  "activeTaskName",
+  "activeTaskId",
+  "entryServerBase",
+  "entryTaskHistoryToday",
+  "timerStatus",
+  "activeEntryStartTime",
+] as const;
 
 // Runtime-only state (not persisted)
 interface RuntimeState {
-  activeDescription: string | null;
   clientVersion: string;
-  /** Server's totalDuration for all STOPPED entries today (all devices). Runtime-only.
-   *  getWorkedTodaySeconds() = workedTodayServerBase + getActiveEntryWorkedTodaySeconds() */
+  /**
+   * Server's Worked Time today (all devices, running Timers included, counted
+   * once) at the last read of /api/agent/worked-today?includeActive=1.
+   * getWorkedTodaySeconds() = this + the seconds any local Timer ran since the read.
+   */
   workedTodayServerBase: number;
+  /** Simultaneous Time today at the same read. */
+  simultaneousTodayServerBase: number;
+  /** Epoch ms of that read. */
+  workedTodayReadAt: number;
   /** Unix ms timestamp of when the Electron process started. Set once by main via
    *  setSessionStartedAt(). Used to compute "This session" elapsed. */
   sessionStartedAt: number;
@@ -86,6 +153,46 @@ interface RuntimeState {
 const CONFIG_FILENAME = "agent-config.json";
 const MAX_SESSION_AGE_MS = 90 * 24 * 60 * 60 * 1000; // 90 days
 const MAX_SESSIONS = 1000;
+
+const num = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) ? v : 0);
+const strOrNull = (v: unknown): string | null => (typeof v === "string" ? v : null);
+
+function readTimer(raw: any): ActiveTimer | null {
+  if (!raw || typeof raw.entryId !== "string") return null;
+  if (raw.status !== "running" && raw.status !== "paused") return null;
+  return {
+    entryId: raw.entryId,
+    status: raw.status,
+    crmProjectId: strOrNull(raw.crmProjectId),
+    projectName: strOrNull(raw.projectName),
+    taskName: strOrNull(raw.taskName),
+    taskId: strOrNull(raw.taskId),
+    description: strOrNull(raw.description),
+    entryServerBase: num(raw.entryServerBase),
+    entryTaskHistoryToday: num(raw.entryTaskHistoryToday),
+    startTime: strOrNull(raw.startTime),
+  };
+}
+
+/** The single-Timer file's active entry as one Timer (none when it was stopped). */
+function migrateSingleTimer(parsed: any): ActiveTimer[] {
+  if (typeof parsed.activeEntryId !== "string" || !parsed.activeEntryId) return [];
+  // Pre-March-27 JSON has no timerStatus: an active entry was running at shutdown.
+  const status = parsed.timerStatus ?? "running";
+  if (status !== "running" && status !== "paused") return [];
+  return [{
+    entryId: parsed.activeEntryId,
+    status,
+    crmProjectId: null,
+    projectName: strOrNull(parsed.activeProjectName),
+    taskName: strOrNull(parsed.activeTaskName),
+    taskId: strOrNull(parsed.activeTaskId),
+    description: null,
+    entryServerBase: num(parsed.entryServerBase),
+    entryTaskHistoryToday: num(parsed.entryTaskHistoryToday),
+    startTime: strOrNull(parsed.activeEntryStartTime),
+  }];
+}
 
 export class AgentStore {
   private data: PersistedData;
@@ -96,9 +203,10 @@ export class AgentStore {
     this.configPath = path.join(app.getPath("userData"), CONFIG_FILENAME);
     this.data = this.loadFromDisk();
     this.runtime = {
-      activeDescription: null,
       clientVersion: "0.1.0",
       workedTodayServerBase: 0,
+      simultaneousTodayServerBase: 0,
+      workedTodayReadAt: Date.now(),
       sessionStartedAt: Date.now(),
     };
   }
@@ -111,34 +219,30 @@ export class AgentStore {
       deviceToken: null,
       deviceName: null,
       userEmail: null,
-      activeEntryId: null,
-      activeProjectName: null,
-      activeTaskName: null,
-      activeTaskId: null,
-      entryServerBase: 0,
-      entryTaskHistoryToday: 0,
+      timers: [],
       sessions: [],
       lastActivityAt: null,
-      timerStatus: "stopped",
-      activeEntryStartTime: null,
       displayTimezone: 'local',
       noTimerReminderEnabled: true,
       uiMode: null,
       updateRequired: null,
+      switchedFrom: null,
     };
     try {
       if (!fs.existsSync(this.configPath)) return empty;
       const raw = fs.readFileSync(this.configPath, "utf-8");
       const parsed = JSON.parse(raw);
+      const timers = Array.isArray(parsed.timers)
+        ? parsed.timers.map(readTimer).filter((t: ActiveTimer | null): t is ActiveTimer => t !== null)
+        // Migration (#400): the single-Timer file becomes a list of one.
+        : migrateSingleTimer(parsed);
+      const rest = { ...parsed };
+      for (const key of SINGLE_TIMER_KEYS) delete rest[key];
       return {
         ...empty,
-        ...parsed,
+        ...rest,
+        timers,
         sessions: Array.isArray(parsed.sessions) ? parsed.sessions : [],
-        // Migration: pre-March-27 JSON has no timerStatus field.
-        // If activeEntryId is set, the timer was active at last shutdown → infer "running".
-        timerStatus: parsed.timerStatus ?? (parsed.activeEntryId ? "running" : "stopped"),
-        activeEntryStartTime:
-          typeof parsed.activeEntryStartTime === "string" ? parsed.activeEntryStartTime : null,
       };
     } catch (err) {
       console.warn("[AgentStore] Failed to load config, using defaults:", (err as Error).message);
@@ -213,7 +317,7 @@ export class AgentStore {
     this.data.updateRequired = null;
     this.saveToDisk();
     this.clearTimer();
-    this.runtime.workedTodayServerBase = 0;
+    this.setWorkedTodayServerBase(0, 0);
   }
 
   /** @deprecated Use setSession / clearSession */
@@ -228,19 +332,118 @@ export class AgentStore {
 
   // ─── Timer state ───
 
-  getActiveEntryId(): string | null { return this.data.activeEntryId; }
-  getTimerStatus(): string { return this.data.timerStatus; }
-  /** When the active entry has been paused since; null when not paused (see lib/pausedTimer.ts). */
-  getPausedSince(): Date | null { return pausedSince(this.data); }
-  getActiveProjectName(): string | null { return this.data.activeProjectName; }
-  getActiveTaskName(): string | null { return this.data.activeTaskName; }
-  getActiveTaskId(): string | null { return this.data.activeTaskId; }
-  getActiveDescription(): string | null { return this.runtime.activeDescription; }
+  /** The Timer the single-Timer getters describe: the latest running, else the latest. */
+  private primary(): ActiveTimer | null {
+    const timers = this.data.timers;
+    for (let i = timers.length - 1; i >= 0; i--) {
+      if (timers[i].status === "running") return timers[i];
+    }
+    return timers[timers.length - 1] ?? null;
+  }
+
+  /** A Timer by entry id; the primary one when `entryId` is undefined. */
+  private find(entryId?: string | null): ActiveTimer | null {
+    if (entryId === undefined) return this.primary();
+    return this.data.timers.find((t) => t.entryId === entryId) ?? null;
+  }
+
+  /** Active Timers, oldest first (copies). */
+  getTimers(): ActiveTimer[] {
+    return this.data.timers.map((t) => ({ ...t }));
+  }
+
+  getTimer(entryId: string): ActiveTimer | null {
+    const t = this.find(entryId);
+    return t ? { ...t } : null;
+  }
+
+  getRunningEntryIds(): string[] {
+    return this.data.timers.filter((t) => t.status === "running").map((t) => t.entryId);
+  }
+
+  getActiveEntryId(): string | null { return this.primary()?.entryId ?? null; }
+  /** Running if any Timer runs, paused if any exists, else stopped. */
+  getTimerStatus(): string { return aggregateTimerStatus(this.data.timers); }
+  /**
+   * The entry a capture is presigned with: the latest running Timer the server
+   * knows. The server attaches the capture to every other Timer running then.
+   */
+  getCaptureEntryId(): string | null {
+    const running = this.data.timers.filter((t) => t.status === "running");
+    const known = running.filter((t) => !isLocalEntryId(t.entryId));
+    return (known[known.length - 1] ?? running[running.length - 1])?.entryId ?? null;
+  }
+  /** When a Timer (the primary one by default) has been paused since; null when not paused (see lib/pausedTimer.ts). */
+  getPausedSince(entryId?: string): Date | null {
+    const t = this.find(entryId);
+    if (!t) return null;
+    return pausedSince({
+      timerStatus: t.status,
+      activeEntryId: t.entryId,
+      activeEntryStartTime: t.startTime,
+      sessions: this.data.sessions,
+    });
+  }
+  getActiveProjectName(): string | null { return this.primary()?.projectName ?? null; }
+  getActiveTaskName(): string | null { return this.primary()?.taskName ?? null; }
+  getActiveTaskId(): string | null { return this.primary()?.taskId ?? null; }
+  getActiveDescription(): string | null { return this.primary()?.description ?? null; }
 
   /**
-   * Start (or switch to) a new running timer.
-   * Closes any currently active session before opening a new one,
-   * so there is always at most one active session.
+   * Start a Timer. `switch` (the default, and the only way with one Timer)
+   * closes every other Timer first; `add` keeps them. Starting an entry that is
+   * already active resumes it.
+   */
+  startTimer(opts: {
+    entryId: string;
+    crmProjectId?: string | null;
+    projectName: string | null;
+    taskId: string | null;
+    taskName?: string | null;
+    description?: string | null;
+    /**
+     * Stopped-entry history for this task today (seconds), as returned by the
+     * server's timer/start response (`taskAccumulatedToday`). Seeds entryServerBase
+     * so elapsed starts from the accumulated total rather than 0.
+     */
+    taskAccumulatedToday?: number;
+    mode?: StartMode;
+  }): void {
+    if (this.find(opts.entryId)) {
+      this.resumeTimer(opts.entryId);
+      return;
+    }
+    if (opts.mode !== "add") {
+      // The server stops the other Timers on a switch; kept until it answers.
+      this.data.switchedFrom = this.data.timers.length > 0
+        ? { entryId: opts.entryId, timers: this.data.timers.map((t) => ({ ...t })) }
+        : null;
+      this.closeSessions();
+      this.data.timers = [];
+    }
+    const startTime = new Date().toISOString();
+    const history = opts.taskAccumulatedToday ?? 0;
+    this.data.timers.push({
+      entryId: opts.entryId,
+      status: "running",
+      crmProjectId: opts.crmProjectId ?? null,
+      projectName: opts.projectName ?? null,
+      taskName: opts.taskName ?? null,
+      taskId: opts.taskId ?? null,
+      description: opts.description ?? null,
+      entryServerBase: history,
+      entryTaskHistoryToday: history,
+      startTime,
+    });
+    this.openSession(opts.entryId, opts.taskId ?? null, startTime);
+    this.pruneSessions();
+    this.data.lastActivityAt = new Date().toISOString();
+    this.saveToDisk();
+  }
+
+  /**
+   * Start (or switch to) a running timer, as with one Timer: an entry already
+   * active resumes, any other entry replaces every active Timer.
    */
   setTimerRunning(
     entryId: string,
@@ -248,84 +451,115 @@ export class AgentStore {
     taskId: string | null,
     taskName?: string | null,
     description?: string | null,
-    /**
-     * Stopped-entry history for this task today (seconds), as returned by the
-     * server's timer/start response (`taskAccumulatedToday`). Seeds entryServerBase
-     * so elapsed starts from the accumulated total rather than 0. Only applied
-     * when switching to a new entry — ignored on resume of the same entry.
-     */
     taskAccumulatedToday = 0,
   ): void {
-    const isNewEntry = entryId !== this.data.activeEntryId;
-    // The server auto-stops the previous entry on start: fold its time into the base
-    // (before its state is replaced) so Worked Today doesn't drop until the next refresh.
-    if (isNewEntry && this.data.activeEntryId) {
-      this.runtime.workedTodayServerBase += this.getActiveEntryWorkedTodaySeconds();
+    if (this.find(entryId)) {
+      this.resumeTimer(entryId);
+      return;
     }
-    this.closeActiveSessions();
-    // On a new entry: initialise server base from the task's stopped history today
-    // (restores the "accumulated time, not 0" UX from the pre-session-based model).
-    // On resume of the same entry: preserve whatever base is already set.
-    if (isNewEntry) {
-      this.data.entryServerBase = taskAccumulatedToday;
-      this.data.entryTaskHistoryToday = taskAccumulatedToday;
-    }
-    this.data.sessions.push({
-      id: crypto.randomUUID(),
-      entryId,
-      taskId: taskId ?? null,
-      startTime: new Date().toISOString(),
-      endTime: null,
-    });
-    this.pruneSessions();
+    this.startTimer({ entryId, projectName, taskId, taskName, description, taskAccumulatedToday, mode: "switch" });
+  }
 
-    if (isNewEntry) {
-      const last = this.data.sessions[this.data.sessions.length - 1];
-      this.data.activeEntryStartTime = last.startTime;
+  /** Run a Timer again: opens a session unless one is already open. Returns false when the Timer is unknown. */
+  resumeTimer(entryId: string): boolean {
+    const t = this.find(entryId);
+    if (!t) return false;
+    if (!this.data.sessions.some((s) => s.entryId === entryId && s.endTime === null)) {
+      this.openSession(entryId, t.taskId, new Date().toISOString());
+      this.pruneSessions();
     }
-
-    this.data.timerStatus = "running";
-    this.runtime.activeDescription = description ?? null;
-    this.data.activeEntryId = entryId;
-    this.data.activeProjectName = projectName;
-    this.data.activeTaskName = taskName ?? null;
-    this.data.activeTaskId = taskId ?? null;
+    t.status = "running";
     this.data.lastActivityAt = new Date().toISOString();
     this.saveToDisk();
+    return true;
+  }
+
+  /** Resume these Timers where they are paused; returns the ones resumed. */
+  resumeTimers(entryIds: readonly string[]): string[] {
+    const resumed: string[] = [];
+    for (const id of entryIds) {
+      const t = this.find(id);
+      if (t && t.status === "paused" && this.resumeTimer(id)) resumed.push(id);
+    }
+    return resumed;
   }
 
   /**
-   * Pause the running timer.
-   * Closes the active session; elapsed is preserved in the closed session.
+   * Pause one Timer.
+   * @param at  Optional: close its session at this timestamp (idle and away
+   *            pauses, so the time since the Member left is excluded).
    */
-  /**
-   * Pause the running timer.
-   * @param at  Optional: close the active session at this timestamp (used for idle
-   *            auto-pause so the idle period is excluded from elapsed).
-   */
+  pauseTimer(entryId: string, at?: Date): boolean {
+    const t = this.find(entryId);
+    if (!t) return false;
+    this.closeSessions(entryId, at);
+    t.status = "paused";
+    this.data.lastActivityAt = new Date().toISOString();
+    this.saveToDisk();
+    return true;
+  }
+
+  /** Pause every running Timer at `at` (or now); returns the ones paused. */
+  pauseRunningTimers(at?: Date): string[] {
+    const ids = this.getRunningEntryIds();
+    for (const id of ids) this.pauseTimer(id, at);
+    return ids;
+  }
+
+  /** Pause every running timer (with one Timer: the running timer). */
   setTimerPaused(at?: Date): void {
-    this.closeActiveSessions(at);
-    this.data.timerStatus = "paused";
+    this.pauseRunningTimers(at);
+  }
+
+  /** Stop one Timer: its running session closes at `at` (or now) and it leaves the list. */
+  stopTimer(entryId: string, at?: Date): boolean {
+    const t = this.find(entryId);
+    if (!t) return false;
+    this.closeSessions(entryId, at);
+    this.data.timers = this.data.timers.filter((x) => x.entryId !== entryId);
     this.data.lastActivityAt = new Date().toISOString();
+    this.saveToDisk();
+    return true;
+  }
+
+  /**
+   * Forget a Timer the server never recorded (a refused start, #400): the Timer
+   * and its sessions go, so its seconds count nowhere.
+   */
+  discardTimer(entryId: string): void {
+    this.data.timers = this.data.timers.filter((t) => t.entryId !== entryId);
+    this.data.sessions = this.data.sessions.filter((s) => s.entryId !== entryId);
+    const switched = this.data.switchedFrom;
+    if (switched && switched.entryId === entryId) {
+      // A refused switch stopped nothing on the server: its Timers run on from now.
+      this.data.timers = [...switched.timers, ...this.data.timers];
+      const now = new Date().toISOString();
+      for (const t of switched.timers) {
+        if (t.status === "running") this.openSession(t.entryId, t.taskId, now);
+      }
+    }
+    this.data.switchedFrom = null;
     this.saveToDisk();
   }
 
-  /** Stop the timer and clear all active context. */
+  /** The server took this start: a switch's Timers are stopped for good. */
+  startTaken(entryId: string): void {
+    if (!this.data.switchedFrom || this.data.switchedFrom.entryId !== entryId) return;
+    this.data.switchedFrom = null;
+    this.saveToDisk();
+  }
+
+  /** Stop every Timer; returns the ones stopped. */
+  stopAllTimers(at?: Date): string[] {
+    const ids = this.data.timers.map((t) => t.entryId);
+    for (const id of ids) this.stopTimer(id, at);
+    return ids;
+  }
+
+  /** Stop every timer and clear all active context. */
   clearTimer(): void {
-    // Fold the stopped entry's today-time into the server base so "Worked Today"
-    // doesn't drop to 0 until the next refresh. Callers that need a clean base
-    // (sign-out, pairing, day change) reset it explicitly.
-    this.runtime.workedTodayServerBase += this.getActiveEntryWorkedTodaySeconds();
-    this.closeActiveSessions();
-    this.data.timerStatus = "stopped";
-    this.runtime.activeDescription = null;
-    this.data.activeEntryId = null;
-    this.data.activeProjectName = null;
-    this.data.activeTaskName = null;
-    this.data.activeTaskId = null;
-    this.data.entryServerBase = 0;
-    this.data.entryTaskHistoryToday = 0;
-    this.data.activeEntryStartTime = null;
+    this.closeSessions();
+    this.data.timers = [];
     this.data.lastActivityAt = new Date().toISOString();
     this.saveToDisk();
   }
@@ -336,10 +570,16 @@ export class AgentStore {
     this.saveToDisk();
   }
 
-  private closeActiveSessions(at?: Date): void {
-    const ts = (at ?? new Date()).toISOString();
+  private openSession(entryId: string, taskId: string | null, startTime: string): void {
+    this.data.sessions.push({ id: crypto.randomUUID(), entryId, taskId, startTime, endTime: null });
+  }
+
+  /** Close open sessions (of one entry, or all) at `at`, never before they began. */
+  private closeSessions(entryId?: string, at?: Date): void {
+    const atMs = (at ?? new Date()).getTime();
     for (const s of this.data.sessions) {
-      if (s.endTime === null) s.endTime = ts;
+      if (s.endTime !== null || (entryId !== undefined && s.entryId !== entryId)) continue;
+      s.endTime = new Date(Math.max(atMs, new Date(s.startTime).getTime())).toISOString();
     }
   }
 
@@ -376,19 +616,19 @@ export class AgentStore {
     console.log(
       `[AgentStore] Reconciled ${orphans.length} orphan session(s) (lastActivityAt=${fallback})`
     );
-    // timerStatus is NOT reset here — it stays at its persisted value ("running" if the
+    // Timer status is NOT reset here — it stays at its persisted value ("running" if the
     // timer was active at shutdown). autoResumeFromQueue() reads it to reopen the timer.
     this.saveToDisk();
   }
 
   /**
-   * Update local placeholder entry ID to the real server-assigned ID.
+   * Update a local placeholder entry ID to the real server-assigned ID.
    * Called by SyncWorker after a start command syncs successfully.
-   * Updates activeEntryId and all sessions that reference the old placeholder.
+   * Updates that Timer and all sessions that reference the old placeholder.
    */
   updateActiveEntryId(oldId: string, newId: string): void {
-    if (this.data.activeEntryId === oldId) {
-      this.data.activeEntryId = newId;
+    for (const t of this.data.timers) {
+      if (t.entryId === oldId) t.entryId = newId;
     }
     for (const session of this.data.sessions) {
       if (session.entryId === oldId) {
@@ -402,21 +642,21 @@ export class AgentStore {
    * Called by SyncWorker after a start command syncs successfully.
    * Seeds entryServerBase from the server's taskAccumulatedToday so the UI
    * shows accumulated task time (e.g. 30:00) instead of 0:00 when restarting a task.
+   * `entryId` is the Timer whose start synced (the primary one when absent).
    */
-  applyTaskAccumulatedToday(seconds: number): void {
-    this.data.entryServerBase = seconds;
-    this.data.entryTaskHistoryToday = seconds;
+  applyTaskAccumulatedToday(seconds: number, entryId?: string): void {
+    const t = this.find(entryId);
+    if (!t) return;
+    t.entryServerBase = seconds;
+    t.entryTaskHistoryToday = seconds;
     this.saveToDisk();
   }
 
   // ─── Server sync ───
 
   /**
-   * Apply server-authoritative timer state.
-   *
-   * Updates status/entryId and populates project/task names when not already known.
-   * When the entry has no local sessions (e.g. started from another device),
-   * seeds elapsed from the server's accumulated duration so the display is correct.
+   * Apply server-authoritative state for one Timer, as with one Timer: the
+   * entry becomes the only active Timer, and a stopped or absent entry clears them.
    */
   syncFromServer(entry: {
     id: string;
@@ -429,97 +669,80 @@ export class AgentStore {
     /** Wall-clock start of the entry — required for correct elapsed-today when entry spans calendar days */
     startTime?: string | Date | null;
   } | null): void {
-    if (!entry || entry.status === "stopped") {
-      if (this.data.timerStatus !== "stopped") {
-        this.clearTimer();
+    const { id, ...rest } = entry ?? { id: "" };
+    this.applyServerTimers(entry && entry.status !== "stopped" ? [{ entryId: id, ...(rest as Omit<ServerTimer, "entryId">) }] : []);
+  }
+
+  /**
+   * Apply the server's list of active Timers (newest first, as the server sends it).
+   *
+   * A local Timer the server no longer lists is stopped here. Each listed Timer
+   * gets the server's status; names fill in when not already known locally. A
+   * Timer with no local sessions yet (started on another device) is seeded from
+   * the server's accumulated duration so its clock shows the full elapsed.
+   */
+  applyServerTimers(list: readonly ServerTimer[]): void {
+    const listed = list.filter((s) => s.status === "running" || s.status === "paused");
+    const ids = new Set(listed.map((s) => s.entryId));
+    for (const t of this.data.timers) {
+      if (!ids.has(t.entryId)) this.closeSessions(t.entryId);
+    }
+
+    const now = Date.now();
+    const next: ActiveTimer[] = [];
+    for (const s of [...listed].reverse()) {
+      const t: ActiveTimer = this.data.timers.find((x) => x.entryId === s.entryId) ?? {
+        entryId: s.entryId,
+        status: "paused",
+        crmProjectId: null,
+        projectName: null,
+        taskName: null,
+        taskId: null,
+        description: null,
+        entryServerBase: 0,
+        entryTaskHistoryToday: 0,
+        startTime: null,
+      };
+      if (s.startTime) {
+        t.startTime = typeof s.startTime === "string" ? s.startTime : s.startTime.toISOString();
       }
-      return;
-    }
+      if (!t.crmProjectId && s.crmProjectId) t.crmProjectId = s.crmProjectId;
+      if (!t.projectName && s.projectName) t.projectName = s.projectName;
+      if (!t.taskName && s.taskName) t.taskName = s.taskName;
+      if (!t.taskId && s.taskId) t.taskId = s.taskId;
 
-    const serverStatus = entry.status as "running" | "paused";
-    const entryChanged = this.data.activeEntryId !== entry.id;
-
-    if (entryChanged) {
-      // New entry from server: close sessions for the old entry, reset server base,
-      // and clear stale names so the hydration block below can apply server values.
-      // The server switched entries elsewhere (and stopped the old one): fold its time first.
-      if (this.data.activeEntryId) {
-        this.runtime.workedTodayServerBase += this.getActiveEntryWorkedTodaySeconds();
-      }
-      this.closeActiveSessions();
-      // Nothing runs here for the new entry yet: below, a running one gets its
-      // session even when the old entry was running (its clock froze otherwise).
-      this.data.timerStatus = "stopped";
-      this.data.activeEntryId = entry.id;
-      this.data.entryServerBase = 0;
-      this.data.entryTaskHistoryToday = 0;
-      this.data.activeProjectName = null;
-      this.data.activeTaskName = null;
-      this.data.activeTaskId = null;
-      this.data.activeEntryStartTime = null;
-    }
-
-    if (entry.startTime) {
-      this.data.activeEntryStartTime =
-        typeof entry.startTime === "string"
-          ? entry.startTime
-          : entry.startTime.toISOString();
-    }
-
-    // Populate task/project names from server when not already known locally
-    if (!this.data.activeProjectName && entry.projectName) {
-      this.data.activeProjectName = entry.projectName;
-    }
-    if (!this.data.activeTaskName && entry.taskName) {
-      this.data.activeTaskName = entry.taskName;
-    }
-    if (!this.data.activeTaskId && entry.taskId) {
-      this.data.activeTaskId = entry.taskId;
-    }
-
-    // Seed entryServerBase when we have no local sessions for this entry yet.
-    // This handles timer started on another device: desktop would otherwise
-    // show only the ~0s since sync instead of the full accumulated elapsed.
-    const localSessionsForEntry = this.data.sessions.filter((s) => s.entryId === entry.id);
-    if (localSessionsForEntry.length === 0) {
-      const now = Date.now();
-      const lastActivity = entry.lastActivityAt
-        ? new Date(entry.lastActivityAt).getTime()
-        : now;
-      const gapSeconds = Math.max(0, Math.floor((now - lastActivity) / 1000));
-      const computed = (entry.duration ?? 0) + gapSeconds;
-      if (computed > this.data.entryServerBase) {
+      // Seed entryServerBase when we have no local sessions for this entry yet.
+      // This handles timer started on another device: desktop would otherwise
+      // show only the ~0s since sync instead of the full accumulated elapsed.
+      if (!this.data.sessions.some((x) => x.entryId === s.entryId)) {
+        const lastActivity = s.lastActivityAt ? new Date(s.lastActivityAt).getTime() : now;
+        const gapSeconds = Math.max(0, Math.floor((now - lastActivity) / 1000));
+        const computed = (s.duration ?? 0) + gapSeconds;
         // Always take the larger estimate (improves on every sync until local sessions exist)
-        this.data.entryServerBase = computed;
+        if (computed > t.entryServerBase) t.entryServerBase = computed;
       }
-    }
 
-    if (serverStatus === "running" && this.data.timerStatus !== "running") {
-      // Server is running but we are not — open a new session
-      this.data.sessions.push({
-        id: crypto.randomUUID(),
-        entryId: entry.id,
-        taskId: this.data.activeTaskId ?? null,
-        startTime: new Date().toISOString(),
-        endTime: null,
-      });
-      this.data.timerStatus = "running";
-    } else if (serverStatus === "paused" && this.data.timerStatus === "running") {
-      // Server is paused but we are running — close the active session
-      this.closeActiveSessions();
-      this.data.timerStatus = "paused";
-    } else {
-      this.data.timerStatus = serverStatus;
+      const open = this.data.sessions.some((x) => x.entryId === s.entryId && x.endTime === null);
+      if (s.status === "running" && !open) {
+        this.openSession(s.entryId, t.taskId, new Date(now).toISOString());
+      } else if (s.status === "paused" && open) {
+        this.closeSessions(s.entryId);
+      }
+      t.status = s.status as TimerRunStatus;
+      next.push(t);
     }
-
-    this.data.lastActivityAt = new Date().toISOString();
+    this.data.timers = next;
+    if (next.length > 0) this.data.lastActivityAt = new Date(now).toISOString();
     this.saveToDisk();
   }
 
   // ─── Derived selectors ───
 
+  /** The primary Timer's open session. */
   getActiveSession(): TrackingSession | null {
-    return this.data.sessions.find((s) => s.endTime === null) ?? null;
+    const entryId = this.primary()?.entryId;
+    if (!entryId) return null;
+    return this.data.sessions.find((s) => s.entryId === entryId && s.endTime === null) ?? null;
   }
 
   getSessions(): TrackingSession[] {
@@ -527,37 +750,35 @@ export class AgentStore {
   }
 
   /**
-   * Elapsed seconds for the current entry (total, unclamped).
+   * Elapsed seconds for a Timer's entry (the primary Timer by default), total, unclamped.
    *
    * = entryServerBase (server-accumulated before first desktop session)
-   * + sum of ALL local sessions for activeEntryId
+   * + sum of ALL local sessions for the entry
    *
-   * NOT clamped to the current day. Useful for server reconciliation
-   * and historical context, but should NOT be used for day-boundary UI.
-   * Use getElapsedTodaySeconds() for the header and task row display.
+   * NOT clamped to the current day. Use getElapsedTodaySeconds() for display.
    */
-  getElapsedSeconds(now = Date.now()): number {
-    const entryId = this.data.activeEntryId;
-    if (!entryId) return 0;
+  getElapsedSeconds(now = Date.now(), entryId?: string): number {
+    const t = this.find(entryId);
+    if (!t) return 0;
     const sessionMs = this.data.sessions
-      .filter((s) => s.entryId === entryId)
+      .filter((s) => s.entryId === t.entryId)
       .reduce((acc, s) => {
         const start = new Date(s.startTime).getTime();
         const end = s.endTime ? new Date(s.endTime).getTime() : now;
         return acc + Math.max(0, end - start);
       }, 0);
-    return (this.data.entryServerBase ?? 0) + Math.floor(sessionMs / 1000);
+    return (t.entryServerBase ?? 0) + Math.floor(sessionMs / 1000);
   }
 
   /**
-   * Wall end (ms) of the active entry's tracked span: last session end, or now if running,
+   * Wall end (ms) of a Timer's tracked span: last session end, or now if running,
    * or lastActivityAt if paused with no sessions yet. Used so "today" apportioning does not
    * shrink as wall clock advances during idle after a pause.
    */
-  private getActiveSpanWallEndMs(entryId: string, now: number): number {
-    const se = this.data.sessions.filter((s) => s.entryId === entryId);
+  private getSpanWallEndMs(t: ActiveTimer, now: number): number {
+    const se = this.data.sessions.filter((s) => s.entryId === t.entryId);
     if (se.length === 0) {
-      if (this.data.timerStatus === "paused" && this.data.lastActivityAt) {
+      if (t.status === "paused" && this.data.lastActivityAt) {
         return new Date(this.data.lastActivityAt).getTime();
       }
       return now;
@@ -566,25 +787,27 @@ export class AgentStore {
   }
 
   /**
-   * Elapsed seconds for the current entry, clamped to the current local day.
+   * Elapsed seconds for a Timer's entry (the primary Timer by default), clamped
+   * to the current local day. A task counts its time in full, Simultaneous Time
+   * included (ADR-0031).
    *
-   * When `activeEntryStartTime` is set: apportions **total** active seconds (getElapsedSeconds)
+   * When the entry's start time is known: apportions **total** active seconds (getElapsedSeconds)
    * into "today" using the overlap of [entry wall start, span end] with [local midnight, end of day],
    * matching server-side stopped-entry clamping for cross-midnight entries.
    *
-   * Legacy fallback (no `activeEntryStartTime` in persisted JSON): previous base+session-day-clamp.
+   * Legacy fallback (no start time in persisted JSON): previous base+session-day-clamp.
    */
-  getElapsedTodaySeconds(now = Date.now()): number {
-    const entryId = this.data.activeEntryId;
-    if (!entryId) return 0;
+  getElapsedTodaySeconds(now = Date.now(), entryId?: string): number {
+    const t = this.find(entryId);
+    if (!t) return 0;
 
     const { startMs: midnight, endMs } = getLocalDayWindowMs(now);
     const endMsClamped = Math.min(endMs, now);
 
-    if (this.data.activeEntryStartTime) {
-      const startMs = new Date(this.data.activeEntryStartTime).getTime();
-      const totalActive = this.getElapsedSeconds(now);
-      const spanEnd = this.getActiveSpanWallEndMs(entryId, now);
+    if (t.startTime) {
+      const startMs = new Date(t.startTime).getTime();
+      const totalActive = this.getElapsedSeconds(now, t.entryId);
+      const spanEnd = this.getSpanWallEndMs(t, now);
       const totalWallMs = Math.max(1, spanEnd - startMs);
       const overlapStart = Math.max(startMs, midnight);
       const overlapEnd = Math.min(spanEnd, endMsClamped, now);
@@ -593,12 +816,12 @@ export class AgentStore {
       return Math.round(totalActive * (inWindowMs / totalWallMs));
     }
 
-    const entrySessions = this.data.sessions.filter((s) => s.entryId === entryId);
+    const entrySessions = this.data.sessions.filter((s) => s.entryId === t.entryId);
 
     const entryStartedToday =
       entrySessions.length === 0 ||
       new Date(entrySessions[0].startTime).getTime() >= midnight;
-    const base = entryStartedToday ? (this.data.entryServerBase ?? 0) : 0;
+    const base = entryStartedToday ? (t.entryServerBase ?? 0) : 0;
 
     const sessionMs = entrySessions.reduce((acc, s) => {
       const start = new Date(s.startTime).getTime();
@@ -612,36 +835,40 @@ export class AgentStore {
     return base + Math.floor(sessionMs / 1000);
   }
 
-  /**
-   * The active entry's own time today: getElapsedTodaySeconds minus the task's stopped
-   * history seeded into entryServerBase (already inside the server total). When the entry
-   * started before today, that history belonged to the start day and nothing is removed.
-   */
-  getActiveEntryWorkedTodaySeconds(now = Date.now()): number {
-    const elapsed = this.getElapsedTodaySeconds(now);
-    const entryId = this.data.activeEntryId;
-    if (!entryId) return 0;
-    const firstSession = this.data.sessions.find((s) => s.entryId === entryId);
-    const started = this.data.activeEntryStartTime ?? firstSession?.startTime ?? null;
-    const startedToday = started !== null && new Date(started).getTime() >= getLocalDayWindowMs(now).startMs;
-    if (!startedToday) return elapsed;
-    return Math.max(0, elapsed - (this.data.entryTaskHistoryToday ?? 0));
+  /** Seconds since the last server read (and since local midnight) during which any local Timer ran, and two or more did. */
+  private liveSinceRead(now: number): { any: number; simultaneous: number } {
+    const from = Math.max(this.runtime.workedTodayReadAt, getLocalDayWindowMs(now).startMs);
+    return coveredSeconds(
+      this.data.sessions.map((s) => ({
+        start: new Date(s.startTime).getTime(),
+        end: s.endTime ? new Date(s.endTime).getTime() : now,
+      })),
+      from,
+      now,
+    );
   }
 
   /**
-   * Total seconds worked today (all tasks, all devices).
-   * = server's stopped-entries total (set via setWorkedTodayServerBase)
-   * + active entry's own time today (getActiveEntryWorkedTodaySeconds, 0 when stopped).
+   * Worked Time today (all tasks, all devices), counted once however many Timers ran.
+   * = the server's total at the last read (running Timers included)
+   * + the seconds since that read during which at least one local Timer ran.
    *
-   * The server base is refreshed on startup, after timer start/stop, and every 60s.
+   * The server total is refreshed on startup, after each synced timer command, and every 60s.
    */
-  getWorkedTodaySeconds(): number {
-    return this.runtime.workedTodayServerBase + this.getActiveEntryWorkedTodaySeconds();
+  getWorkedTodaySeconds(now = Date.now()): number {
+    return this.runtime.workedTodayServerBase + this.liveSinceRead(now).any;
   }
 
-  /** Called by main process after fetching /api/agent/worked-today from server. */
-  setWorkedTodayServerBase(seconds: number): void {
+  /** Simultaneous Time today: the part of Worked Time during which two or more Timers ran. */
+  getSimultaneousTodaySeconds(now = Date.now()): number {
+    return this.runtime.simultaneousTodayServerBase + this.liveSinceRead(now).simultaneous;
+  }
+
+  /** Called by main process after fetching /api/agent/worked-today?includeActive=1 from server. */
+  setWorkedTodayServerBase(seconds: number, simultaneous = 0): void {
     this.runtime.workedTodayServerBase = seconds;
+    this.runtime.simultaneousTodayServerBase = simultaneous;
+    this.runtime.workedTodayReadAt = Date.now();
   }
 
   /** Called once by main process at startup to anchor the session boundary. */
@@ -650,24 +877,27 @@ export class AgentStore {
   }
 
   /**
-   * Seconds the timer was actively running since this app launch (all entries).
-   * = sum of local sessions with startTime >= sessionStartedAt.
+   * Seconds any timer was running since this app launch (all entries, counted once).
+   * = local sessions with startTime >= sessionStartedAt.
    * Not day-scoped. Resets to 0 on app/PC restart.
    */
   getThisSessionSeconds(now = Date.now()): number {
     const anchor = this.runtime.sessionStartedAt;
-    return Math.floor(
-      this.data.sessions.reduce((acc, s) => {
-        if (new Date(s.startTime).getTime() < anchor) return acc;
-        const start = new Date(s.startTime).getTime();
-        const end = s.endTime ? new Date(s.endTime).getTime() : now;
-        return acc + Math.max(0, end - start);
-      }, 0) / 1000
-    );
+    return coveredSeconds(
+      this.data.sessions
+        .filter((s) => new Date(s.startTime).getTime() >= anchor)
+        .map((s) => ({
+          start: new Date(s.startTime).getTime(),
+          end: s.endTime ? new Date(s.endTime).getTime() : now,
+        })),
+      anchor,
+      now,
+    ).any;
   }
 
   /**
-   * Full state snapshot for IPC push to renderer(s).
+   * Full state snapshot for IPC push to renderer(s). The top-level fields
+   * describe the primary Timer; `timers` lists every active one.
    */
   getTimerState(): {
     status: string;
@@ -676,24 +906,40 @@ export class AgentStore {
     elapsed: number;
     elapsedToday: number;
     workedToday: number;
+    simultaneousToday: number;
     thisSession: number;
     dayKey: string;
     projectName: string | null;
     taskName: string | null;
     description: string | null;
+    timers: TimerView[];
   } {
+    const now = Date.now();
+    const primary = this.primary();
     return {
-      status: this.data.timerStatus,
-      entryId: this.data.activeEntryId,
-      taskId: this.data.activeTaskId,
-      elapsed: this.getElapsedSeconds(),
-      elapsedToday: this.getElapsedTodaySeconds(),
-      workedToday: this.getWorkedTodaySeconds(),
-      thisSession: this.getThisSessionSeconds(),
+      status: this.getTimerStatus(),
+      entryId: primary?.entryId ?? null,
+      taskId: primary?.taskId ?? null,
+      elapsed: this.getElapsedSeconds(now),
+      elapsedToday: this.getElapsedTodaySeconds(now),
+      workedToday: this.getWorkedTodaySeconds(now),
+      simultaneousToday: this.getSimultaneousTodaySeconds(now),
+      thisSession: this.getThisSessionSeconds(now),
       dayKey: getLocalDayKey(),
-      projectName: this.data.activeProjectName,
-      taskName: this.data.activeTaskName,
-      description: this.runtime.activeDescription,
+      projectName: primary?.projectName ?? null,
+      taskName: primary?.taskName ?? null,
+      description: primary?.description ?? null,
+      timers: this.data.timers.map((t) => ({
+        entryId: t.entryId,
+        status: t.status,
+        crmProjectId: t.crmProjectId,
+        projectName: t.projectName,
+        taskName: t.taskName,
+        taskId: t.taskId,
+        description: t.description,
+        elapsed: this.getElapsedSeconds(now, t.entryId),
+        elapsedToday: this.getElapsedTodaySeconds(now, t.entryId),
+      })),
     };
   }
 }

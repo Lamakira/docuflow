@@ -248,6 +248,7 @@ describe("migration journal", () => {
       "0042_workspace_time_zone",
       "0043_screenshot_fingerprint",
       "0044_daily_updates_grants",
+      "0045_simultaneous_timers",
     ]);
     const ledger = await withClient(scratch, (client) =>
       client.query<{ version: string; baselined: boolean }>(
@@ -300,6 +301,7 @@ describe("migration journal", () => {
       { version: "0042_workspace_time_zone", baselined: false },
       { version: "0043_screenshot_fingerprint", baselined: false },
       { version: "0044_daily_updates_grants", baselined: false },
+      { version: "0045_simultaneous_timers", baselined: false },
     ]);
   });
 

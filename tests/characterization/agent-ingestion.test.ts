@@ -103,6 +103,8 @@ describe("desktop agent ingestion (characterization)", () => {
       screenshotProjectIds: null,
       screenshotProjectCapacity: null,
       activityCaptureEnabled: true,
+      // One Timer at a time until the Workspace allows Simultaneous Timers (#400).
+      simultaneousTimersEnabled: false,
     });
 
     const entry = await startTimer(user.agent, crmProjectId, taskId);
@@ -184,6 +186,8 @@ describe("desktop agent ingestion (characterization)", () => {
       screenshotProjectIds: null,
       screenshotProjectCapacity: null,
       activityCaptureEnabled: true,
+      // One Timer at a time until the Workspace allows Simultaneous Timers (#400).
+      simultaneousTimersEnabled: false,
     });
   });
 
@@ -384,6 +388,7 @@ describe("desktop agent ingestion (characterization)", () => {
       "screenshotPolicy",
       "serverTime",
       "timerSync",
+      "timers",
       "trackingPolicyVersion",
     ]);
   });

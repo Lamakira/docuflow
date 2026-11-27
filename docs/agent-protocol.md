@@ -5,6 +5,16 @@
 
 ---
 
+## Protocol v2 (#400, ADR-0031)
+
+Agents declare their version in `x-agent-protocol-version` on every request. v2 runs beside several Timers:
+
+- `POST /api/agent/timer/start` takes `mode`: `"add"` keeps the Timers already running, `"switch"` (or no mode) stops them. A refused start answers `409 { code, message }` with `code` one of `simultaneous_timers_off`, `timer_limit`, `task_has_timer`, `project_has_timer`, `timer_in_other_workspace`, and is not recorded.
+- `POST /api/agent/heartbeat` takes `timeEntryIds` (every running Timer) beside `timeEntryId`, and answers `timers` (every active Timer, newest first) beside `timerSync` (the latest) and `screenshotPolicy.simultaneousTimersEnabled`.
+- `GET /api/agent/timers` lists the active Timers. `GET /api/agent/worked-today?includeActive=1` answers `{ total, simultaneous }`: Worked Time counted once, running Timers included.
+- A screenshot is presigned for one running Timer; the server attaches it to every other Timer running when it was taken.
+- Until the launch date (`SIMULTANEOUS_TIMERS_LAUNCH_AT`) the minimum is 1 and an undeclared agent counts as 1. From it the minimum is 2: a v1 agent may still pause, resume, stop and drain its queue, but not start a Timer.
+
 ## 1. Overview
 
 The Desktop Agent (Electron) runs on the user's workstation and sends

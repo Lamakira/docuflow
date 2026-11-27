@@ -1,3 +1,5 @@
+import { useStartTimer } from "./V2StartTimer";
+import { projectTasksQuery } from "@/lib/projectTasks";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useParams, useSearch } from "wouter";
 import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
@@ -77,7 +79,7 @@ type TimeEntriesResponse = {
   totals?: { duration: number; idle: number };
 };
 type ProjectsResponse = { data: CrmProjectWithDetails[]; total?: number };
-type TimeStats = { totalDuration: number };
+type TimeStats = { totalDuration: number; simultaneousDuration?: number };
 type TasksResponse = { data: ProjectTask[] };
 
 const ENTRY_MOTION = motionForSurface("time-entry").enterExit;
@@ -204,11 +206,24 @@ function TimeEntriesPane() {
     pauseMutationPending,
     resumeMutationPending,
     stopMutationPending,
-    handleStart,
     handlePause,
     handleResume,
     handleStop,
+    simultaneousTimers,
+    requiresTaskForStart,
+    timers,
   } = useTimeTracker();
+  const { start, dialog: startDialog } = useStartTimer();
+  // With Simultaneous Timers on, the Timer keeps showing the running one and
+  // offers another beside it (ADR-0031): its own Project and Task, so choosing
+  // them does not move the running Timer's.
+  const [anotherProjectId, setAnotherProjectId] = useState("");
+  const [anotherTaskId, setAnotherTaskId] = useState("");
+  const { data: anotherTasks } = useQuery(projectTasksQuery<ProjectTask>(anotherProjectId));
+  useEffect(() => {
+    setAnotherProjectId("");
+    setAnotherTaskId("");
+  }, [timers.length]);
 
   const [writeRefusal, setWriteRefusal] = useState<string | null>(null);
   const [leavingIds, setLeavingIds] = useState<string[]>([]);
@@ -364,12 +379,14 @@ function TimeEntriesPane() {
 
   const page = composeTimeTracking({
     now,
+    nowMs: Date.now(),
     currentUserId: user?.id ?? "",
     isAdmin: canManage,
     isRunning,
     displayDuration,
     activeEntryId: activeEntry?.id ?? null,
     entries: shownRows.map(toRow),
+    simultaneousSeconds: stats?.simultaneousDuration ?? 0,
     workdaySeconds: (stats?.totalDuration ?? 0) + secondsSinceRead(statsReadAt, Date.now(), isRunning, displayDuration),
     liveSeconds: secondsSinceRead(entriesReadAt, Date.now(), isRunning, displayDuration),
     periodStart: rangeDates.startDate,
@@ -430,7 +447,7 @@ function TimeEntriesPane() {
       return;
     }
     if (busy) handleStop();
-    else handleStart();
+    else start();
   }
 
   function onPauseResume() {
@@ -501,6 +518,47 @@ function TimeEntriesPane() {
             </Button>
           ) : null}
         </div>
+        {busy && simultaneousTimers ? (
+          <div className="df-toolbar" data-align="start" data-testid="v2-time-timer-another">
+            <V2ProjectPicker
+              variant="chip"
+              label="Another Project"
+              value={anotherProjectId}
+              valueLabel="Choose a Project"
+              disabled={readOnly}
+              onChange={(next) => {
+                setAnotherProjectId(next);
+                setAnotherTaskId("");
+              }}
+              options={offered}
+              state={timeProjects.state}
+              testId="v2-time-timer-another-project"
+            />
+            <V2FilterSelect
+              label="Task"
+              ariaLabel="Task for another Timer"
+              value={anotherTaskId || V2_SELECT_NONE}
+              disabled={readOnly || !anotherProjectId}
+              onChange={(next) => setAnotherTaskId(next === V2_SELECT_NONE ? "" : next)}
+              options={[
+                { value: V2_SELECT_NONE, label: "Choose a Task" },
+                ...(anotherTasks?.data ?? [])
+                  .filter((task) => task.status !== "archived")
+                  .map((task) => ({ value: task.id, label: task.name })),
+              ]}
+            />
+            <Button
+              variant="outline"
+              type="button"
+              className="df-btn"
+              disabled={readOnly || pending || !anotherProjectId || (requiresTaskForStart && !anotherTaskId)}
+              onClick={() => start(anotherProjectId, anotherTaskId || undefined)}
+              data-testid="v2-time-timer-another-start"
+            >
+              Start another
+            </Button>
+          </div>
+        ) : null}
         {noTask ? (
           <p className="df-note" data-testid="v2-time-timer-no-task">
             This Project has no Task yet.{" "}
@@ -677,6 +735,7 @@ function TimeEntriesPane() {
           />
         )}
       </section>
+      {startDialog}
     </>
   );
 }

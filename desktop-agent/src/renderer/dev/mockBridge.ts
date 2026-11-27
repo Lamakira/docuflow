@@ -12,7 +12,7 @@
  * tasks, same totals — so a rendered screen can be compared to its PNG.
  */
 
-import type { AgentBridge, AgentState, Project, Task, TimerState, BreakdownRow, IdlePromptPayload } from '../app/types';
+import type { ActiveTimerState, AgentBridge, AgentState, Project, Task, TimerState, BreakdownRow, IdlePromptPayload } from '../app/types';
 import { DEFAULT_TRACKING_POLICY } from '../../lib/trackingPolicy';
 
 export type Scenario =
@@ -25,7 +25,9 @@ export type Scenario =
   | 'error'        // every fetch fails
   | 'rollover'     // dayKey is stale — exercises the midnight-rollover path
   | 'update-required'          // server refused this protocol version, Timer running (#398)
-  | 'update-required-stopped'; // the same, nothing tracked
+  | 'update-required-stopped' // the same, nothing tracked
+  | 'simultaneous'             // option on, two Timers active (#400)
+  | 'simultaneous-full';       // option on, three Timers: Add is not offered
 
 const SECOND = 1000;
 
@@ -142,8 +144,24 @@ function seedTimer(scenario: Scenario): TimerState {
     description: null,
   };
 
+  const timerOf = (entryId: string, projectName: string, taskId: string, taskName: string, status: 'running' | 'paused', seconds: number): ActiveTimerState => ({
+    entryId, status, crmProjectId: PROJECTS.find((p) => p.name === projectName)?.id ?? null,
+    projectName, taskId, taskName, description: null, elapsed: seconds, elapsedToday: seconds,
+  });
+  const two = [
+    timerOf('entry-0', 'Meridian', 't-vendor-map', 'Vendor mapping', 'paused', 3900),
+    timerOf('entry-1', 'Northwind', 't-ledger', 'Ledger rebuild', 'running', 5772),
+  ];
+
   switch (scenario) {
     case 'running': return active;
+    case 'simultaneous': return { ...active, simultaneousToday: 5400, timers: two };
+    case 'simultaneous-full':
+      return {
+        ...active,
+        simultaneousToday: 5400,
+        timers: [timerOf('entry-k', 'Kaleido', 't-design-qa', 'Design QA with a long name that has to end in an ellipsis', 'running', 2880), ...two],
+      };
     case 'update-required': return active;
     case 'paused':  return { ...active, status: 'paused' };
     // Regression guard: a stale dayKey drives AgentContext's rollover branch on
@@ -208,6 +226,7 @@ export function createMockBridge(scenario: Scenario = 'running'): AgentBridge {
     apiBase: 'https://app.docuflow.io',
     apiBaseSource: mockApiBaseSource,
     timer,
+    simultaneousTimersEnabled: scenario.startsWith('simultaneous'),
     updateRequired: scenario.startsWith('update-required')
       ? { minProtocolVersion: 2, downloadUrl: 'https://app.docuflow.io/downloads/macos' }
       : null,
@@ -216,6 +235,21 @@ export function createMockBridge(scenario: Scenario = 'running'): AgentBridge {
   function emit() { listeners.forEach((cb) => cb(state())); }
 
   function patch(next: Partial<TimerState>) { timer = { ...timer, ...next }; emit(); }
+
+  /** Several Timers (#400): the top-level fields follow the latest running one, as AgentStore does. */
+  function setTimers(timers: ActiveTimerState[]) {
+    const primary = [...timers].reverse().find((t) => t.status === 'running') ?? timers[timers.length - 1];
+    patch({
+      timers,
+      status: timers.some((t) => t.status === 'running') ? 'running' : primary ? 'paused' : 'stopped',
+      entryId: primary?.entryId ?? null,
+      taskId: primary?.taskId ?? null,
+      taskName: primary?.taskName ?? null,
+      projectName: primary?.projectName ?? null,
+      elapsed: primary?.elapsed ?? 0,
+      elapsedToday: primary?.elapsedToday ?? 0,
+    });
+  }
 
   // Live tick so the readout actually moves — the design has to survive a
   // number that changes every second.
@@ -226,6 +260,7 @@ export function createMockBridge(scenario: Scenario = 'running'): AgentBridge {
       elapsedToday: timer.elapsedToday + 1,
       workedToday: timer.workedToday + 1,
       thisSession: timer.thisSession + 1,
+      timers: timer.timers?.map((t) => (t.status === 'running' ? { ...t, elapsed: t.elapsed + 1, elapsedToday: t.elapsedToday + 1 } : t)),
     });
   }, SECOND);
 
@@ -301,7 +336,16 @@ export function createMockBridge(scenario: Scenario = 'running'): AgentBridge {
       return { ok: true, data: task };
     },
 
-    timerStart: async ({ taskId, taskName, projectName, taskDurationToday }) => {
+    timerStart: async ({ crmProjectId, taskId, taskName, projectName, taskDurationToday, mode }) => {
+      if (timer.timers) {
+        const started: ActiveTimerState = {
+          entryId: `entry-${Date.now()}`, status: 'running', crmProjectId, projectName,
+          taskId: taskId ?? null, taskName: taskName ?? null, description: null,
+          elapsed: taskDurationToday ?? 0, elapsedToday: taskDurationToday ?? 0,
+        };
+        setTimers(mode === 'add' ? [...timer.timers, started] : [started]);
+        return { ok: true };
+      }
       patch({
         status: 'running', entryId: `entry-${Date.now()}`,
         taskId: taskId ?? null, taskName: taskName ?? null, projectName,
@@ -309,18 +353,34 @@ export function createMockBridge(scenario: Scenario = 'running'): AgentBridge {
       });
       return { ok: true };
     },
-    timerPause: async () => {
+    timerPause: async (data) => {
       if (failing) return { ok: false, error: 'Cannot pause — server unreachable' };
+      if (timer.timers) {
+        const id = data?.entryId ?? timer.entryId;
+        setTimers(timer.timers.map((t) => (t.entryId === id ? { ...t, status: 'paused' as const } : t)));
+        return { ok: true };
+      }
       patch({ status: 'paused' }); return { ok: true };
     },
-    timerResume: async () => {
+    timerResume: async (data) => {
       if (failing) return { ok: false, error: 'Cannot resume — server unreachable' };
+      if (timer.timers) {
+        const id = data?.entryId ?? [...timer.timers].reverse().find((t) => t.status === 'paused')?.entryId;
+        setTimers(timer.timers.map((t) => (t.entryId === id ? { ...t, status: 'running' as const } : t)));
+        return { ok: true };
+      }
       patch({ status: 'running' }); return { ok: true };
     },
+    timerStopAll: async () => { setTimers([]); return { ok: true }; },
     // Mirrors AgentStore.clearTimer: stopping drops the entry *and* the context.
     // The UI's "last task" after a stop comes from the recent-task list, not
     // from TimerState, and a mock that kept the names hid that entirely.
-    timerStop: async () => {
+    timerStop: async (data) => {
+      if (timer.timers) {
+        const id = data?.entryId ?? timer.entryId;
+        setTimers(timer.timers.filter((t) => t.entryId !== id));
+        return { ok: true };
+      }
       patch({
         status: 'stopped', entryId: null, taskId: null, taskName: null, projectName: null,
         elapsed: 0, elapsedToday: 0,

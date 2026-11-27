@@ -94,6 +94,8 @@ describe("Worked today with task history and entry switches", () => {
   });
 
   it("counts a timer started on another device", () => {
+    // Since #400 the server total includes running Timers (includeActive=1): its
+    // 300 s are inside the 1000, and only what runs after the read is added.
     store.setWorkedTodayServerBase(1000);
     store.syncFromServer({
       id: "entry-remote",
@@ -102,6 +104,8 @@ describe("Worked today with task history and entry switches", () => {
       lastActivityAt: new Date().toISOString(),
       startTime: new Date(2026, 9, 23, 9, 50, 0),
     });
-    expect(store.getWorkedTodaySeconds()).toBe(1300);
+    expect(store.getWorkedTodaySeconds()).toBe(1000);
+    vi.advanceTimersByTime(60_000);
+    expect(store.getWorkedTodaySeconds()).toBe(1060);
   });
 });
