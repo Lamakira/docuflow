@@ -257,6 +257,14 @@ Two rules, from ADR-0017:
   the old one in a later deploy. Rollback is redeploying the previous image,
   never a down migration, so no migration may make the previous image unable to
   run.
+  One exception, deliberate: `0045` drops `idx_time_entries_one_active_timer_per_user`
+  in the deploy that adds its replacements (#400). The previous image still
+  runs; for the minutes of the publish it loses only its guard against two
+  starts of the same User in the same instant (#307), which could leave two
+  Timers active. The new image handles several active Timers, and the next
+  start switches them off. Waiting a deploy would have shipped #400 unable to
+  run a second Timer. No other migration may follow this precedent without its
+  own reason written here.
 
 Three things check this journal, and they check different things:
 
