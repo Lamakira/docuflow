@@ -331,10 +331,10 @@ describe("a time zone is chosen from a list, not typed (#260, F110)", () => {
     expect([...suggestions].sort()).toEqual(suggestions);
   });
 
-  it("offers the Workspace time zone as the shadcn combobox alone, with no free-text field beside it", () => {
+  it("offers the Workspace time zone as the shadcn Command list alone, with no free-text field beside it", () => {
     const page = read("client/src/v2/V2AdministrationWorkspace.tsx");
     expect(page).toContain('from "@/components/ui/command"');
-    expect(page).toContain("<TimeZoneCombobox");
+    expect(page).toContain("<TimeZoneList");
     expect(page).toContain("workspaceTimeZoneChoices(saved)");
     expect(page).not.toContain('aria-label="Workspace time zone"');
     expect(page).not.toContain("Choose from list");

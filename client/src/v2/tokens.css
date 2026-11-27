@@ -1860,11 +1860,18 @@ button.df-activity-row {
   max-width: 480px;
 }
 
-.df-v2 .df-timezone-trigger {
-  justify-content: space-between;
-  width: 100%;
-  max-width: 360px;
-  height: var(--df-control-h);
+/* The Change time zone dialog holds the list itself: search on top, the zones
+   under it, the chosen one checked. */
+.df-v2 .df-timezone-list {
+  border: 1px solid var(--df-divider);
+  border-radius: var(--df-radius-2);
+  background: var(--df-card-white);
+  overflow: hidden;
+}
+
+.df-v2 .df-timezone-list [cmdk-list] {
+  max-height: 240px;
+  padding: var(--df-space-1);
 }
 
 .df-timezone-check {
@@ -1982,6 +1989,10 @@ button.df-activity-row {
   font-size: var(--df-text-2);
   color: var(--df-archive-slate);
   text-decoration: none;
+}
+
+.df-admin-fact-action {
+  margin-left: auto;
 }
 
 .df-admin-fact-link:hover {
@@ -3535,20 +3546,67 @@ button.df-activity-row {
   }
 }
 
-/* The palette's field is shadcn's input row: the magnifier and a bare <input>
-   side by side. `.df-v2 :focus-visible` outranks the input's own `outline-none`
-   — two classes against one — and rang the bare input: inside the row, with the
-   magnifier outside the ring, and cut off at the top by the palette's
-   `overflow: hidden`. Same move as `.df-filter-input`: the row carries the
-   indicator and the input carries none. An underline rather than a ring, since
-   a ring inside a card that clips its overflow is the thing that got cut. */
-.df-v2.df-command-palette [cmdk-input]:focus-visible {
+/* One rule for every v2 search list (cmdk): the command palette, the Project
+   picker, the time zone picker. It was fixed twice, picker by picker, and the
+   third picker got none of it. shadcn's field is an input row: the magnifier
+   and a bare <input> side by side. `.df-v2 :focus-visible` outranks the input's
+   own `outline-none` — two classes against one — and rang the bare input:
+   inside the row, with the magnifier outside the ring, and cut off by the
+   popup's `overflow: hidden`. The row carries the indicator and the input
+   carries none, as `.df-filter-input` does: an underline rather than a ring,
+   since a ring inside a card that clips its overflow is what got cut. The
+   input would inherit the page's 16px (`.df-v2 input { font: inherit }`)
+   while the items are smaller, so it takes the body size. The list's own
+   scrollbar follows DESIGN.md: no arrows, no track, a thin thumb on hover. */
+.df-v2 [cmdk-input]:focus-visible {
   outline: none;
   box-shadow: none;
 }
 
-.df-v2.df-command-palette [cmdk-input-wrapper]:has([cmdk-input]:focus-visible) {
+.df-v2 [cmdk-input-wrapper]:has([cmdk-input]:focus-visible) {
   box-shadow: inset 0 -2px 0 var(--df-amber);
+}
+
+/* `input` in the selector: `.df-v2 input:not([class*="cl-"]) { font: inherit }`
+   weighs as much, so this one wins by coming later. */
+.df-v2 input[cmdk-input] {
+  font-size: var(--df-text-3);
+}
+
+.df-v2 [cmdk-list] {
+  scrollbar-gutter: stable;
+}
+
+.df-v2 [cmdk-list]::-webkit-scrollbar {
+  width: 8px;
+}
+
+.df-v2 [cmdk-list]::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.df-v2 [cmdk-list]::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.df-v2 [cmdk-list]::-webkit-scrollbar-thumb {
+  background: transparent;
+  border: 1px solid transparent;
+  background-clip: padding-box;
+  border-radius: 999px;
+}
+
+.df-v2 [cmdk-list]:hover::-webkit-scrollbar-thumb {
+  background-color: color-mix(in srgb, var(--df-archive-slate) 35%, transparent);
+}
+
+@supports not selector(::-webkit-scrollbar) {
+  .df-v2 [cmdk-list] {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--df-archive-slate) 35%, transparent) transparent;
+  }
 }
 
 /* Room for the dialog's close control, which sits over the row's right end. */
@@ -5049,6 +5107,16 @@ button.df-activity-row {
   background: var(--df-card-white);
   transition: none;
   animation: none;
+}
+
+/* A search list inside a field (the Change time zone dialog) keeps its own
+   row: the box above would draw a second field inside it. Same weight as
+   `.df-daily-field input`, so it wins by coming after. */
+.df-daily-field input[cmdk-input] {
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
 }
 
 .df-daily-field textarea {
@@ -7713,11 +7781,6 @@ a.df-dossier-client-link:hover {
   background: var(--df-card-white);
 }
 
-.df-v2.df-timezone-picker {
-  width: 280px;
-  padding: var(--df-space-1);
-}
-
 /* Choosing a Project to link to: the trigger spans the dialog like its other fields. */
 .df-v2 button.df-project-picker-trigger {
   width: 100%;
@@ -7750,53 +7813,6 @@ a.df-dossier-client-link:hover {
 .df-v2.df-project-picker[data-variant="chip"] {
   width: 320px;
   max-width: calc(100vw - var(--df-space-5));
-}
-
-/* The list's own scrollbar (DESIGN.md): no arrows, no track, a thin thumb. */
-.df-project-picker [cmdk-list] {
-  scrollbar-gutter: stable;
-}
-
-.df-project-picker [cmdk-list]::-webkit-scrollbar {
-  width: 8px;
-}
-
-.df-project-picker [cmdk-list]::-webkit-scrollbar-button {
-  display: none;
-  width: 0;
-  height: 0;
-}
-
-.df-project-picker [cmdk-list]::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.df-project-picker [cmdk-list]::-webkit-scrollbar-thumb {
-  background: transparent;
-  border: 1px solid transparent;
-  background-clip: padding-box;
-  border-radius: 999px;
-}
-
-.df-project-picker:hover [cmdk-list]::-webkit-scrollbar-thumb {
-  background-color: color-mix(in srgb, var(--df-archive-slate) 35%, transparent);
-}
-
-@supports not selector(::-webkit-scrollbar) {
-  .df-project-picker [cmdk-list] {
-    scrollbar-width: thin;
-    scrollbar-color: color-mix(in srgb, var(--df-archive-slate) 35%, transparent) transparent;
-  }
-}
-
-/* The caret and the row's rule carry the search field's focus, as in the command palette. */
-.df-v2.df-project-picker [cmdk-input]:focus-visible {
-  outline: none;
-  box-shadow: none;
-}
-
-.df-v2.df-project-picker [cmdk-input-wrapper]:has([cmdk-input]:focus-visible) {
-  box-shadow: inset 0 -2px 0 var(--df-amber);
 }
 
 .df-project-picker-option {

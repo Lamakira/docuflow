@@ -1,12 +1,11 @@
 import { useState } from "react";
 import { Link } from "wouter";
-import { ArrowRight, Check, ChevronsUpDown, Users } from "lucide-react";
+import { ArrowRight, Check, Clock, Users } from "lucide-react";
 import { useMutation } from "@tanstack/react-query";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Input } from "@/components/ui/input";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
   WORKSPACE_NAME_MAX,
@@ -18,12 +17,11 @@ import {
   workspaceTimeZoneChoices,
 } from "./administration";
 import { errorMessage, notify } from "./notify";
-import { SkeletonBand, SkeletonSection } from "./V2Skeleton";
+import { SkeletonBand } from "./V2Skeleton";
 import { V2FormDialog } from "./V2FormDialog";
 import { V2LoadFailed } from "./V2EmptyState";
 import {
   AdministrationRefused,
-  WriteRefusal,
   useAdministrationRead,
   useAdministrationWrites,
   type AdministrationContext,
@@ -102,7 +100,7 @@ export function V2AdministrationWorkspace({
         <div className="df-card-head">
           <div className="df-card-head-text">
             <h2 className="df-card-title">Workspace</h2>
-            <p className="df-card-sub">The name everyone here sees, who owns it, and the Workspace Role you hold in it.</p>
+            <p className="df-card-sub">The name everyone here sees, who owns it, the Workspace Role you hold in it, and the time zone its reminders follow.</p>
           </div>
         </div>
         <div className="df-admin-identity" data-testid="v2-administration-workspace-identity">
@@ -183,14 +181,14 @@ export function V2AdministrationWorkspace({
         ) : (
           <V2LoadFailed title="The Owner and Members could not be loaded" onRetry={members.retry} testId="v2-administration-workspace-failed" />
         )}
+        <WorkspaceTimeZoneFact context={context} zoneDraft={zoneDraft} onZoneDraft={onZoneDraft} />
       </section>
-
-      <WorkspaceTimeZoneCard context={context} zoneDraft={zoneDraft} onZoneDraft={onZoneDraft} />
     </>
   );
 }
 
-function WorkspaceTimeZoneCard({
+/** The time zone as a line of the Workspace summary, changed in a dialog like the name. */
+function WorkspaceTimeZoneFact({
   context,
   zoneDraft,
   onZoneDraft,
@@ -201,11 +199,13 @@ function WorkspaceTimeZoneCard({
 }) {
   const settings = useAdministrationRead<WorkspaceSettingsResponse>(workspaceSettingsPath(), "The Workspace time zone", "settings");
   const writes = useAdministrationWrites(context);
+  const [open, setOpen] = useState(false);
   const saved = settings.data ? (settings.data.timeZone ?? "") : null;
+  const editable = context.condition !== "Read-only";
   const zone = composeWorkspaceTimeZone({
     saved,
     draft: zoneDraft ?? saved ?? "",
-    editable: context.condition !== "Read-only",
+    editable,
   });
 
   const save = useMutation({
@@ -214,64 +214,89 @@ function WorkspaceTimeZoneCard({
       queryClient.setQueryData<WorkspaceSettingsResponse | null>([workspaceSettingsPath()], (old) => (old ? { ...old, timeZone } : old));
       onZoneDraft(null);
       writes.clear();
+      setOpen(false);
       notify.success("Workspace time zone saved");
       await queryClient.invalidateQueries({ queryKey: [workspaceSettingsPath()] });
     },
     onError: (error: Error) => writes.refuse(error.message),
   });
 
-  if (settings.state === "loading") return <SkeletonSection title="Workspace time zone" className="df-policy-form" lines={2} />;
+  function onOpenChange(next: boolean) {
+    setOpen(next);
+    if (!next) {
+      onZoneDraft(null);
+      writes.clear();
+    }
+  }
+
+  if (settings.state === "loading") {
+    return (
+      <div className="df-admin-facts" aria-hidden="true">
+        <SkeletonBand tiles={1} />
+      </div>
+    );
+  }
+  if (settings.state === "failed") {
+    return <V2LoadFailed title="The time zone could not be loaded" onRetry={settings.retry} testId="v2-administration-workspace-timezone-failed" />;
+  }
+  if (settings.state === "refused") return <AdministrationRefused context={context} />;
 
   return (
-    <section className="df-card df-policy-form" data-testid="v2-administration-workspace-timezone">
-      <div className="df-card-head">
-        <div className="df-card-head-text">
-          <h2 className="df-card-title">Workspace time zone</h2>
-          <p className="df-card-sub">{zone.copy}</p>
+    <div className="df-admin-facts" data-testid="v2-administration-workspace-timezone">
+      <div className="df-admin-fact">
+        <Clock size={16} strokeWidth={1.5} className="df-admin-fact-icon" aria-hidden="true" />
+        <div className="df-admin-fact-text">
+          <span className="df-admin-fact-label">Time zone</span>
+          <span className="df-admin-fact-value df-mono">{zone.current}</span>
         </div>
+        {editable ? (
+          <Button
+            variant="outline"
+            type="button"
+            className="df-btn df-admin-fact-action"
+            onClick={() => setOpen(true)}
+            data-testid="v2-administration-workspace-timezone-change"
+          >
+            Change
+          </Button>
+        ) : null}
       </div>
-      {settings.state === "failed" ? (
-        <V2LoadFailed title="The time zone could not be loaded" onRetry={settings.retry} testId="v2-administration-workspace-timezone-failed" />
-      ) : settings.state === "refused" ? (
-        <AdministrationRefused context={context} />
-      ) : (
-        <>
-          <div className="df-daily-form">
-            <WriteRefusal refusal={writes.refusal} />
-            <div className="df-daily-field">
-              <span id="df-workspace-zone-label">Time zone</span>
-              <TimeZoneCombobox
-                value={zoneDraft ?? saved ?? ""}
-                saved={saved}
-                disabled={context.condition === "Read-only"}
-                onChoose={(next) => onZoneDraft(next === saved ? null : next)}
-              />
-            </div>
-            {zone.issue ? <p className="df-refusal">{zone.issue}</p> : null}
-          </div>
-          <div className="df-form-actions">
-            <p className="df-form-note">{zone.dirty ? "Unsaved changes." : "No change to save."}</p>
-            <Button
-              variant="default"
-              type="button"
-              disabled={!zone.canSave || save.isPending}
-              onClick={() => {
-                if (!writes.guard()) return;
-                save.mutate((zoneDraft ?? "").trim());
-              }}
-              className="df-btn"
-            >
-              {save.isPending ? "Saving…" : "Save time zone"}
-            </Button>
-          </div>
-        </>
-      )}
-    </section>
+      <V2FormDialog
+        open={open}
+        onOpenChange={onOpenChange}
+        title="Change time zone"
+        description={zone.copy}
+        submitLabel={save.isPending ? "Saving…" : "Save time zone"}
+        pending={save.isPending}
+        canSubmit={zone.canSave}
+        onSubmit={() => {
+          if (!writes.guard()) return;
+          save.mutate((zoneDraft ?? "").trim());
+        }}
+        refusal={writes.refusal ?? zone.issue}
+        testId="v2-administration-workspace-timezone-dialog"
+      >
+        <div className="df-daily-field">
+          <span id="df-workspace-zone-label">Time zone</span>
+          <TimeZoneList
+            value={zoneDraft ?? saved ?? ""}
+            saved={saved}
+            disabled={!editable}
+            onChoose={(next) => onZoneDraft(next === saved ? null : next)}
+          />
+        </div>
+      </V2FormDialog>
+    </div>
   );
 }
 
-/** The IANA zones as the shadcn combobox (F110): chosen from the list, never typed. */
-function TimeZoneCombobox({
+/**
+ * The IANA zones as a shadcn Command list (F110): chosen from the list, never
+ * typed. It sits in the Change dialog itself: a popover over the dialog opened
+ * upwards over its title, and the dialog's scroll lock kept the wheel from
+ * moving a list rendered outside it.
+ */
+function TimeZoneList({
   value,
   saved,
   disabled,
@@ -282,49 +307,31 @@ function TimeZoneCombobox({
   disabled: boolean;
   onChoose: (zone: string) => void;
 }) {
-  const [open, setOpen] = useState(false);
   const zones = workspaceTimeZoneChoices(saved);
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button
-          variant="outline"
-          type="button"
-          role="combobox"
-          aria-expanded={open}
-          aria-labelledby="df-workspace-zone-label"
-          disabled={disabled}
-          className="df-btn df-timezone-trigger"
-          data-testid="v2-workspace-timezone-picker"
-        >
-          <span className="df-mono" data-testid="v2-administration-workspace-timezone-current">
-            {value || "Choose a time zone"}
-          </span>
-          <ChevronsUpDown strokeWidth={1.6} aria-hidden />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent align="start" className="df-v2 df-select-content df-timezone-picker">
-        <Command>
-          <CommandInput placeholder="Search time zones" aria-label="Search time zones" />
-          <CommandList>
-            <CommandEmpty>No time zone matches</CommandEmpty>
-            {zones.map((zone) => (
-              <CommandItem
-                key={zone}
-                value={zone}
-                className="df-select-item"
-                onSelect={() => {
-                  onChoose(zone);
-                  setOpen(false);
-                }}
-              >
-                {zone}
-                {zone === value ? <Check strokeWidth={1.6} aria-hidden className="df-timezone-check" /> : null}
-              </CommandItem>
-            ))}
-          </CommandList>
-        </Command>
-      </PopoverContent>
-    </Popover>
+    <Command
+      className="df-timezone-list"
+      label="Time zone"
+      defaultValue={value}
+      data-testid="v2-workspace-timezone-picker"
+    >
+      <CommandInput placeholder="Search time zones" aria-label="Search time zones" autoFocus disabled={disabled} />
+      <CommandList>
+        <CommandEmpty>No time zone matches</CommandEmpty>
+        {zones.map((zone) => (
+          <CommandItem
+            key={zone}
+            value={zone}
+            disabled={disabled}
+            className="df-select-item"
+            data-chosen={zone === value ? "true" : undefined}
+            onSelect={() => onChoose(zone)}
+          >
+            {zone}
+            {zone === value ? <Check strokeWidth={1.6} aria-hidden className="df-timezone-check" /> : null}
+          </CommandItem>
+        ))}
+      </CommandList>
+    </Command>
   );
 }
