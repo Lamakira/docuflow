@@ -121,3 +121,19 @@ export function workedTimeLabel(total: number, simultaneous: number): string {
   const part = simultaneousLabel(simultaneous);
   return part ? `${workedTimeValue(total)} · ${part}` : workedTimeValue(total);
 }
+
+/**
+ * The Member paused, resumed or stopped this Timer by hand: the away or idle
+ * pause no longer speaks for it, so a later resume after that pause leaves it.
+ */
+export function forgetAwayPause(awayPaused: readonly string[], entryId: string): string[] {
+  return awayPaused.filter((id) => id !== entryId);
+}
+
+/** What one resume after a sleep, lock or idle pause brings back: the Timers it paused that are still paused. */
+export function awayResumeTargets(
+  awayPaused: readonly string[],
+  timers: ReadonlyArray<{ entryId: string; status: string }>,
+): string[] {
+  return awayPaused.filter((id) => timers.some((t) => t.entryId === id && t.status === "paused"));
+}

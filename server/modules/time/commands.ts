@@ -165,6 +165,10 @@ async function applyTimerCommandOnce(
     clamped = true;
   }
 
+  // Read before the lock: it takes a connection of its own, which a held transaction must not wait on.
+  const addAllowed =
+    input.kind === "start" && startModeOf(input.payload) === "add" ? await simultaneousTimersAllowed() : false;
+
   return db.transaction(async (tx) => {
     await lockUserTimers(tx, input.userId);
 
@@ -173,7 +177,7 @@ async function applyTimerCommandOnce(
       const timeEntry = await loadTimeEntry(tx, stored.timeEntryId);
       return { duplicate: true, command: stored, timeEntry };
     }
-    if (input.kind === "start") await assertStartAllowed(tx, input);
+    if (input.kind === "start") await assertStartAllowed(tx, input, addAllowed);
 
     if (input.floorAtLastCommand) {
       const floor = await claimFloor(tx, input);
@@ -240,7 +244,11 @@ async function findCommand(writer: TimeWriter, origin: string, sequence: number)
  * Timer, a second on the same Task, or one beside a Timer that occupies the
  * whole Project. Checked at ingest only: a replay applies what was recorded.
  */
-async function assertStartAllowed(tx: TimeTransaction, input: ApplyTimerCommandInput): Promise<void> {
+async function assertStartAllowed(
+  tx: TimeTransaction,
+  input: ApplyTimerCommandInput,
+  addAllowed: boolean,
+): Promise<void> {
   const { workspaceId } = requireWorkspaceContext();
   const located = await tx.execute(sql`SELECT * FROM app_active_time_entries_for_user(${input.userId})`);
   const rows = located.rows as Array<{ workspace_id: string }>;
@@ -248,7 +256,7 @@ async function assertStartAllowed(tx: TimeTransaction, input: ApplyTimerCommandI
     throw new TimerStartRefusedError("timer_in_other_workspace");
   }
   if (startModeOf(input.payload) !== "add") return;
-  if (!(await simultaneousTimersAllowed())) throw new TimerStartRefusedError("simultaneous_timers_off");
+  if (!addAllowed) throw new TimerStartRefusedError("simultaneous_timers_off");
 
   const active = await loadActiveTimers(tx, input.userId);
   if (active.length >= MAX_SIMULTANEOUS_TIMERS) throw new TimerStartRefusedError("timer_limit");

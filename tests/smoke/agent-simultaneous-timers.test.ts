@@ -605,3 +605,22 @@ describe("wiring (source)", () => {
     expect(read("renderer/preload.ts")).toContain('timerStopAll: () => ipcRenderer.invoke("agent:timer-stop-all")');
   });
 });
+
+describe("one resume after a sleep, lock or idle pause (#400)", () => {
+  it("brings back the Timers the pause stopped and still paused, not one the Member then handled by hand", async () => {
+    const { awayResumeTargets, forgetAwayPause } = await import("../../desktop-agent/src/lib/simultaneousTimers");
+    // Sleep paused A and B; the Member resumed A, then paused it again by hand.
+    let away = ["a", "b"];
+    away = forgetAwayPause(away, "a");
+    const timers = [
+      { entryId: "a", status: "paused" },
+      { entryId: "b", status: "paused" },
+      { entryId: "c", status: "paused" },
+    ];
+    expect(awayResumeTargets(away, timers)).toEqual(["b"]);
+    // A Timer stopped since is gone from the list of Timers: nothing to resume.
+    expect(awayResumeTargets(["b"], [{ entryId: "c", status: "paused" }])).toEqual([]);
+    // One running again is not resumed twice.
+    expect(awayResumeTargets(["a", "b"], [{ entryId: "a", status: "running" }, { entryId: "b", status: "paused" }])).toEqual(["b"]);
+  });
+});

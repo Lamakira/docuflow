@@ -87,7 +87,13 @@ import { isWaylandSession, shouldSkipWaylandCaptures } from "../lib/platform";
 import { IdleFlow } from "../lib/idleFlow";
 import { droppedIdleCommands, pauseCommandAt, pauseForSystemAway, stopCommandAt, type TimerCommandDraft } from "../lib/systemAway";
 import { timerSyncApplies } from "../lib/timerResync";
-import { MAX_SIMULTANEOUS_TIMERS, TIMER_LIMIT_MESSAGE, type StartMode } from "../lib/simultaneousTimers";
+import {
+  awayResumeTargets,
+  forgetAwayPause,
+  MAX_SIMULTANEOUS_TIMERS,
+  TIMER_LIMIT_MESSAGE,
+  type StartMode,
+} from "../lib/simultaneousTimers";
 import type { ServerTimerSummary } from "../lib/ApiClient";
 import { removeDeletedCaptures } from "../lib/deletedCaptures";
 import {
@@ -582,7 +588,7 @@ function rebuildTrayMenu(): void {
           stopPausedEntryFromPreviousDay("tray-resume");
           // Every Timer an away or idle pause stopped; otherwise the latest
           // paused Timer, as the tooltip and the widget show it.
-          if (idlePausedEntryIds.length > 0) resumeTimerAfterIdle();
+          if (awayResumeTargets(idlePausedEntryIds, store.getTimers()).length > 0) resumeTimerAfterIdle();
           else resumeActiveTimer();
         },
       });
@@ -1284,6 +1290,7 @@ ipcMain.handle("agent:timer-pause", async (_event, args?: { entryId?: string }) 
 
   const clientCommandId = randomUUID();
   store.pauseTimer(entryId);
+  idlePausedEntryIds = forgetAwayPause(idlePausedEntryIds, entryId);
   queue.enqueueTimerCommand({ clientCommandId, type: "pause", entryId });
   pushStateToRenderer();
   syncWorker?.triggerSync();
@@ -1304,6 +1311,7 @@ function resumeActiveTimer(entryId?: string): { ok: boolean; error?: string } {
 
   const clientCommandId = randomUUID();
   store.resumeTimer(target);
+  idlePausedEntryIds = forgetAwayPause(idlePausedEntryIds, target);
   queue.enqueueTimerCommand({ clientCommandId, type: "resume", entryId: target });
   pushStateToRenderer();
   syncWorker?.triggerSync();
@@ -1315,6 +1323,7 @@ ipcMain.handle("agent:timer-resume", async (_event, args?: { entryId?: string })
 /** Stop one Timer locally and queue the stop command. Shared by agent:timer-stop, stop-all and the previous-day stop. */
 function stopActiveTimer(entryId: string): void {
   store.stopTimer(entryId);
+  idlePausedEntryIds = forgetAwayPause(idlePausedEntryIds, entryId);
   queue.enqueueTimerCommand({ clientCommandId: randomUUID(), type: "stop", entryId });
   // The idle prompt is about the Timers that ran: it ends with the last one.
   if (idleFlow.active && store.getTimers().length === 0) {
@@ -1774,7 +1783,8 @@ const idleFlow = new IdleFlow({
 function resumeTimerAfterIdle(): void {
   // None recorded (a stale prompt): the latest paused Timer, as before.
   const latestPaused = store.getTimers().filter((t) => t.status === "paused").pop()?.entryId;
-  const entryIds = idlePausedEntryIds.length > 0 ? idlePausedEntryIds : latestPaused ? [latestPaused] : [];
+  const awayPaused = awayResumeTargets(idlePausedEntryIds, store.getTimers());
+  const entryIds = awayPaused.length > 0 ? awayPaused : latestPaused ? [latestPaused] : [];
   idlePausedEntryIds = [];
   const resumed = store.resumeTimers(entryIds);
   if (resumed.length === 0) return;
