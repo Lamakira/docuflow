@@ -4,7 +4,7 @@
  * Entry the evidence is attached to. Evidence is not turned into scores.
  */
 
-import { and, desc, eq, gt, gte, isNull, lte, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, gt, gte, isNotNull, isNull, lte, sql, type SQL } from "drizzle-orm";
 import {
   agentActivityEvents,
   agentProcessedBatches,
@@ -308,6 +308,25 @@ export async function softDeleteTimeEntryScreenshot(
     .where(and(eq(timeEntryScreenshots.id, id), inWorkspace(timeEntryScreenshots)))
     .returning();
   return updated;
+}
+
+/** A Member's tombstoned captures since a date: the agent drops its local copies of them. */
+export async function listDeletedScreenshotsForUser(
+  userId: string,
+  since: Date,
+  limit = 1000
+): Promise<{ id: string; capturedAt: Date }[]> {
+  return db
+    .select({ id: timeEntryScreenshots.id, capturedAt: timeEntryScreenshots.capturedAt })
+    .from(timeEntryScreenshots)
+    .where(and(
+      eq(timeEntryScreenshots.userId, userId),
+      isNotNull(timeEntryScreenshots.deletedAt),
+      gte(timeEntryScreenshots.capturedAt, since),
+      inWorkspace(timeEntryScreenshots)
+    ))
+    .orderBy(desc(timeEntryScreenshots.capturedAt))
+    .limit(limit);
 }
 
 export async function getActivityEvidence(id: string): Promise<ActivityEvidence | undefined> {

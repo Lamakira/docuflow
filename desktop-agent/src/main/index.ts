@@ -87,6 +87,7 @@ import { isWaylandSession, shouldSkipWaylandCaptures } from "../lib/platform";
 import { IdleFlow } from "../lib/idleFlow";
 import { droppedIdleCommands, pauseCommandAt, pauseForSystemAway, stopCommandAt, type TimerCommandDraft } from "../lib/systemAway";
 import { timerSyncApplies } from "../lib/timerResync";
+import { removeDeletedCaptures } from "../lib/deletedCaptures";
 import {
   DEFAULT_TRACKING_POLICY,
   isWithinActiveHours,
@@ -257,6 +258,7 @@ let activityWorker: ActivityWorker | null = null;
 let syncWorker: SyncWorker | null = null;
 let screenshotWorker: ScreenCaptureWorker | null = null;
 let resyncInterval: ReturnType<typeof setInterval> | null = null;
+let deletedCapturesInterval: ReturnType<typeof setInterval> | null = null;
 let workedTodayInterval: ReturnType<typeof setInterval> | null = null;
 let pausedReminderInterval: ReturnType<typeof setInterval> | null = null;
 let lastPausedReminderAt = 0;
@@ -780,6 +782,11 @@ function startWorkers(): void {
 
   startResyncPolling();
 
+  // Drop local copies of captures deleted on the web (not a capture worker: runs even with capture off).
+  if (deletedCapturesInterval) clearInterval(deletedCapturesInterval);
+  void sweepDeletedCaptures();
+  deletedCapturesInterval = setInterval(() => void sweepDeletedCaptures(), 5 * 60_000);
+
   // Refresh worked-today server base and detect day-boundary crossings.
   // Normal cadence: 60 s. Near calendar midnight (23:55–00:05) or in test rollover mode: 15 s.
   let _lastWorkedTodayDate = getLocalDayKey();
@@ -861,6 +868,10 @@ function stopWorkers(): void {
   heartbeatWorker?.stop();
   syncWorker?.stop();
   stopResyncPolling();
+  if (deletedCapturesInterval) {
+    clearInterval(deletedCapturesInterval);
+    deletedCapturesInterval = null;
+  }
   if (workedTodayInterval) {
     clearTimeout(workedTodayInterval);
     workedTodayInterval = null;
@@ -1016,6 +1027,21 @@ async function syncTimerFromServer(): Promise<void> {
     applyServerTimerSync(timerSync, requestedAtMono);
   } catch (err: any) {
     console.warn(`[Main] Timer resync failed: ${err.message}`);
+  }
+}
+
+/** Remove local captures an admin deleted on the web. Never throws. */
+async function sweepDeletedCaptures(): Promise<void> {
+  if (!store.isPaired()) return;
+  // Blocked (#398): every call is refused.
+  if (updateGate.state) return;
+  try {
+    const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const deleted = await apiClient.getDeletedScreenshots(since);
+    const removed = await removeDeletedCaptures(path.join(app.getPath("userData"), "screenshots"), deleted);
+    if (removed > 0) console.log(`[Main] removed ${removed} capture(s) deleted on the web`);
+  } catch (err: any) {
+    console.warn(`[Main] Deleted-captures sweep failed: ${err?.message}`);
   }
 }
 

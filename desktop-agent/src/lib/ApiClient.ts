@@ -235,6 +235,20 @@ export class ApiClient {
     return res?.data ?? [];
   }
 
+  /** Captures deleted on the web since `since`. A server without the route (404) has none. */
+  async getDeletedScreenshots(since: Date): Promise<{ id: string; capturedAt: string }[]> {
+    try {
+      const res = await this.authenticatedRequest(
+        `/api/agent/screenshots/deleted?since=${encodeURIComponent(since.toISOString())}`,
+        { method: "GET" }
+      );
+      return res?.data ?? [];
+    } catch (err: any) {
+      if (err?.status === 404) return [];
+      throw err;
+    }
+  }
+
   async createProject(name: string): Promise<CrmProjectSummary> {
     return this.authenticatedRequest("/api/agent/projects", {
       method: "POST",

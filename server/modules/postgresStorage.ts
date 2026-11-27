@@ -159,6 +159,7 @@ import {
   getTimeEntryScreenshotById,
   getTimeEntryScreenshots,
   isAgentBatchProcessed,
+  listDeletedScreenshotsForUser,
   markAgentBatchProcessed,
   softDeleteTimeEntryScreenshot,
   updateTimeEntryScreenshot,
@@ -3098,6 +3099,14 @@ export class DatabaseStorage implements IStorage {
     reason?: string,
   ): Promise<TimeEntryScreenshot | undefined> {
     return softDeleteTimeEntryScreenshot(id, deletedBy, reason);
+  }
+
+  async listDeletedScreenshotsForUser(
+    userId: string,
+    since: Date,
+    limit?: number,
+  ): Promise<{ id: string; capturedAt: Date }[]> {
+    return listDeletedScreenshotsForUser(userId, since, limit);
   }
 
   // ═══════════════════════════════════════

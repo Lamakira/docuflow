@@ -875,6 +875,24 @@ export function registerAgentRoutes(app: Express): void {
     }
   });
 
+  /** Agent: captures an admin deleted on the web, so the desktop can drop its local copies.
+   *  `since` (ISO) defaults to 30 days ago and is clamped to 31 days. */
+  app.get("/api/agent/screenshots/deleted", isAgentAuthenticated as any, async (req: AgentAuthRequest, res) => {
+    try {
+      const userId = req.agentUserId!;
+      const DAY_MS = 24 * 60 * 60 * 1000;
+      const now = Date.now();
+      const parsed = typeof req.query.since === "string" ? new Date(req.query.since) : null;
+      const requested = parsed && !Number.isNaN(parsed.getTime()) ? parsed.getTime() : now - 30 * DAY_MS;
+      const since = new Date(Math.max(requested, now - 31 * DAY_MS));
+      const rows = await storage.listDeletedScreenshotsForUser(userId, since);
+      res.json({ data: rows.map((r) => ({ id: r.id, capturedAt: r.capturedAt.toISOString() })) });
+    } catch (error) {
+      logError("agent.screenshots.deleted.failed", error);
+      res.status(500).json({ message: "Failed to list deleted screenshots" });
+    }
+  });
+
   /**
    * Agent: today's time breakdown grouped by (project, task).
    * Returns stopped-entry totals only; the client overlays the active entry's live elapsed.
