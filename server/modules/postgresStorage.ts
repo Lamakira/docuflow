@@ -157,6 +157,7 @@ import {
 } from "./intelligence/indexArtifacts";
 import {
   createAgentActivityEvents,
+  captureOnProject,
   createTimeEntryScreenshot,
   deleteTimeEntryScreenshot,
   getTimeEntryScreenshotById,
@@ -3498,6 +3499,14 @@ export class DatabaseStorage implements IStorage {
       .where(eq(devices.id, id));
   }
 
+  /** What the Device's agent said on its last heartbeat (ADR-0031): to warn Members before the minimum rises. */
+  async recordDeviceAgent(id: string, agent: { clientVersion: string; protocolVersion: number | null }): Promise<void> {
+    await db
+      .update(devices)
+      .set({ clientVersion: agent.clientVersion.slice(0, 50), agentProtocolVersion: agent.protocolVersion })
+      .where(eq(devices.id, id));
+  }
+
   async revokeDevice(id: string): Promise<void> {
     await db
       .update(devices)
@@ -3606,7 +3615,7 @@ export class DatabaseStorage implements IStorage {
       isNull(timeEntryScreenshots.deletedAt),
     ];
     if (opts.userId) conditions.push(eq(timeEntryScreenshots.userId, opts.userId));
-    if (opts.crmProjectId) conditions.push(eq(timeEntryScreenshots.crmProjectId, opts.crmProjectId));
+    if (opts.crmProjectId) conditions.push(captureOnProject(opts.crmProjectId));
     return conditions;
   }
 
@@ -3620,7 +3629,7 @@ export class DatabaseStorage implements IStorage {
       notDuplicateCapture(),
     ];
     if (opts.userId) conditions.push(eq(timeEntryScreenshots.userId, opts.userId));
-    if (opts.crmProjectId) conditions.push(eq(timeEntryScreenshots.crmProjectId, opts.crmProjectId));
+    if (opts.crmProjectId) conditions.push(captureOnProject(opts.crmProjectId));
     const [row] = await db.select({ count: count() }).from(timeEntryScreenshots).where(and(...conditions));
     return row?.count ?? 0;
   }

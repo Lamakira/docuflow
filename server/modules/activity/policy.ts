@@ -54,6 +54,24 @@ function simultaneousTimersOn(policy: ScreenshotPolicy, projectManagement: boole
   return policy.simultaneousTimersEnabled && projectManagement && simultaneousTimersLaunched();
 }
 
+export class SimultaneousTimersNotLaunchedError extends Error {
+  readonly statusCode = 409;
+  readonly code = "simultaneous_timers_not_launched";
+  constructor() {
+    super("Simultaneous Timers are not available yet. They open once every desktop agent can be updated.");
+    this.name = "SimultaneousTimersNotLaunchedError";
+  }
+}
+
+/** Refuses turning the option on before the launch, or on a Plan without Tasks. Turning it off is always allowed. */
+export async function assertSimultaneousTimersAvailable(): Promise<void> {
+  if (!simultaneousTimersLaunched()) throw new SimultaneousTimersNotLaunchedError();
+  const { projection, entitlements } = await planStanding();
+  if (!entitlements.features.projectManagement) {
+    throw new PlanFeatureNotIncludedError("projectManagement", projection.planKey, "use");
+  }
+}
+
 export async function deliveredTrackingPolicy(
   runningCrmProjectId?: string | null
 ): Promise<DeliveredTrackingPolicy> {

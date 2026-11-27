@@ -63,9 +63,13 @@ import { isDeliveryProject, projectHasOpportunity } from "@shared/projectLifecyc
 import {
   assertScreenshotProject,
   assertScreenshotProjectCapacity,
+  assertSimultaneousTimersAvailable,
   CaptureIntervalOrderError,
   deliveredTrackingPolicy,
+  simultaneousTimersAllowed,
+  SimultaneousTimersNotLaunchedError,
 } from "./modules/activity/policy";
+import { simultaneousTimersLaunchAt, simultaneousTimersLaunched } from "./simultaneousTimersLaunch";
 import {
   PlanFeatureNotIncludedError,
   SeatExhaustedError,
@@ -75,6 +79,7 @@ import {
 } from "./modules/billing";
 import { registerPublicApiV1 } from "./publicApi/http";
 import { getWorkspaceTimeZone } from "./modules/time";
+import { MAX_SIMULTANEOUS_TIMERS, timerStartModes, type TimerStartMode } from "@shared/schema";
 import { FieldListChangedError, saveOrgSettings } from "./modules/postgresStorage";
 import type { ScreenshotListOptions } from "./modules/activity/evidence";
 import { isLowActivityThreshold } from "@shared/activityEvidence";
@@ -151,7 +156,13 @@ import {
   createActivityJobsPort,
   ingestActivityScreenshot,
 } from "./modules/activity/evidenceJobs";
-import { applyTimerCommand, inTimeEntryWorkspace, loadTimeEntryById, nextTimerSequence } from "./modules/time/commands";
+import {
+  applyTimerCommand,
+  inTimeEntryWorkspace,
+  loadTimeEntryById,
+  nextTimerSequence,
+  TimerStartRefusedError,
+} from "./modules/time/commands";
 import { dayCalendar } from "./modules/time/dayCalendar";
 import { serverDayWindow } from "./modules/time/dayWindow";
 import type { AnalyticsOptions } from "./modules/time/persistence";
@@ -3325,7 +3336,13 @@ Instructions:
         storage.getHelpCenterScreenshots(),
         getWorkspaceTimeZone(),
       ]);
-      res.json({ screenshotPolicy, allowedTimezones, helpCenterScreenshots, timeZone });
+      // Whether the Simultaneous Timers option can be turned on here, and from when (ADR-0031).
+      const simultaneousTimers = {
+        launched: simultaneousTimersLaunched(),
+        launchAt: simultaneousTimersLaunchAt()?.toISOString() ?? null,
+        includedInPlan: await featureIncluded("projectManagement"),
+      };
+      res.json({ screenshotPolicy, allowedTimezones, helpCenterScreenshots, timeZone, simultaneousTimers });
     } catch (error) {
       console.error("Error fetching org settings:", error);
       res.status(500).json({ message: "Failed to fetch org settings" });
@@ -3344,6 +3361,7 @@ Instructions:
       screenshotsEnabled: onOff.optional(),
       activeHoursEnabled: onOff.optional(),
       idlePromptEnabled: onOff.optional(),
+      simultaneousTimersEnabled: onOff.optional(),
       captureIntervalMinMin: z
         .number({ invalid_type_error: "Minimum capture interval must be a whole number of minutes" })
         .int("Minimum capture interval must be a whole number of minutes")
@@ -3419,6 +3437,17 @@ Instructions:
           await assertScreenshotProjectCapacity(policyChange.screenshotProjectIds);
         } catch (error) {
           if (error instanceof PlanFeatureNotIncludedError) return res.status(403).json(error.body());
+          throw error;
+        }
+      }
+      if (policyChange?.simultaneousTimersEnabled === true) {
+        try {
+          await assertSimultaneousTimersAvailable();
+        } catch (error) {
+          if (error instanceof PlanFeatureNotIncludedError) return res.status(403).json(error.body());
+          if (error instanceof SimultaneousTimersNotLaunchedError) {
+            return res.status(409).json({ code: error.code, message: error.message });
+          }
           throw error;
         }
       }
@@ -4579,9 +4608,73 @@ Instructions:
     }
   });
 
-  /** Whether the client must supply a task when starting the timer: a Plan without Tasks tracks the Project. */
+  /**
+   * Every active Timer of the caller, newest first (ADR-0031), each with its
+   * Task's stopped time today as `/active` gives it. `/active` stays the latest one.
+   */
+  app.get("/api/time-tracking/timers", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = getUserId(req)!;
+      const entries = await storage.getActiveTimeEntries(userId);
+      const { startOfDay, endOfDay } = serverDayWindow(new Date());
+      const timers = [];
+      for (const entry of entries) {
+        const taskAccumulatedToday = entry.taskId
+          ? await inTimeEntryWorkspace(entry, () =>
+              storage.getTaskDurationToday(userId, entry.taskId!, startOfDay, endOfDay),
+            )
+          : 0;
+        timers.push({ ...entry, taskAccumulatedToday });
+      }
+      res.json({ data: timers });
+    } catch (error) {
+      logError("time-tracking.timers.failed", error, { userId: getUserId(req) });
+      res.status(500).json({ message: "Failed to fetch Timers" });
+    }
+  });
+
+  /** Stops every active Timer of the caller (ADR-0031): the stop-all beside each Timer's own stop. */
+  app.post("/api/time-tracking/stop-all", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = getUserId(req)!;
+      const stopped = [];
+      for (const entry of await storage.getActiveTimeEntries(userId)) {
+        const now = new Date();
+        const result = await inTimeEntryWorkspace(entry, () =>
+          applyTimerCommand({
+            userId,
+            origin: webTimerOrigin(userId),
+            sequence: nextTimerSequence(),
+            kind: "stop",
+            claimedEffectiveAt: now,
+            receivedAt: now,
+            payload: { timeEntryId: entry.id },
+          }),
+        );
+        if (result.timeEntry) {
+          logTimeEvent("stop", entry.id, userId, { finalDuration: result.timeEntry.duration, stopAll: true });
+          stopped.push(result.timeEntry);
+        }
+      }
+      res.json({ data: stopped });
+    } catch (error) {
+      logError("time-tracking.stop-all.failed", error, { userId: getUserId(req) });
+      res.status(500).json({ message: "Failed to stop the Timers" });
+    }
+  });
+
+  /**
+   * Whether the client must supply a task when starting the timer: a Plan
+   * without Tasks tracks the Project. `simultaneousTimers`: Start while a Timer
+   * runs asks whether to add this one or switch to it (ADR-0031).
+   */
   app.get("/api/time-tracking/capabilities", isAuthenticated, async (_req: any, res) => {
-    res.json({ requiresTask: await featureIncluded("projectManagement") });
+    const [requiresTask, simultaneousTimers] = await Promise.all([
+      featureIncluded("projectManagement"),
+      simultaneousTimersAllowed(),
+    ]);
+    // Absent while one Timer at a time: the answer stays what it was before (ADR-0031).
+    res.json({ requiresTask, ...(simultaneousTimers ? { simultaneousTimers, maxTimers: MAX_SIMULTANEOUS_TIMERS } : {}) });
   });
 
   /** Tracking Policy applied to the caller. Members may inspect it (#191). */
@@ -4601,9 +4694,13 @@ Instructions:
       const userId = getUserId(req)!;
       const { crmProjectId, description } = req.body;
       const taskId = req.body.taskId || null;
+      const mode = req.body.mode ?? "switch";
       
       if (!crmProjectId) {
         return res.status(400).json({ message: "Project is required" });
+      }
+      if (!timerStartModes.includes(mode)) {
+        return res.status(400).json({ message: "mode must be add or switch" });
       }
 
       if (!(await canAccessCrmProject(userId, crmProjectId))) {
@@ -4644,6 +4741,7 @@ Instructions:
           crmProjectId,
           taskId: taskId || null,
           description: description || null,
+          ...((mode as TimerStartMode) === "add" ? { mode: "add" as const } : {}),
         },
       });
       const entry = result.timeEntry;
@@ -4651,9 +4749,12 @@ Instructions:
         return res.status(500).json({ message: "Failed to start time tracking" });
       }
 
-      logTimeEvent("start", entry.id, userId, { crmProjectId, taskId: taskId || null });
+      logTimeEvent("start", entry.id, userId, { crmProjectId, taskId: taskId || null, mode });
       res.json(entry);
     } catch (error) {
+      if (error instanceof TimerStartRefusedError) {
+        return res.status(409).json({ code: error.code, message: error.message });
+      }
       logError("time-tracking.start.failed", error, { userId: getUserId(req) });
       res.status(500).json({ message: "Failed to start time tracking" });
     }

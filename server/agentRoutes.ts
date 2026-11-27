@@ -14,7 +14,8 @@ import { differenceHash, loadSharp } from "./modules/activity/fingerprint";
 import { canAccessCrmProject, visibleProjectScope } from "./modules/projects/access";
 import { isAuthenticated, getUserId } from "./auth";
 import { config } from "./config";
-import { agentProtocolHandshake, allowAgentProtocol } from "./agentProtocol";
+import { agentProtocolHandshake, allowAgentProtocol, declaredAgentProtocolVersion } from "./agentProtocol";
+import { MAX_SIMULTANEOUS_TIMERS, timerStartModes, type TimerStartMode } from "@shared/schema";
 import { issueAccessToken, verifyAccessToken } from "./desktopTokens";
 import { logInfo, logError, logTimeEvent } from "./logger";
 import { parseObjectPath, storagePort, workspaceScreenshotKey } from "./objectStorage";
@@ -24,7 +25,7 @@ import {
   ingestActivityEvents,
   ingestActivityScreenshot,
 } from "./modules/activity/evidenceJobs";
-import { applyTimerCommand, nextTimerSequence } from "./modules/time/commands";
+import { applyTimerCommand, nextTimerSequence, TimerStartRefusedError } from "./modules/time/commands";
 import { serverDayWindow } from "./modules/time/dayWindow";
 import { gateSessionWrite } from "./modules/billing/sessionWriteGate";
 import { PlanFeatureNotIncludedError, featureIncluded } from "./modules/billing";
@@ -171,6 +172,8 @@ const revokeSchema = z.object({
 const heartbeatSchema = z.object({
   deviceId: z.string().uuid(),
   timeEntryId: z.string().uuid().nullable().optional(),
+  /** Every Timer the Device runs (ADR-0031); `timeEntryId` alone from older agents. */
+  timeEntryIds: z.array(z.string().uuid()).max(MAX_SIMULTANEOUS_TIMERS).optional(),
   timestamp: z.string(),
   activeApp: z.string().optional(),
   activeWindow: z.string().optional(),
@@ -227,6 +230,37 @@ const confirmSchema = z.object({
   screenshotId: z.string().uuid(),
   deviceId: z.string().uuid(),
 });
+
+/** The User's active Timers as a Device resyncs them, newest first, with their names. */
+async function syncedTimers(userId: string) {
+  const timers = [];
+  for (const entry of await storage.getActiveTimeEntries(userId)) {
+    let projectName: string | null = null;
+    let taskName: string | null = null;
+    try {
+      const crmProject = await storage.getCrmProject(entry.crmProjectId);
+      projectName = (crmProject as any)?.project?.name ?? null;
+    } catch { /* non-fatal */ }
+    if (entry.taskId) {
+      try {
+        const task = await storage.getTask(entry.taskId);
+        taskName = task?.name ?? null;
+      } catch { /* non-fatal */ }
+    }
+    timers.push({
+      entryId: entry.id,
+      status: entry.status,
+      duration: entry.duration ?? 0,
+      crmProjectId: entry.crmProjectId,
+      taskId: entry.taskId ?? null,
+      lastActivityAt: entry.lastActivityAt ?? null,
+      projectName,
+      taskName,
+      startTime: new Date(entry.startTime).toISOString(),
+    });
+  }
+  return timers;
+}
 
 // ─── Route registration ───
 
@@ -456,19 +490,25 @@ export function registerAgentRoutes(app: Express): void {
 
       // Update device lastSeenAt
       await storage.updateDeviceLastSeen(body.deviceId);
+      await storage.recordDeviceAgent(body.deviceId, {
+        clientVersion: body.clientVersion,
+        protocolVersion: declaredAgentProtocolVersion(req),
+      });
 
       // If there's an active time entry, accumulate duration + update lastActivityAt.
       // This is critical: without accumulating duration here, the web UI resets the
       // elapsed counter to near-0 on every heartbeat (because it computes
       // duration + (now - lastActivityAt) and lastActivityAt just jumped forward).
-      if (body.timeEntryId) {
-        const hbEntry = await storage.getTimeEntry(body.timeEntryId);
+      // Every Timer the Device runs beats at once (ADR-0031).
+      const beating = new Set([...(body.timeEntryIds ?? []), ...(body.timeEntryId ? [body.timeEntryId] : [])]);
+      for (const timeEntryId of Array.from(beating)) {
+        const hbEntry = await storage.getTimeEntry(timeEntryId);
         if (hbEntry && hbEntry.status === "running" && hbEntry.lastActivityAt) {
           const now = new Date(body.timestamp);
           const elapsed = Math.floor(
             (now.getTime() - new Date(hbEntry.lastActivityAt).getTime()) / 1000
           );
-          await storage.updateTimeEntry(body.timeEntryId, {
+          await storage.updateTimeEntry(timeEntryId, {
             lastActivityAt: now,
             duration: (hbEntry.duration || 0) + Math.max(0, elapsed),
           });
@@ -478,39 +518,16 @@ export function registerAgentRoutes(app: Express): void {
       }
 
       // Get server-authoritative timer state for desktop resync (enriched with names
-      // so the desktop can hydrate project/task display without a separate request)
-      const serverActive = await storage.getActiveTimeEntry(req.agentUserId!);
-      let timerSync = null;
-      if (serverActive && serverActive.status !== "stopped") {
-        let projectName: string | null = null;
-        let taskName: string | null = null;
-        try {
-          const crmProject = await storage.getCrmProject(serverActive.crmProjectId);
-          projectName = (crmProject as any)?.project?.name ?? null;
-        } catch { /* non-fatal */ }
-        if (serverActive.taskId) {
-          try {
-            const task = await storage.getTask(serverActive.taskId);
-            taskName = task?.name ?? null;
-          } catch { /* non-fatal */ }
-        }
-        timerSync = {
-          entryId: serverActive.id,
-          status: serverActive.status,
-          duration: serverActive.duration ?? 0,
-          taskId: serverActive.taskId ?? null,
-          lastActivityAt: serverActive.lastActivityAt ?? null,
-          projectName,
-          taskName,
-          startTime: new Date(serverActive.startTime).toISOString(),
-        };
-      }
+      // so the desktop can hydrate project/task display without a separate request).
+      // `timerSync` is the latest Timer, for agents before v2; `timers` is every one.
+      const timers = await syncedTimers(req.agentUserId!);
+      const timerSync = timers[0] ?? null;
 
       // The Tracking Policy for the running Project, narrowed by the Plan. The
       // low-activity threshold is how the gallery reads captures, not a capture
       // rule, so the Device does not receive it (#341).
       const { lowActivityThresholdPercent: _readByGallery, ...screenshotPolicy } =
-        await deliveredTrackingPolicy(timerSync ? serverActive!.crmProjectId : null);
+        await deliveredTrackingPolicy(timerSync ? timerSync.crmProjectId : null);
 
       logInfo("agent.heartbeat", {
         deviceId: body.deviceId,
@@ -525,6 +542,7 @@ export function registerAgentRoutes(app: Express): void {
         ok: true,
         serverTime: now.toISOString(),
         timerSync,
+        timers,
         screenshotPolicy,
         ...agentProtocolHandshake(now),
       });
@@ -859,7 +877,19 @@ export function registerAgentRoutes(app: Express): void {
     }
   });
 
+  /** Agent: every active Timer of the User, newest first (ADR-0031). */
+  app.get("/api/agent/timers", isAgentAuthenticated as any, async (req: AgentAuthRequest, res) => {
+    try {
+      res.json({ data: await syncedTimers(req.agentUserId!) });
+    } catch (error) {
+      logError("agent.timers.failed", error);
+      res.status(500).json({ message: "Failed to fetch Timers" });
+    }
+  });
+
   /** Agent: total seconds worked today (stopped entries only — client adds live elapsed for running entry).
+   *  `includeActive=1` (agent v2): the running Timers too, Worked Time counted once (ADR-0031),
+   *  with `simultaneous` beside it; the client then adds its live seconds once, however many run.
    *  Client passes ?start=ISO&end=ISO using local midnight so the window matches the user's clock. */
   app.get("/api/agent/worked-today", isAgentAuthenticated as any, async (req: AgentAuthRequest, res) => {
     try {
@@ -867,8 +897,9 @@ export function registerAgentRoutes(app: Express): void {
       // Prefer client-supplied local-day window; fall back to server UTC day
       const startDate = req.query.start ? new Date(req.query.start as string) : (() => { const d = new Date(); d.setHours(0,0,0,0); return d; })();
       const endDate   = req.query.end   ? new Date(req.query.end   as string) : (() => { const d = new Date(); d.setHours(23,59,59,999); return d; })();
-      const stats = await storage.getTimeStats({ userId, startDate, endDate });
-      res.json({ total: stats.totalDuration });
+      const includeActive = req.query.includeActive === "1";
+      const stats = await storage.getTimeStats({ userId, startDate, endDate, includeActive });
+      res.json({ total: stats.totalDuration, simultaneous: stats.simultaneousDuration });
     } catch (error) {
       logError("agent.worked-today.failed", error);
       res.status(500).json({ message: "Failed to fetch worked today" });
@@ -1044,9 +1075,13 @@ export function registerAgentRoutes(app: Express): void {
       const userId = req.agentUserId!;
       const { crmProjectId, description, deviceId, clientCommandId } = req.body;
       const taskId = req.body.taskId || null;
+      const mode = req.body.mode ?? "switch";
 
       if (!crmProjectId) {
         return res.status(400).json({ message: "crmProjectId is required" });
+      }
+      if (!timerStartModes.includes(mode)) {
+        return res.status(400).json({ message: "mode must be add or switch" });
       }
 
       if (!(await canAccessCrmProject(userId, crmProjectId))) {
@@ -1092,6 +1127,7 @@ export function registerAgentRoutes(app: Express): void {
           taskId: taskId || null,
           description: description || null,
           clientCommandId: clientCommandId || undefined,
+          ...((mode as TimerStartMode) === "add" ? { mode: "add" as const } : {}),
         },
       });
       if (result.duplicate && result.timeEntry) {
@@ -1114,6 +1150,9 @@ export function registerAgentRoutes(app: Express): void {
       }
       res.json({ ...entry, taskAccumulatedToday });
     } catch (error) {
+      if (error instanceof TimerStartRefusedError) {
+        return res.status(409).json({ code: error.code, message: error.message });
+      }
       logError("agent.timer.start.failed", error);
       res.status(500).json({ message: "Failed to start timer" });
     }

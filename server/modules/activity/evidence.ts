@@ -4,7 +4,7 @@
  * Entry the evidence is attached to. Evidence is not turned into scores.
  */
 
-import { and, desc, eq, gt, gte, isNotNull, isNull, lte, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, inArray, isNotNull, isNull, lte, ne, or, sql, type SQL } from "drizzle-orm";
 import {
   agentActivityEvents,
   agentProcessedBatches,
@@ -17,6 +17,8 @@ import {
   tasks,
   timeEntries,
   timeEntryScreenshots,
+  timeEntryScreenshotTimers,
+  timerCommands,
   users,
   type DocumentPerson,
   type InsertTimeEntryScreenshot,
@@ -25,6 +27,8 @@ import {
 import { DEFAULT_LOW_ACTIVITY_THRESHOLD_PERCENT, SIMILAR_MAX_HAMMING_DISTANCE } from "@shared/activityEvidence";
 import { db, type Db } from "../../db";
 import { inWorkspace, stampWorkspace } from "../../workspaceContext";
+import { timeEntrySpan } from "@shared/timePortion";
+import { runningIntervals } from "../time/workedTime";
 
 export type ActivityWriter = Pick<Db, "insert" | "select" | "update" | "delete">;
 
@@ -45,6 +49,64 @@ export async function createTimeEntryScreenshot(
     .values(stampWorkspace(screenshot))
     .returning();
   return result;
+}
+
+/**
+ * A capture is on a Time Entry, or a Project, when it was taken under it:
+ * first, or beside other Timers (ADR-0031). The row names one; the others are
+ * in `time_entry_screenshot_timers`.
+ */
+export function captureOnTimeEntry(timeEntryId: string): SQL {
+  return sql`(${timeEntryScreenshots.timeEntryId} = ${timeEntryId} OR EXISTS (SELECT 1 FROM "time_entry_screenshot_timers" st WHERE st."screenshot_id" = ${timeEntryScreenshots.id} AND st."time_entry_id" = ${timeEntryId}))`;
+}
+
+export function captureOnProject(crmProjectId: string): SQL {
+  return sql`(${timeEntryScreenshots.crmProjectId} = ${crmProjectId} OR EXISTS (SELECT 1 FROM "time_entry_screenshot_timers" st WHERE st."screenshot_id" = ${timeEntryScreenshots.id} AND st."crm_project_id" = ${crmProjectId}))`;
+}
+
+type AttachWriter = Pick<Db, "insert" | "select">;
+
+/**
+ * Attaches a new capture to every other Timer of the Member running when it
+ * was taken (ADR-0031), so it shows in each Project's activity. Read from
+ * `capturedAt`, not from what runs now: a queued upload arrives late. A Timer
+ * paused at that moment is not running.
+ */
+export async function attachOtherRunningTimers(capture: TimeEntryScreenshot, writer: AttachWriter = db): Promise<void> {
+  const takenAt = capture.capturedAt;
+  const candidates = await writer
+    .select()
+    .from(timeEntries)
+    .where(and(
+      eq(timeEntries.userId, capture.userId),
+      ne(timeEntries.id, capture.timeEntryId),
+      eq(timeEntries.provenance, "command"),
+      lte(timeEntries.startTime, takenAt),
+      or(isNull(timeEntries.endTime), gte(timeEntries.endTime, takenAt)),
+      inWorkspace(timeEntries),
+    ));
+  if (candidates.length === 0) return;
+  const commands = await writer
+    .select({ timeEntryId: timerCommands.timeEntryId, kind: timerCommands.kind, at: timerCommands.claimedEffectiveAt })
+    .from(timerCommands)
+    .where(and(inArray(timerCommands.timeEntryId, candidates.map((entry) => entry.id)), inWorkspace(timerCommands)))
+    .orderBy(asc(timerCommands.claimedEffectiveAt), asc(timerCommands.receivedAt), asc(timerCommands.sequence));
+  const now = new Date();
+  const running = candidates.filter((entry) => {
+    const own = commands.filter((command) => command.timeEntryId === entry.id);
+    return runningIntervals(timeEntrySpan(entry, now), own).some(
+      ({ start, end }) => start <= takenAt.getTime() && takenAt.getTime() <= end,
+    );
+  });
+  if (running.length === 0) return;
+  await writer
+    .insert(timeEntryScreenshotTimers)
+    .values(running.map((entry) => stampWorkspace({
+      screenshotId: capture.id,
+      timeEntryId: entry.id,
+      crmProjectId: entry.crmProjectId,
+    })))
+    .onConflictDoNothing();
 }
 
 export async function getTimeEntryScreenshotById(
@@ -185,9 +247,9 @@ export async function claimWebCaptureUpload(objectPath: string, userId: string):
 
 export async function getTimeEntryScreenshots(options: ScreenshotListOptions): Promise<ScreenshotList> {
   const conditions = [inWorkspace(timeEntryScreenshots)];
-  if (options.timeEntryId) conditions.push(eq(timeEntryScreenshots.timeEntryId, options.timeEntryId));
+  if (options.timeEntryId) conditions.push(captureOnTimeEntry(options.timeEntryId));
   if (options.userId) conditions.push(eq(timeEntryScreenshots.userId, options.userId));
-  if (options.crmProjectId) conditions.push(eq(timeEntryScreenshots.crmProjectId, options.crmProjectId));
+  if (options.crmProjectId) conditions.push(captureOnProject(options.crmProjectId));
   if (options.startDate) conditions.push(gte(timeEntryScreenshots.capturedAt, options.startDate));
   if (options.endDate) conditions.push(lte(timeEntryScreenshots.capturedAt, options.endDate));
   conditions.push(sql`${timeEntryScreenshots.storageKey} NOT LIKE 'pending-%'`);
