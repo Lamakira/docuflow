@@ -696,6 +696,14 @@ export function desktopReleaseCiToken(): string | undefined {
 }
 
 /**
+ * The launch of Simultaneous Timers (#400, ADR-0031), an ISO date. Read per
+ * call: the date passes while the server runs, and the suites move it.
+ */
+export function simultaneousTimersLaunchSetting(): string | undefined {
+  return read("SIMULTANEOUS_TIMERS_LAUNCH_AT");
+}
+
+/**
  * What web sign-in needs, and the one place that decides it (#110, #111): the
  * browser cannot mint a session without the publishable key, and the server
  * cannot verify one without the secret. Clerk is the only web path.
