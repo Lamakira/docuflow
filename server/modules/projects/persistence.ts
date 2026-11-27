@@ -1,4 +1,5 @@
 import type { ProjectWriter } from "../writers";
+import type { TaskBatchPlan } from "@shared/taskBatch";
 import type {
   Document,
   DocumentPerson,
@@ -146,6 +147,11 @@ export interface ProjectsPersistence {
   getTasks(options: { crmProjectId: string; includeArchived?: boolean }): Promise<Task[]>;
   getTask(id: string): Promise<Task | undefined>;
   createTask(data: InsertTask): Promise<Task>;
+  /** One transaction: reads the Project's Task names, lets `plan` pick the new ones, inserts them in order. */
+  createTaskBatch(
+    crmProjectId: string,
+    plan: (existingNames: string[]) => TaskBatchPlan,
+  ): Promise<{ ok: true; tasks: Task[]; skipped: number } | { ok: false; message: string }>;
   updateTask(id: string, data: Partial<InsertTask>): Promise<Task | undefined>;
   deleteTask(id: string): Promise<void>;
 

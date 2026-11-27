@@ -292,6 +292,7 @@ implementation and each suite's header lists what the document gets wrong):
 | `company-documents`              | folders, native pages, uploaded files, streaming and download        |
 | `content-extraction`             | the text an uploaded PDF, Word or text file comes out as, and the four outcomes the upload route distinguishes |
 | `tasks-members-reminders`        | tasks, project membership, per-user reminders                       |
+| `task-batch`                     | several Tasks at once: the shared line rules and `POST /api/tasks/batch` |
 | `time-tracking`                  | start/pause/resume/stop/activity, visibility, stats                 |
 | `agent-timer`                    | the desktop agent's pairing enrollment and its half of the shared tracker |
 | `agent-auth`                     | pairing, retired password login, refresh, and revocation |

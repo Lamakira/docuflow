@@ -71,6 +71,12 @@ const PROBES: Probe[] = [
   },
   {
     feature: "projectManagement",
+    label: "create several Tasks",
+    send: (h) =>
+      h.owner.agent.post("/api/tasks/batch").send({ crmProjectId: h.crmProjectId, names: [`Task ${randomUUID()}`] }),
+  },
+  {
+    feature: "projectManagement",
     label: "set a Project budget",
     send: (h) =>
       h.owner.agent.patch(`/api/crm/projects/${h.crmProjectId}`).send({ budgetedHours: 12 }),

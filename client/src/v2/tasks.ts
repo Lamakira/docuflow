@@ -32,6 +32,8 @@ export function tasksPath(crmProjectId: string, options: { includeArchived?: boo
   return `/api/tasks?${params.toString()}`;
 }
 
+export const TASK_BATCH_PATH = "/api/tasks/batch";
+
 export function taskPath(taskId: string): string {
   return `/api/tasks/${taskId}`;
 }

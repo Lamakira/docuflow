@@ -14,6 +14,7 @@ import {
 } from "../../client/src/v2/time";
 import {
   composeProjectTasks,
+  TASK_BATCH_PATH,
   taskPath,
   tasksPath,
   TASK_STATUS_OPTIONS,
@@ -314,6 +315,19 @@ describe("Projects & Tasks over /api/tasks (#214)", () => {
     );
     expect(taskPath("t-1")).toBe("/api/tasks/t-1");
     expect(timeSource).toContain("/api/tasks");
+    expect(TASK_BATCH_PATH).toBe("/api/tasks/batch");
+    expect(timeSource).toContain('apiRequest("POST", TASK_BATCH_PATH');
+    expect(timeSource).not.toContain('apiRequest("POST", "/api/tasks"');
+    expect(timeSource).toContain('import { Textarea } from "@/components/ui/textarea"');
+    expect(timeSource).toContain("planTaskBatch(");
+    expect(timeSource).toContain("taskBatchNotice(");
+    expect(timeSource).toContain("shiftKey");
+    expect(timeSource).toContain("isComposing");
+    expect(timeSource).not.toContain("New Task name…");
+    // A list that is not sent says why under the field, not at the page top (#399).
+    expect(timeSource).toContain("setListRefusal(check.message)");
+    expect(timeSource).toContain("setListRefusal(TASK_BATCH_ALL_DUPLICATES)");
+    expect(timeSource).toMatch(/Add Task\s*<\/Button>\s*<\/div>\s*\{listRefusal \?/);
     expect(timeSource).not.toMatch(/\/api\/time-tracking\/tasks/);
     // One Task protocol: the Dossier reads its Task Status words from here too.
     expect(tasksSource).toContain("export function taskStatusLabel");
@@ -836,10 +850,14 @@ describe("Time and Activity under the v2 visual system (#214)", () => {
     // CLAUDE-DESIGN-HANDOFF.md: visible 2px amber focus ring with offset.
     // .df-filter-input is a wrapper carrying the border, so ringing the input
     // draws the amber inside the field. Verified with a real Tab in Chrome.
-    const ring = topLevelRule('.df-filter-input:has(input:focus-visible)');
+    // The Time › Tasks list field is a textarea in the same wrapper (#399).
+    const ring = topLevelRule(".df-filter-input:has(:is(input, textarea):focus-visible)");
     expect(ring).toMatch(/outline:\s*2px solid var\(--df-amber\)/);
     expect(ring).toMatch(/outline-offset:\s*2px/);
-    expect(topLevelRule(".df-filter-input input:focus-visible")).toMatch(/outline:\s*none/);
+    // `box-shadow: none` also drops the shadcn Textarea's own ring inside the field.
+    const bare = topLevelRule(".df-filter-input :is(input, textarea):focus-visible");
+    expect(bare).toMatch(/outline:\s*none/);
+    expect(bare).toMatch(/box-shadow:\s*none/);
 
     // The global ring still stands for every control that is its own field.
     expect(topLevelRule(".df-v2 :focus-visible")).toMatch(/outline-offset:\s*2px/);

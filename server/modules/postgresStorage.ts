@@ -145,6 +145,7 @@ import {
   WON_STATUSES,
 } from "@shared/projectLifecycle";
 import { STALE_THRESHOLD_MS, timeEntrySpan, timePortion } from "@shared/timePortion";
+import type { TaskBatchPlan } from "@shared/taskBatch";
 import { isUploadedFile } from "@shared/documentFile";
 import { BUILT_IN_LISTS, defaultFieldOptions, type OptionRename } from "@shared/pipelineLists";
 import {
@@ -3129,6 +3130,42 @@ export class DatabaseStorage implements IStorage {
   async createTask(data: InsertTask): Promise<Task> {
     const [task] = await db.insert(tasks).values(stampWorkspace(data)).returning();
     return task;
+  }
+
+  async createTaskBatch(
+    crmProjectId: string,
+    plan: (existingNames: string[]) => TaskBatchPlan,
+  ): Promise<{ ok: true; tasks: Task[]; skipped: number } | { ok: false; message: string }> {
+    return db.transaction(async (tx) => {
+      // Archived Tasks count too: a name is a duplicate whatever its status.
+      const existing = await tx
+        .select({ name: tasks.name })
+        .from(tasks)
+        .where(and(inWorkspace(tasks), eq(tasks.crmProjectId, crmProjectId)));
+      const result = plan(existing.map((row) => row.name));
+      if (!result.ok) return result;
+      if (result.names.length === 0) return { ok: true, tasks: [], skipped: result.skipped };
+
+      // Distinct createdAt keeps paste order: getTasks sorts on it, and one
+      // statement would otherwise stamp every row with the same instant.
+      const base = new Date();
+      const inserted = await tx
+        .insert(tasks)
+        .values(
+          result.names.map((name, index) =>
+            stampWorkspace({
+              crmProjectId,
+              name,
+              description: null,
+              status: "open" as const,
+              createdAt: new Date(base.getTime() + index),
+            }),
+          ),
+        )
+        .returning();
+      inserted.sort((a, b) => a.createdAt!.getTime() - b.createdAt!.getTime());
+      return { ok: true, tasks: inserted, skipped: result.skipped };
+    });
   }
 
   async updateTask(id: string, data: Partial<InsertTask>): Promise<Task | undefined> {

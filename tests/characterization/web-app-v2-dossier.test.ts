@@ -346,7 +346,15 @@ describe("Project Dossier remaining tabs from live records (#188)", () => {
     expect(dossier.tasks.rows[2].done).toBe(true);
     expect(dossier.tasks.assignees.map((member) => member.name)).toEqual(["Sam Lee", "Pat Ng"]);
 
-    expect(pageSource).toContain('apiRequest("POST", "/api/tasks"');
+    expect(pageSource).toContain('apiRequest("POST", TASK_BATCH_PATH');
+    expect(pageSource).not.toContain('apiRequest("POST", "/api/tasks"');
+    expect(pageSource).toContain('import { Textarea } from "@/components/ui/textarea"');
+    expect(pageSource).toContain("planTaskBatch(");
+    expect(pageSource).toContain("taskBatchNotice(");
+    expect(pageSource).toContain("shiftKey");
+    expect(pageSource).toContain("isComposing");
+    expect(pageSource).not.toContain('aria-label="Task name"');
+    expect(pageSource).not.toContain('placeholder="Task name"');
     expect(pageSource).toContain('apiRequest("PATCH", `/api/tasks/${id}`');
     expect(pageSource).not.toContain("v2-dossier-placeholder-tab");
     expect(pageSource).not.toContain('data-testid="v2-placeholder"');

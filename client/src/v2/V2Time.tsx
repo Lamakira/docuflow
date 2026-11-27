@@ -23,6 +23,7 @@ import { V2TaskTable } from "./V2TaskTable";
 import {
   composeProjectTasks,
   fullProjectName,
+  TASK_BATCH_PATH,
   taskPath,
   tasksPath,
   type ProjectTask,
@@ -63,6 +64,8 @@ import {
 } from "./time";
 import { TimeRemovals } from "./timeRemovals";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { TASK_BATCH_ALL_DUPLICATES, planTaskBatch, taskBatchNotice, taskLines } from "@shared/taskBatch";
 import { V2CompactEmpty, V2EmptyState, V2LoadFailed, V2RecordEmpty } from "./V2EmptyState";
 import { SkeletonRegister, SkeletonSection, V2PageSkeleton } from "./V2Skeleton";
 import { V2PageHead } from "./V2PageHead";
@@ -871,6 +874,8 @@ function ProjectTasksPane() {
   const [, navigate] = useLocation();
   const [search, setSearch] = useState("");
   const [taskName, setTaskName] = useState("");
+  /** Why the typed list was not sent, shown under the field it is about. */
+  const [listRefusal, setListRefusal] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
@@ -929,13 +934,18 @@ function ProjectTasksPane() {
   }
 
   const createTask = useMutation({
-    mutationFn: (name: string) =>
-      apiRequest("POST", "/api/tasks", { crmProjectId: selectedProjectId, name }),
-    onSuccess: () => {
+    mutationFn: (lines: string[]) =>
+      apiRequest("POST", TASK_BATCH_PATH, { crmProjectId: selectedProjectId, names: lines }),
+    onSuccess: (result: { data: unknown[]; skipped: number }) => {
+      if (result.data.length === 0) {
+        setListRefusal(TASK_BATCH_ALL_DUPLICATES);
+        return;
+      }
       invalidate();
       setTaskName("");
       setWriteRefusal(null);
-      notify.success("Task created");
+      setListRefusal(null);
+      notify.success(taskBatchNotice(result.data.length, result.skipped));
     },
     onError: onWriteError,
   });
@@ -971,9 +981,15 @@ function ProjectTasksPane() {
   }
 
   function onCreate() {
-    const name = taskName.trim();
-    if (!name || !selectedProjectId || showRefusalIfReadOnly()) return;
-    createTask.mutate(name);
+    if (!taskName.trim() || !selectedProjectId || showRefusalIfReadOnly()) return;
+    const lines = taskLines(taskName);
+    const check = planTaskBatch(lines);
+    if (!check.ok) {
+      setListRefusal(check.message);
+      return;
+    }
+    setListRefusal(null);
+    createTask.mutate(lines);
   }
 
   function onRename(id: string) {
@@ -1107,14 +1123,17 @@ function ProjectTasksPane() {
               </div>
               <div className="df-toolbar" data-align="start">
                 <label className="df-filter-input">
-                  <input
+                  <Textarea
                     value={taskName}
-                    placeholder="New Task name…"
-                    aria-label="New Task name"
+                    rows={1}
+                    placeholder="New Task names, one per line…"
+                    aria-label="New Task names, one per line"
                     disabled={!page.canWrite}
                     onChange={(event) => setTaskName(event.target.value)}
                     onKeyDown={(event) => {
-                      if (event.key === "Enter") onCreate();
+                      if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;
+                      event.preventDefault();
+                      if (!createTask.isPending) onCreate();
                     }}
                   />
                 </label>
@@ -1123,6 +1142,11 @@ function ProjectTasksPane() {
                   Add Task
                 </Button>
               </div>
+              {listRefusal ? (
+                <p className="df-refusal" role="alert" data-testid="v2-time-task-list-refusal">
+                  {listRefusal}
+                </p>
+              ) : null}
 
               {tasksError && !tasksResponse ? (
                 <V2LoadFailed

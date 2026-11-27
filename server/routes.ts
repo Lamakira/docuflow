@@ -79,6 +79,7 @@ import { FieldListChangedError, saveOrgSettings } from "./modules/postgresStorag
 import type { ScreenshotListOptions } from "./modules/activity/evidence";
 import { isLowActivityThreshold } from "@shared/activityEvidence";
 import { isIanaTimeZone } from "@shared/timeZone";
+import { TASK_NAME_MAX, planTaskBatch } from "@shared/taskBatch";
 import mammoth from "mammoth";
 import { 
   insertProjectSchema, 
@@ -4130,7 +4131,6 @@ Instructions:
 
   // ========== TASKS ROUTES ==========
 
-  const TASK_NAME_MAX = 255;
   const TASK_NAME_ISSUE = `Task name must be 1 to ${TASK_NAME_MAX} characters`;
   const TASK_DESCRIPTION_ISSUE = "Task description must be text";
   const isTaskName = (value: unknown): value is string => {
@@ -4178,6 +4178,34 @@ Instructions:
       res.json(task);
     } catch (error) {
       res.status(500).json({ message: "Failed to create task" });
+    }
+  });
+
+  app.post("/api/tasks/batch", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = getUserId(req)!;
+      const { crmProjectId, names } = req.body;
+      if (
+        typeof crmProjectId !== "string" ||
+        !crmProjectId ||
+        !Array.isArray(names) ||
+        names.some((name) => typeof name !== "string")
+      ) {
+        return res.status(400).json({ message: "crmProjectId and names are required" });
+      }
+      const check = planTaskBatch(names);
+      if (!check.ok) return res.status(400).json({ message: check.message });
+      if (!(await canAccessCrmProject(userId, crmProjectId))) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+      const result = await storage.createTaskBatch(crmProjectId, (existing) => planTaskBatch(names, existing));
+      if (!result.ok) return res.status(400).json({ message: result.message });
+      for (const task of result.tasks) {
+        logInfo("task.created", { taskId: task.id, crmProjectId, userId });
+      }
+      res.status(201).json({ data: result.tasks, skipped: result.skipped });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to create tasks" });
     }
   });
 
