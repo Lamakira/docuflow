@@ -420,9 +420,15 @@ describe("the last policy on the Device (#293)", () => {
     const loaded = startWorkers.indexOf("loadSavedTrackingPolicy(");
     expect(loaded).toBeGreaterThan(-1);
     expect(loaded).toBeLessThan(startWorkers.indexOf("heartbeatWorker.start()"));
-    expect(startWorkers.indexOf("screenshotWorker.applyPolicy(trackingPolicy)")).toBeLessThan(
-      startWorkers.indexOf("screenshotWorker.start()"),
+    // Capture starts from startWorkers, after the policy is loaded (#398 split it out).
+    expect(loaded).toBeLessThan(startWorkers.indexOf("startCaptureWorkers()"));
+    const startCapture = main.slice(
+      main.indexOf("function startCaptureWorkers(): void {"),
+      main.indexOf("function stopCaptureWorkers(): void {"),
     );
+    const applied = startCapture.indexOf("screenshotWorker.applyPolicy(trackingPolicy)");
+    expect(applied).toBeGreaterThan(-1);
+    expect(applied).toBeLessThan(startCapture.indexOf("screenshotWorker.start()"));
     expect(main).toContain("saveTrackingPolicy(app.getPath(\"userData\"), policy, receivedAt)");
     expect(main.match(/clearSavedTrackingPolicy\(app\.getPath\("userData"\)\)/g)).toHaveLength(2);
   });

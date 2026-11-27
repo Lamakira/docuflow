@@ -82,6 +82,8 @@ function reducer(state: State, action: Action): State {
         apiBaseSource: action.payload.apiBaseSource ?? null,
         timer: action.payload.timer ?? defaultTimerState,
         timerRequiresTask: action.payload.timerRequiresTask ?? prev?.timerRequiresTask,
+        // Every push carries it, so absent means cleared (#398).
+        updateRequired: action.payload.updateRequired ?? null,
       };
 
       return {

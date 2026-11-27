@@ -23,7 +23,9 @@ export type Scenario =
   | 'signed-out'
   | 'revoked'      // device disconnected by an admin
   | 'error'        // every fetch fails
-  | 'rollover';    // dayKey is stale — exercises the midnight-rollover path
+  | 'rollover'     // dayKey is stale — exercises the midnight-rollover path
+  | 'update-required'          // server refused this protocol version, Timer running (#398)
+  | 'update-required-stopped'; // the same, nothing tracked
 
 const SECOND = 1000;
 
@@ -142,6 +144,7 @@ function seedTimer(scenario: Scenario): TimerState {
 
   switch (scenario) {
     case 'running': return active;
+    case 'update-required': return active;
     case 'paused':  return { ...active, status: 'paused' };
     // Regression guard: a stale dayKey drives AgentContext's rollover branch on
     // the first tick. That branch used to wipe `isPaired` and eject the user to
@@ -154,6 +157,7 @@ function seedTimer(scenario: Scenario): TimerState {
     // Nothing running and no context: after a stop the store keeps neither, so
     // a relaunched agent knows only what was worked today.
     case 'stopped':
+    case 'update-required-stopped':
       return {
         ...active, status: 'stopped', entryId: null, taskId: null,
         taskName: null, projectName: null, elapsed: 0, elapsedToday: 0,
@@ -204,6 +208,9 @@ export function createMockBridge(scenario: Scenario = 'running'): AgentBridge {
     apiBase: 'https://app.docuflow.io',
     apiBaseSource: mockApiBaseSource,
     timer,
+    updateRequired: scenario.startsWith('update-required')
+      ? { minProtocolVersion: 2, downloadUrl: 'https://app.docuflow.io/downloads/macos' }
+      : null,
   });
 
   function emit() { listeners.forEach((cb) => cb(state())); }

@@ -569,6 +569,9 @@ button:disabled { cursor: default; }
 .v2-btn--secondary:hover:not(:disabled) { background: var(--row-hover-strong); }
 .v2-btn--danger { background: var(--status-danger-bg); color: var(--status-danger); }
 .v2-btn--block { width: 100%; padding: 10px 13px; }
+/* The browser's ring takes the accent colour, which vanishes on a primary
+   button; an ink ring outside the button shows on every fill (#398). */
+.v2-btn:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
 
 .v2-link {
   font-size: 12px;
@@ -1616,6 +1619,54 @@ button:disabled { cursor: default; }
 }
 .v2-login__errdot { width: 6px; height: 6px; border-radius: 50%; background: var(--status-danger); }
 .v2-login__foot { margin-top: 24px; font-size: 11.5px; color: var(--text-meta); }
+
+/* Update required (#398). Fits the minimum window like every pane. */
+.v2-update-required__lead {
+  margin: 8px 0 0;
+  max-width: 340px;
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: center;
+  color: var(--text-body);
+}
+.v2-update-required__actions {
+  margin-top: 16px;
+  width: 320px;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.v2-update-required__card {
+  margin-top: 16px;
+  width: 340px;
+  max-width: 100%;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  text-align: left;
+  -webkit-app-region: no-drag;
+}
+.v2-update-required__card section + section { padding-top: 12px; border-top: 1px solid var(--border-card); }
+.v2-update-required__name {
+  display: block;
+  margin-top: 4px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.v2-update-required__card p {
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-body);
+  overflow-wrap: anywhere;
+}
 
 /* ── Animations ───────────────────────────────────────────────────────── */
 

@@ -22,6 +22,7 @@ import { ActivityScreen } from './screens/ActivityScreen';
 import { ScreensScreen } from './screens/ScreensScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
 import { LoginPage } from './pages/LoginPage';
+import { UpdateRequiredPage } from './pages/UpdateRequiredPage';
 import { IdlePrompt } from './components/IdlePrompt';
 import './styles/app.css';
 
@@ -108,6 +109,8 @@ function AppInner() {
 
   if (state.loading) return <div className="v2-loading">Loading…</div>;
   if (!state.agentState?.isPaired) return <LoginPage />;
+  // The server refused this version (#398): nothing past here would work.
+  if (state.agentState.updateRequired) return <UpdateRequiredPage />;
   return <Shell />;
 }
 

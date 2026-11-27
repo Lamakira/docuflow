@@ -15,6 +15,7 @@ import path from "path";
 import crypto from "crypto";
 import { getLocalDayKey, getLocalDayWindowMs } from "./dayBoundary";
 import { pausedSince } from "./pausedTimer";
+import type { SavedUpdateRequired } from "./agentProtocol";
 
 /** One continuous run of the timer for a given time entry. */
 export interface TrackingSession {
@@ -66,6 +67,8 @@ interface PersistedData {
    * once it has loaded, and the answer is used at the *next* launch.
    */
   uiMode: 'v1' | 'v2' | null;
+  /** The server refused this agent's protocol version (#398); survives a restart so capture stays off at launch. */
+  updateRequired: SavedUpdateRequired | null;
 }
 
 // Runtime-only state (not persisted)
@@ -121,6 +124,7 @@ export class AgentStore {
       displayTimezone: 'local',
       noTimerReminderEnabled: true,
       uiMode: null,
+      updateRequired: null,
     };
     try {
       if (!fs.existsSync(this.configPath)) return empty;
@@ -161,6 +165,11 @@ export class AgentStore {
   getDeviceName(): string | null { return this.data.deviceName; }
   getUserEmail(): string | null { return this.data.userEmail; }
   getClientVersion(): string { return this.runtime.clientVersion; }
+  getUpdateRequired(): SavedUpdateRequired | null { return this.data.updateRequired ?? null; }
+  setUpdateRequired(v: SavedUpdateRequired | null): void {
+    this.data.updateRequired = v;
+    this.saveToDisk();
+  }
   setClientVersion(v: string): void { this.runtime.clientVersion = v; }
 
   getUiMode(): 'v1' | 'v2' | null { return this.data.uiMode ?? null; }
@@ -201,6 +210,7 @@ export class AgentStore {
     this.data.deviceToken = null;
     this.data.deviceName = null;
     this.data.userEmail = null;
+    this.data.updateRequired = null;
     this.saveToDisk();
     this.clearTimer();
     this.runtime.workedTodayServerBase = 0;

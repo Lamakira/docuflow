@@ -17,6 +17,7 @@ import { Widget } from '../app-v2/Widget';
 
 const SCENARIOS: Scenario[] = [
   'running', 'paused', 'stopped', 'fresh', 'signed-out', 'revoked', 'error', 'rollover',
+  'update-required', 'update-required-stopped',
 ];
 
 const SIZES = [
