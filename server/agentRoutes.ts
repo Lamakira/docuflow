@@ -15,7 +15,8 @@ import { canAccessCrmProject, visibleProjectScope } from "./modules/projects/acc
 import { isAuthenticated, getUserId } from "./auth";
 import { config } from "./config";
 import { agentProtocolHandshake, allowAgentProtocol, declaredAgentProtocolVersion } from "./agentProtocol";
-import { MAX_SIMULTANEOUS_TIMERS, timerStartModes, type TimerStartMode } from "@shared/schema";
+import { MAX_SIMULTANEOUS_TIMERS } from "@shared/schema";
+import { readStartMode, sendStartRefusal, startModePayload } from "./timerStartHttp";
 import { issueAccessToken, verifyAccessToken } from "./desktopTokens";
 import { logInfo, logError, logTimeEvent } from "./logger";
 import { parseObjectPath, storagePort, workspaceScreenshotKey } from "./objectStorage";
@@ -25,7 +26,7 @@ import {
   ingestActivityEvents,
   ingestActivityScreenshot,
 } from "./modules/activity/evidenceJobs";
-import { applyTimerCommand, nextTimerSequence, TimerStartRefusedError } from "./modules/time/commands";
+import { applyTimerCommand, nextTimerSequence } from "./modules/time/commands";
 import { serverDayWindow } from "./modules/time/dayWindow";
 import { gateSessionWrite } from "./modules/billing/sessionWriteGate";
 import { PlanFeatureNotIncludedError, featureIncluded } from "./modules/billing";
@@ -899,7 +900,8 @@ export function registerAgentRoutes(app: Express): void {
       const endDate   = req.query.end   ? new Date(req.query.end   as string) : (() => { const d = new Date(); d.setHours(23,59,59,999); return d; })();
       const includeActive = req.query.includeActive === "1";
       const stats = await storage.getTimeStats({ userId, startDate, endDate, includeActive });
-      res.json({ total: stats.totalDuration, simultaneous: stats.simultaneousDuration });
+      // The answer agents before v2 read stays as it was; v2 asks for the running Timers and gets both counts.
+      res.json(includeActive ? { total: stats.totalDuration, simultaneous: stats.simultaneousDuration } : { total: stats.totalDuration });
     } catch (error) {
       logError("agent.worked-today.failed", error);
       res.status(500).json({ message: "Failed to fetch worked today" });
@@ -1075,12 +1077,12 @@ export function registerAgentRoutes(app: Express): void {
       const userId = req.agentUserId!;
       const { crmProjectId, description, deviceId, clientCommandId } = req.body;
       const taskId = req.body.taskId || null;
-      const mode = req.body.mode ?? "switch";
+      const mode = readStartMode(req.body);
 
       if (!crmProjectId) {
         return res.status(400).json({ message: "crmProjectId is required" });
       }
-      if (!timerStartModes.includes(mode)) {
+      if (!mode) {
         return res.status(400).json({ message: "mode must be add or switch" });
       }
 
@@ -1127,7 +1129,7 @@ export function registerAgentRoutes(app: Express): void {
           taskId: taskId || null,
           description: description || null,
           clientCommandId: clientCommandId || undefined,
-          ...((mode as TimerStartMode) === "add" ? { mode: "add" as const } : {}),
+          ...startModePayload(mode),
         },
       });
       if (result.duplicate && result.timeEntry) {
@@ -1150,9 +1152,7 @@ export function registerAgentRoutes(app: Express): void {
       }
       res.json({ ...entry, taskAccumulatedToday });
     } catch (error) {
-      if (error instanceof TimerStartRefusedError) {
-        return res.status(409).json({ code: error.code, message: error.message });
-      }
+      if (sendStartRefusal(res, error)) return;
       logError("agent.timer.start.failed", error);
       res.status(500).json({ message: "Failed to start timer" });
     }

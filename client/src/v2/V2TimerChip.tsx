@@ -169,14 +169,15 @@ export function V2TimerChip({
       {extraTimers > 0 ? (
         <Popover open={timersOpen} onOpenChange={setTimersOpen}>
           <PopoverTrigger asChild>
-            <button
+            <Button
               type="button"
+              variant="ghost"
               className="df-chip-count"
               aria-label={`${timers.length} Timers running, show all`}
               data-testid="v2-timer-count"
             >
               +{extraTimers}
-            </button>
+            </Button>
           </PopoverTrigger>
           <PopoverContent align="end" className="df-v2 df-timers-popover" data-testid="v2-timers-popover">
             <ul className="df-timers-list">
@@ -254,24 +255,32 @@ function TimerRow({
   const elapsed =
     (timer.duration || 0) +
     (running && timer.lastActivityAt ? Math.max(0, Math.floor((now - new Date(timer.lastActivityAt).getTime()) / 1000)) : 0);
-  const name = projectLabel;
   return (
     <li className="df-timers-row" data-status={timer.status}>
       <span className="df-timers-name" title={taskName ? `${projectLabel} · ${taskName}` : projectLabel}>
         {taskName ? `${projectLabel} · ${taskName}` : projectLabel}
       </span>
       <span className="df-mono df-timers-clock">{formatElapsedClock(elapsed)}</span>
-      <button
+      <Button
         type="button"
+        variant="ghost"
+        size="icon"
         className="df-timers-action"
         onClick={running ? onPause : onResume}
-        aria-label={`${running ? "Pause" : "Resume"} Timer on ${name}`}
+        aria-label={`${running ? "Pause" : "Resume"} Timer on ${projectLabel}`}
       >
         {running ? <PauseIcon /> : <PlayIcon />}
-      </button>
-      <button type="button" className="df-timers-action" onClick={onStop} aria-label={`Stop Timer on ${name}`}>
+      </Button>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className="df-timers-action"
+        onClick={onStop}
+        aria-label={`Stop Timer on ${projectLabel}`}
+      >
         <StopIcon />
-      </button>
+      </Button>
     </li>
   );
 }

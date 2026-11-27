@@ -280,7 +280,7 @@ let linuxScreenLockWatcher: LinuxScreenLockWatcher | null = null;
 let pausedForScreenshotPortal = false;
 /** The Timers the portal consent paused; resumed when it is granted (#400). */
 let portalPausedEntryIds: string[] = [];
-/** The Timers the idle flow paused; "I'm back" resumes these and no others (#400). */
+/** The Timers an idle, sleep or lock pause stopped; one resume brings back these and no others (#400). */
 let idlePausedEntryIds: string[] = [];
 
 // ─── Window ───
@@ -580,8 +580,10 @@ function rebuildTrayMenu(): void {
         label: "Resume timer",
         click: async () => {
           stopPausedEntryFromPreviousDay("tray-resume");
-          // The latest paused Timer, as the tooltip and the widget show it.
-          resumeActiveTimer();
+          // Every Timer an away or idle pause stopped; otherwise the latest
+          // paused Timer, as the tooltip and the widget show it.
+          if (idlePausedEntryIds.length > 0) resumeTimerAfterIdle();
+          else resumeActiveTimer();
         },
       });
     } else {
@@ -1823,6 +1825,9 @@ function pauseTimerForSystemAway(reason: string): void {
     enqueue: (draft) => enqueueTimerCommands(draft),
   });
   if (!at) return;
+  // Remembered like an idle pause, so one resume brings back every Timer the
+  // sleep or lock paused, and none the Member had paused by hand (ADR-0031).
+  idlePausedEntryIds = entryIds;
   syncWorker?.triggerSync();
   pushStateToRenderer();
   console.log(`[Main] ${reason} — timers paused at ${at.toISOString()} (entries=${entryIds.join(",")})`);

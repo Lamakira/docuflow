@@ -80,7 +80,8 @@ import {
 } from "./modules/billing";
 import { registerPublicApiV1 } from "./publicApi/http";
 import { getWorkspaceTimeZone } from "./modules/time";
-import { MAX_SIMULTANEOUS_TIMERS, timerStartModes, type TimerStartMode } from "@shared/schema";
+import { MAX_SIMULTANEOUS_TIMERS } from "@shared/schema";
+import { readStartMode, sendStartRefusal, startModePayload } from "./timerStartHttp";
 import { FieldListChangedError, saveOrgSettings } from "./modules/postgresStorage";
 import type { ScreenshotListOptions } from "./modules/activity/evidence";
 import { isLowActivityThreshold } from "@shared/activityEvidence";
@@ -162,7 +163,6 @@ import {
   inTimeEntryWorkspace,
   loadTimeEntryById,
   nextTimerSequence,
-  TimerStartRefusedError,
 } from "./modules/time/commands";
 import { dayCalendar } from "./modules/time/dayCalendar";
 import { serverDayWindow } from "./modules/time/dayWindow";
@@ -4715,12 +4715,12 @@ Instructions:
       const userId = getUserId(req)!;
       const { crmProjectId, description } = req.body;
       const taskId = req.body.taskId || null;
-      const mode = req.body.mode ?? "switch";
+      const mode = readStartMode(req.body);
       
       if (!crmProjectId) {
         return res.status(400).json({ message: "Project is required" });
       }
-      if (!timerStartModes.includes(mode)) {
+      if (!mode) {
         return res.status(400).json({ message: "mode must be add or switch" });
       }
 
@@ -4762,7 +4762,7 @@ Instructions:
           crmProjectId,
           taskId: taskId || null,
           description: description || null,
-          ...((mode as TimerStartMode) === "add" ? { mode: "add" as const } : {}),
+          ...startModePayload(mode),
         },
       });
       const entry = result.timeEntry;
@@ -4773,9 +4773,7 @@ Instructions:
       logTimeEvent("start", entry.id, userId, { crmProjectId, taskId: taskId || null, mode });
       res.json(entry);
     } catch (error) {
-      if (error instanceof TimerStartRefusedError) {
-        return res.status(409).json({ code: error.code, message: error.message });
-      }
+      if (sendStartRefusal(res, error)) return;
       logError("time-tracking.start.failed", error, { userId: getUserId(req) });
       res.status(500).json({ message: "Failed to start time tracking" });
     }
