@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { useReturnFocus } from "./returnFocus";
 import { Link, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { useTimeTracker } from "@/contexts/TimeTrackerContext";
@@ -182,6 +183,7 @@ export function V2Shell({ children }: { children: React.ReactNode }) {
   const projectCount = projectsResponse?.total ?? 0;
   const showRail = layout.rail === "fixed" || navOpen;
   const sheetOpen = surface.kind === "sheet";
+  const returnFocus = useReturnFocus(sheetOpen);
   const entry = workspaceEntry({
     memberships: memberships?.memberships ?? [],
     lastActiveWorkspaceId: memberships?.preferredWorkspaceId ?? null,
@@ -355,7 +357,7 @@ export function V2Shell({ children }: { children: React.ReactNode }) {
           </div>
         </div>
         <Sheet open={sheetOpen} onOpenChange={(open) => { if (!open) setPanel(null); }}>
-          <SheetContent
+          <SheetContent onCloseAutoFocus={returnFocus.onCloseAutoFocus}
             side="bottom"
             overlayClassName="df-command-scrim"
             className="df-v2 df-context-sheet"

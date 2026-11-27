@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useReturnFocus } from "./returnFocus";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
@@ -31,6 +32,7 @@ import { V2EmptyLine } from "./V2EmptyState";
 
 /** A Workspace opened read-only, by a Support Access Grant or by break-glass. */
 export function OperatorWorkspaceSheet({ workspaceId, onClose }: { workspaceId: string | null; onClose: () => void }) {
+  const returnFocus = useReturnFocus(workspaceId !== null);
   const { data, isLoading, error } = useQuery<OperatorWorkspaceView>({
     queryKey: [operatorWorkspacePath(workspaceId ?? "")],
     enabled: workspaceId !== null,
@@ -39,7 +41,7 @@ export function OperatorWorkspaceSheet({ workspaceId, onClose }: { workspaceId: 
   const view = data ? composeOperatorWorkspace(data) : null;
   return (
     <Sheet open={workspaceId !== null} onOpenChange={(open) => (open ? undefined : onClose())}>
-      <SheetContent className="df-v2" data-testid="v2-backoffice-operator-sheet">
+      <SheetContent onCloseAutoFocus={returnFocus.onCloseAutoFocus} className="df-v2" data-testid="v2-backoffice-operator-sheet">
         <SheetHeader>
           <SheetTitle>{view?.title ?? "Workspace"}</SheetTitle>
           <SheetDescription>{view ? `${view.access}. ${view.note}` : "Read-only."}</SheetDescription>

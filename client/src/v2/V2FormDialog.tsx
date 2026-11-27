@@ -17,6 +17,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { useReturnFocus } from "./returnFocus";
 
 export type V2FormDialogProps = {
   open: boolean;
@@ -31,9 +32,10 @@ export type V2FormDialogProps = {
   testId: string;
   children: ReactNode;
   /**
-   * Where focus goes when the dialog closes. By default Radix returns it to
-   * what was focused when it opened; a dialog opened from a menu would send
-   * it to the page, since the menu item is gone by then.
+   * Where focus goes when the dialog closes. By default it goes back to what
+   * had focus when the dialog opened (`useReturnFocus`); a dialog opened from
+   * a menu names its own target, since the menu item is gone by then. Prevent
+   * the default to keep the shared return out.
    */
   onCloseAutoFocus?: (event: Event) => void;
 };
@@ -52,6 +54,9 @@ export function V2FormDialog({
   children,
   onCloseAutoFocus,
 }: V2FormDialogProps) {
+  // Radix returns focus only to a DialogTrigger; these dialogs open from their own buttons.
+  const returnFocus = useReturnFocus(open, onCloseAutoFocus);
+
   function submit(event: FormEvent) {
     event.preventDefault();
     if (!canSubmit || pending) return;
@@ -62,7 +67,9 @@ export function V2FormDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       {/* Radix portals to document.body, outside `.df-v2`, so the panel
           carries the class itself or the --df-* tokens do not resolve. */}
-      <DialogContent className="df-v2 df-alert df-form-dialog" data-testid={testId} onCloseAutoFocus={onCloseAutoFocus}>
+      <DialogContent className="df-v2 df-alert df-form-dialog" data-testid={testId}
+        onCloseAutoFocus={returnFocus.onCloseAutoFocus}
+      >
         <DialogHeader>
           <DialogTitle className="df-form-dialog-title">{title}</DialogTitle>
           <DialogDescription className="df-form-dialog-copy">{description}</DialogDescription>
