@@ -5460,6 +5460,80 @@ a.df-dossier-client-link:hover {
   padding: var(--df-space-2) var(--df-space-3);
 }
 
+/* A Task list field: one line tall until its lines grow it, then it scrolls.
+   The button beside it keeps to the first line instead of centring on the
+   grown field. */
+.df-toolbar:has(> .df-filter-input > textarea) {
+  align-items: flex-start;
+}
+
+.df-toolbar .df-filter-input:has(> textarea) {
+  height: auto;
+  min-height: var(--df-control-h);
+  /* One 20px line plus this padding and the border is exactly the control height. */
+  padding-block: calc((var(--df-control-h) - 2px - 20px) / 2);
+}
+
+.df-filter-input textarea {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  max-height: 8lh;
+  field-sizing: content;
+  resize: none;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+  font-size: var(--df-text-3);
+  line-height: 20px;
+  outline: none;
+  transition: none;
+  scrollbar-gutter: stable;
+}
+
+/* The grown field scrolls inside the card, so its bar blends in (DESIGN.md):
+   no arrows, no track, a thin rounded thumb shown while the pointer is over
+   the field. Styled through ::-webkit-scrollbar, never scrollbar-width. */
+.df-filter-input textarea::-webkit-scrollbar {
+  width: 8px;
+}
+
+.df-filter-input textarea::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.df-filter-input textarea::-webkit-scrollbar-track,
+.df-filter-input textarea::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+.df-filter-input textarea::-webkit-scrollbar-thumb {
+  background-color: transparent;
+  border: 1px solid transparent;
+  background-clip: padding-box;
+  border-radius: 999px;
+}
+
+.df-filter-input:hover textarea::-webkit-scrollbar-thumb {
+  background-color: color-mix(in srgb, var(--df-archive-slate) 35%, transparent);
+}
+
+.df-filter-input textarea::-webkit-scrollbar-thumb:hover,
+.df-filter-input textarea::-webkit-scrollbar-thumb:active {
+  background-color: color-mix(in srgb, var(--df-archive-slate) 60%, transparent);
+}
+
+@supports not selector(::-webkit-scrollbar) {
+  .df-filter-input textarea {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--df-archive-slate) 35%, transparent) transparent;
+  }
+}
+
 .df-filter-input input {
   flex: 1;
   min-width: 0;
@@ -5471,7 +5545,7 @@ a.df-dossier-client-link:hover {
   animation: none;
 }
 
-.df-filter-input input::placeholder {
+.df-filter-input :is(input, textarea)::placeholder {
   color: var(--df-muted-ink);
 }
 
@@ -5479,13 +5553,13 @@ a.df-dossier-client-link:hover {
    while the focusable element is the bare input inside it. Ringing the input
    draws the amber inside the field, so the ring moves to the wrapper and keeps
    the offset the handoff asks for. */
-.df-filter-input:has(input:focus-visible) {
+.df-filter-input:has(:is(input, textarea):focus-visible) {
   outline: 2px solid var(--df-amber);
   outline-offset: 2px;
   box-shadow: 0 0 0 2px var(--df-case-ink);
 }
 
-.df-filter-input input:focus-visible {
+.df-filter-input :is(input, textarea):focus-visible {
   outline: none;
   box-shadow: none;
 }

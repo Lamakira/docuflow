@@ -63,7 +63,9 @@ import {
   type ProjectDatesDraft,
 } from "./projects";
 import { V2DateField } from "./V2DateField";
-import { TASK_STATUS_OPTIONS } from "./tasks";
+import { TASK_BATCH_PATH, TASK_STATUS_OPTIONS } from "./tasks";
+import { TASK_BATCH_ALL_DUPLICATES, planTaskBatch, taskBatchNotice, taskLines } from "@shared/taskBatch";
+import { Textarea } from "@/components/ui/textarea";
 import { isTimerProject } from "./time";
 import { memberName, projectHref } from "./today";
 import { formatFileSize, projectFileHref } from "./fileViewer";
@@ -508,14 +510,18 @@ export function V2DossierPage() {
   });
 
   const createTask = useMutation({
-    mutationFn: (name: string) =>
-      apiRequest("POST", "/api/tasks", { crmProjectId: projectId, name }),
-    onSuccess: () => {
+    mutationFn: (lines: string[]) =>
+      apiRequest("POST", TASK_BATCH_PATH, { crmProjectId: projectId, names: lines }),
+    onSuccess: (result: { data: unknown[]; skipped: number }) => {
+      if (result.data.length === 0) {
+        setWriteRefusal(TASK_BATCH_ALL_DUPLICATES);
+        return;
+      }
       queryClient.invalidateQueries({ queryKey: ["/api/tasks", projectId] });
       setTaskName("");
       setCreatingTask(false);
       setWriteRefusal(null);
-      notify.success("Task created");
+      notify.success(taskBatchNotice(result.data.length, result.skipped));
     },
     onError: (error: Error) => {
       refuseWrite(error.message, "Manage Tasks");
@@ -961,9 +967,14 @@ export function V2DossierPage() {
   }
 
   function onCreateTask() {
-    const name = taskName.trim();
-    if (!name || refuseWrite()) return;
-    createTask.mutate(name);
+    if (!taskName.trim() || refuseWrite()) return;
+    const lines = taskLines(taskName);
+    const check = planTaskBatch(lines);
+    if (!check.ok) {
+      setWriteRefusal(check.message);
+      return;
+    }
+    createTask.mutate(lines);
   }
 
   function onSaveName(event: FormEvent) {
@@ -1231,15 +1242,19 @@ export function V2DossierPage() {
         testId="v2-dossier-new-task"
       >
         <label className="df-daily-field">
-          Name
-          <input
+          Names, one Task per line
+          <Textarea
             id={DOSSIER_FIELD.taskName}
-            type="text"
             value={taskName}
+            rows={5}
             autoFocus
             onChange={(event) => setTaskName(event.target.value)}
-            placeholder="Task name"
-            aria-label="Task name"
+            onKeyDown={(event) => {
+              if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;
+              event.preventDefault();
+              if (!createTask.isPending) onCreateTask();
+            }}
+            placeholder={"Survey the site\nWrite the runbook"}
           />
         </label>
       </V2FormDialog>
