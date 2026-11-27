@@ -299,7 +299,22 @@ async function claimFloor(writer: TimeWriter, input: ApplyTimerCommandInput): Pr
     .where(scope)
     .orderBy(desc(timerCommands.claimedEffectiveAt))
     .limit(1);
-  const candidates = [latest?.at, entry?.startTime].filter((d): d is Date => !!d);
+  // A switch stops every Timer, this one included: a claim may not reach back
+  // across it either, as with one Timer (ADR-0030). An add leaves this one be.
+  const [switched] = entry
+    ? await writer
+        .select({ at: timerCommands.claimedEffectiveAt })
+        .from(timerCommands)
+        .where(and(
+          eq(timerCommands.userId, input.userId),
+          eq(timerCommands.kind, "start"),
+          sql`${timerCommands.payload}->>'mode' IS DISTINCT FROM 'add'`,
+          inWorkspace(timerCommands),
+        ))
+        .orderBy(desc(timerCommands.claimedEffectiveAt))
+        .limit(1)
+    : [];
+  const candidates = [latest?.at, switched?.at, entry?.startTime].filter((d): d is Date => !!d);
   if (candidates.length === 0) return undefined;
   return new Date(Math.max(...candidates.map((d) => d.getTime())));
 }

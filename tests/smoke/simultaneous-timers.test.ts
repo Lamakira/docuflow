@@ -284,6 +284,25 @@ describe("Simultaneous Timers through the Time module (#400)", () => {
     expect([map.status, map.duration]).toEqual(["stopped", 30 * 60]);
   });
 
+  it("floors a dated pause at a later switch that stopped its Timer, as ADR-0030 did with one Timer", async () => {
+    const w = await seed();
+    const { listTimerCommands } = await time();
+    // Option off. The agent's Timer A runs; the web switches to B at 0:30.
+    const a = (await command(w.user.id, "start", 0, { crmProjectId: w.atlas.id, taskId: w.ledger.id })).timeEntry!;
+    await command(w.user.id, "start", 30, { crmProjectId: w.borealis.id, taskId: w.map.id });
+    // At 0:40 the agent reports that A paused at 0:20, when the Member left.
+    const late = await command(w.user.id, "pause", 20, { timeEntryId: a.id }, { floorAtLastCommand: true, receivedMinutes: 40 });
+
+    // Floored at the switch: a no-op on a stopped Timer, not a replay of every command.
+    expect(late.command).toMatchObject({ clamped: true });
+    expect(late.command.claimedEffectiveAt.toISOString()).toBe(at(30).toISOString());
+    const rows = await entries(w.storage, w.user.id);
+    const ledger = rows.find((row) => row.id === a.id)!;
+    expect([ledger.status, ledger.duration]).toEqual(["stopped", 30 * 60]);
+    expect(new Date(ledger.endTime!).toISOString()).toBe(at(30).toISOString());
+    expect(await inSeededWorkspace(() => listTimerCommands(w.user.id))).toHaveLength(3);
+  });
+
   it("replays a late switch so the Timers it stops end where it took effect", async () => {
     const w = await seed();
     await setOption(true);
